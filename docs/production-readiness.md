@@ -36,6 +36,7 @@ Verified current state (2026-11-09): `otyapoint-db` is the production OtyaPoint 
 ## 4. Identity, staff access, and owner recovery
 
 - Verify the Otya Auth token contract, issuer, audience, expiry, revocation, and service-to-service authentication expectations.
+- [x] Generated OtyaPoint-specific owner-bootstrap and Auth invitation-service credentials and stored them in the existing Cloudflare Secrets Store; both secrets are scoped to Workers and their values are not exposed by the store API.
 - The former local HS256 bridge was retired. The current `/api/bridge/products` handler deliberately fails closed with HTTP 503 until a server-side Otya Auth session and staff-membership exchange is implemented. Do not reintroduce locally minted identity tokens.
 - Ensure a valid Otya identity does not grant OtyaPoint access without an active local staff membership.
 - Test least-privilege roles, company scoping, disabled staff, expired/revoked sessions, and denied requests.
