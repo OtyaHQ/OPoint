@@ -24,7 +24,13 @@ Verification databases:
 - `otyapoint-restore-verify-20261030`
 - `omnipoint-restore-verify-20261030`
 
-The 2026-10-30 exports remain the last verified independent recovery snapshots. The restore-verification database `otyapoint-restore-verify-20261030` was subsequently used to test migrations `0004–0009`; its migration ledger now also ends at `0009`, with the same zero business-record state. These snapshots are point-in-time recovery evidence, not an automated backup schedule. The scheduled backup workflow was added in PR #120 and merged, but its first run still requires a dedicated Cloudflare D1 Write + R2 Read/Write API token and repository variable/secret. Keep the original R2 objects and both verification databases until retention and cleanup are separately reviewed.
+The 2026-10-30 exports remain preserved as original baseline recovery points. On 2026-11-09, a new production schema-and-ledger recovery snapshot was captured after migrations `0001–0009`:
+
+| Purpose | R2 object key | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| Post-migration production schema and migration ledger | `d1/otyapoint-db/2026-11-09/post-migration-schema-snapshot.sql` | 22711 | `3a088cc0162ed347343e7873f0c5558f1f13e73296a955b5d76c194236bffba1` |
+
+The object was downloaded from R2 and its byte count and SHA-256 matched exactly. It is a schema-and-ledger snapshot, not a recurring full D1 export. All 13 OtyaPoint business tables were verified empty at capture time. The snapshot was restored into a newly created isolated EU D1 database `otyapoint-restore-verify-20261109`; verification found nine migration records, 13 business tables, 36 indexes, 18 triggers and zero business rows. The earlier `otyapoint-restore-verify-20261030` was also used to apply/test migrations `0004–0009`; it is not a pristine pre-migration database anymore. The scheduled backup workflow was added in PR #120 and merged, but its first full export still requires the dedicated Cloudflare D1 Write + R2 Read/Write token and GitHub Actions account-ID variable/secret. Keep all historical snapshots and both verification databases until retention and cleanup are separately reviewed.
 
 ## Local development
 
@@ -59,7 +65,7 @@ Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bin
 
 Otya Auth is the intended identity provider. OtyaPoint separately authorizes local staff memberships and roles; a global Otya login alone must never grant shop access.
 
-The current Next.js dashboard still imports Supabase Auth and Prisma. Its existing `/api/bridge/products` route constructs a local HS256 token, then sends it to Otya Auth's `/auth/verify` endpoint. The token contract has not been verified to accept this locally minted token, so the bridge must be treated as **unverified and not production-ready**. Do not configure secrets or enable the bridge until a documented Otya Auth-to-OtyaPoint service-token contract and integration tests are in place.
+The current Next.js dashboard still imports Supabase Auth and Prisma. The former `/api/bridge/products` route that minted a local HS256 token was retired; the current route deliberately fails closed with HTTP 503 until the approved Otya Auth session and OtyaPoint staff-membership exchange has been implemented and tested. Do not reintroduce locally minted identity tokens or trust browser-supplied roles.
 
 Migrate the dashboard behind a server-side API boundary in reviewed steps. Do not remove legacy packages or migrations until all runtime imports, login/session flows, staff provisioning, and UI data paths are migrated and tested. Do not add Supabase, Appwrite, or Vercel to the new runtime unless explicitly approved.
 
@@ -69,7 +75,7 @@ The first owner is provisioned through `POST /api/bootstrap/sovereign`. This rou
 
 Provisioning sequence:
 
-1. Migrations `0004–0009` are already applied to production `otyapoint-db` and the isolated restore-verification database. Do not rerun them. Migration `0009` creates a local operator-recorded cash/float book; it does not enable provider execution. The dedicated API Worker has not yet been deployed.
+1. Migrations `0004–0009` are already applied to production `otyapoint-db` and tested on isolated restore-verification databases. Do not rerun them. Migration `0009` creates a local operator-recorded cash/float book; it does not enable provider execution. The dedicated API Worker has not yet been deployed. A gated private deployment workflow is available at `.github/workflows/deploy-api.yml`; it requires production GitHub environment credentials and exact manual `DEPLOY` input.
 2. Configure a unique high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` as a Worker secret, never as a Wrangler variable or browser value.
 3. The owner calls `POST /api/bootstrap/sovereign` with their own Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
 4. Remove the bootstrap secret immediately after successful owner provisioning. The audit marker keeps the route consumed after the secret is removed.
