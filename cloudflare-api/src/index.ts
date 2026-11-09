@@ -100,7 +100,7 @@ function validEmail(value: string): boolean {
 
 async function deliverStaffInvitation(
   env: Env,
-  invitation: { email: string; displayName: string; role: Role; token: string; expiresAt: string },
+  invitation: { invitationId: string; email: string; displayName: string; role: Role; token: string; expiresAt: string },
 ): Promise<boolean> {
   if (!env.AUTH || !env.OTYAPOINT_INVITE_SERVICE_TOKEN || env.OTYAPOINT_INVITE_SERVICE_TOKEN.length < 32) return false;
   try {
@@ -388,7 +388,7 @@ export default {
           throw error;
         }
 
-        const sent = await deliverStaffInvitation(env, { email, displayName, role, token, expiresAt });
+        const sent = await deliverStaffInvitation(env, { invitationId, email, displayName, role, token, expiresAt });
         const deliveryStatus = sent ? "SENT" : "FAILED";
         await env.DB.batch([
           env.DB.prepare(
@@ -451,6 +451,7 @@ export default {
           ).bind(uuid(), staff.id, invitationId, JSON.stringify({ expiresAt }), rid, staff.company_id),
         ]);
         const sent = await deliverStaffInvitation(env, {
+          invitationId,
           email: invitation.email,
           displayName: invitation.display_name,
           role: invitation.role,
