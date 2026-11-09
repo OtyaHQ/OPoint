@@ -26,3 +26,14 @@ migrations_dir = "cloudflare-api/migrations"
 [[services]]
 binding = "AUTH"
 service = "otya-auth"
+
+# Account-level secrets are centrally managed in Cloudflare Secrets Store.
+[[secrets_store_secrets]]
+binding = "OTYAPOINT_INVITE_SERVICE_TOKEN"
+store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
+secret_name = "OTYAPOINT_INVITE_SERVICE_TOKEN"
+
+[[secrets_store_secrets]]
+binding = "OTYAPOINT_BOOTSTRAP_SECRET"
+store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
+secret_name = "OTYAPOINT_BOOTSTRAP_SECRET"
