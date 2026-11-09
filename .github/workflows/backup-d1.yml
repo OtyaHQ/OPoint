@@ -1,0 +1,98 @@
+name: Backup OtyaPoint D1 to private R2
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: otyapoint-d1-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    name: Export, store and verify OtyaPoint D1 backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out the protected main source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Require the production main branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/main' || {
+            echo "::error::OtyaPoint production backups may only run from main."
+            exit 1
+          }
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: Export a consistent D1 SQL snapshot
+        id: export
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          OTYAPOINT_BACKUP_CLOUDFLARE_API_TOKEN: ${{ secrets.OTYAPOINT_BACKUP_CLOUDFLARE_API_TOKEN }}
+        run: node scripts/export-d1-backup.mjs
+
+      - name: Install the pinned Wrangler CLI
+        run: npx --yes wrangler@4.158.0 --version
+
+      - name: Upload the snapshot to private R2 and verify its checksum
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.OTYAPOINT_BACKUP_CLOUDFLARE_API_TOKEN }}
+          BACKUP_FILE: ${{ steps.export.outputs.backup_file }}
+          BACKUP_OBJECT_KEY: ${{ steps.export.outputs.object_key }}
+          EXPECTED_SHA256: ${{ steps.export.outputs.sha256 }}
+          EXPECTED_BYTES: ${{ steps.export.outputs.bytes }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -f "$BACKUP_FILE"
+          test -n "$BACKUP_OBJECT_KEY"
+          test -n "$EXPECTED_SHA256"
+          test -n "$EXPECTED_BYTES"
+
+          OBJECT_PATH="otyapoint-backups/$BACKUP_OBJECT_KEY"
+          VERIFY_FILE="$RUNNER_TEMP/otyapoint-d1-verify-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.sql"
+
+          npx --yes wrangler@4.158.0 r2 object put "$OBJECT_PATH" \
+            --remote --file "$BACKUP_FILE" --content-type application/sql --config wrangler.toml
+
+          npx --yes wrangler@4.158.0 r2 object get "$OBJECT_PATH" \
+            --remote --file "$VERIFY_FILE" --config wrangler.toml
+
+          ACTUAL_SHA256="$(sha256sum "$VERIFY_FILE" | cut -d ' ' -f1)"
+          ACTUAL_BYTES="$(wc -c < "$VERIFY_FILE" | tr -d ' ')"
+          test "$ACTUAL_SHA256" = "$EXPECTED_SHA256" || {
+            echo "::error::R2 read-back SHA-256 does not match the source export."
+            exit 1
+          }
+          test "$ACTUAL_BYTES" = "$EXPECTED_BYTES" || {
+            echo "::error::R2 read-back byte count does not match the source export."
+            exit 1
+          }
+
+          echo "Verified private R2 backup: $OBJECT_PATH ($ACTUAL_BYTES bytes; SHA-256 $ACTUAL_SHA256)."
+
+      - name: Remove temporary SQL files from the runner
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            "$RUNNER_TEMP/otyapoint-d1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.sql" \
+            "$RUNNER_TEMP/otyapoint-d1-verify-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.sql"

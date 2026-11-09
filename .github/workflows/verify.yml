@@ -107,5 +107,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      - name: Test production D1 backup safeguards
+        run: node --test scripts/export-d1-backup.test.mjs
+
       - name: Build dashboard and backend package
         run: npm run build
