@@ -33,6 +33,7 @@ All routes below are served by the Cloudflare Worker only when that Worker is ex
 | GET / POST | /api/staff/invitations | Sovereign-owner invitation listing and creation; tokens are one-time, hashed and time-limited |
 | POST | /api/staff/invitations/accept | Invitee accepts using their own verified Otya identity and matching email; membership remains PENDING |
 | POST | /api/staff/invitations/:id/resend or /revoke | Sovereign-owner invitation resend/token rotation or revocation |
+| GET | /api/agency-overview | Authenticated staff; confirmed-only totals and recent local agency records, company-wide for managers and creator-scoped for other staff |
 | GET | /api/agency-transactions | Authenticated staff; company-wide for managers, creator-scoped for other staff |
 | POST | /api/agency-transactions | Intentionally unavailable until provider adapters and controls are approved |
 
@@ -47,6 +48,10 @@ Worker error responses use a stable JSON error code and may include a requestId.
 5. Do not present an agency transaction as successful unless the backend returns a verified provider-confirmed state. Drafts must not be described as recorded transactions.
 6. Handle 401 by asking the user to sign in again; 403 by showing an access-denied state; 409 as a conflict requiring refresh/review; 422 as a capability or validation issue; and 503 as a temporary service-unavailable state.
 7. Do not cache authenticated business responses in shared/public caches.
+
+### Agency overview behavior
+
+`GET /api/agency-overview` is a read-only operations summary over OtyaPoint's own D1 records. Manager roles receive company-scoped totals and recent records; other active staff receive only records where they are the creator. Amount and commission totals include only rows with `provider_status = SUCCEEDED`. Pending/unknown and failed records are counted separately. It does not call Interswitch, Quickteller, Airtel or MTN, create transactions, post ledger entries, or represent an unconfirmed amount as received.
 
 ## Readiness and release gates
 
