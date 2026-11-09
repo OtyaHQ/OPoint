@@ -6,7 +6,7 @@ import {
   Activity, ArrowUpRight, Bell, Boxes, BriefcaseBusiness,
   CheckCircle2, ChevronDown, CircleDollarSign, Command,
   Download, LayoutDashboard, LifeBuoy, Menu, Moon, MoreHorizontal,
-  Package, Plus, Search, Settings2, ShieldCheck, ShoppingBag,
+  Package, Search, Settings2, ShieldCheck, ShoppingBag,
   Smartphone, Sun, Wallet, X
 } from "lucide-react";
 
@@ -46,11 +46,11 @@ export default function Home({ role, displayName, agentId }: DashboardProps) {
         setProducts(items.filter((p) => p.isActive).map((p) => ({ name: p.name, sku: p.sku, category: p.category || "Uncategorised", stock: p.quantityOnHand, status: p.quantityOnHand <= 7 ? "Low stock" : "In stock" })));
         setInventorySource("otyapoint-api");
       })
-      .catch((error: unknown) => {
+      .catch(() => {
         if (cancelled) return;
         setProducts([]);
         setInventorySource("unavailable");
-        setNotice("Inventory is not connected to the OtyaPoint API yet. No sample products are shown.");
+        setNotice("Inventory is not connected to the OtyaPoint API yet. No placeholder products are shown.");
       });
     return () => { cancelled = true; };
   }, [section]);
@@ -126,7 +126,7 @@ export default function Home({ role, displayName, agentId }: DashboardProps) {
 }
 
 function Metric({icon,label,value,detail,tone}:{icon:React.ReactNode;label:string;value:string;detail:string;tone:string}) {
-  return <div className="metric-card"><div className="metric-top"><div className={`metric-icon ${tone}`}>{icon}</div><span className="metric-period">TODAY</span></div><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-detail">{detail}</div></div>;
+  return <div className="metric-card"><div className="metric-top"><div className={`metric-icon ${tone}`}>{icon}</div><span className="metric-period">SUMMARY</span></div><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="metric-detail">{detail}</div></div>;
 }
 
 function SectionView({section,products,query,setQuery,inventorySource,onNotice}:{section:Section;products:ProductView[];query:string;setQuery:(s:string)=>void;inventorySource:"unavailable"|"otyapoint-api";onNotice:(s:string)=>void}) {
@@ -135,7 +135,7 @@ function SectionView({section,products,query,setQuery,inventorySource,onNotice}:
   return <div className="subpage"><div className="welcome-row"><div><div className="eyebrow">OTYAPOINT WORKSPACE</div><h1>{titles[section]}</h1><p className="page-description">{descriptions[section]}</p></div><span className="status-pending">SETUP REQUIRED</span></div>
     <div className="notice-banner"><span>Some workspace services are still being connected. This screen will only show confirmed business records; it will not simulate sales or provider payments.</span></div>
     {section === "Inventory" && <div className="panel table-panel"><div className="panel-header"><div><h3>Product catalogue</h3><p>{inventorySource === "otyapoint-api" ? "Products returned by the OtyaPoint API" : "Inventory connection is not ready; no placeholder products are displayed."}</p></div><span className="status-pending">Product setup required</span></div><div className="search-box"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search name, SKU, category…"/></div><div className="table-wrap"><table><thead><tr><th>PRODUCT</th><th>SKU</th><th>CATEGORY</th><th>STOCK</th><th>STATUS</th></tr></thead><tbody>{products.map(p=><tr key={p.sku}><td><strong>{p.name}</strong></td><td className="mono">{p.sku}</td><td>{p.category}</td><td>{p.stock}</td><td><span className={p.stock<=7?"status-low":"status-ok"}>{p.status}</span></td></tr>)}</tbody></table></div>{products.length === 0 && <div className="empty-chart"><strong>No products recorded in this view</strong><span>Products will appear here when the OtyaPoint inventory API is connected.</span></div>}</div>}
-    {section === "Retail POS" && <div className="panel workflow-panel"><div className="panel-header"><div><h3>Retail point of sale</h3><p>Checkout is waiting for the connected product and sales API.</p></div><ShoppingBag size={20} className="panel-title-icon"/></div><div className="empty-chart"><strong>Retail checkout is not connected yet</strong><span>Your actual product catalogue will appear here when the OtyaPoint inventory and sales services are connected. No sample cart or sale is created on this screen.</span></div></div>}
+    {section === "Retail POS" && <div className="panel workflow-panel"><div className="panel-header"><div><h3>Retail point of sale</h3><p>Checkout is waiting for the connected product and sales API.</p></div><ShoppingBag size={20} className="panel-title-icon"/></div><div className="empty-chart"><strong>Retail checkout is not connected yet</strong><span>Your actual product catalogue will appear here when the OtyaPoint inventory and sales services are connected. No sale is created from this screen.</span></div></div>}
     {section === "Fintech Agency" && <div className="panel workflow-panel"><div className="panel-header"><div><h3>Mobile-money agency</h3><p>Provider operations are not connected</p></div><Smartphone size={20} className="panel-title-icon"/></div><div className="empty-chart"><strong>Provider setup required</strong><span>MTN MoMo, Airtel Money and bill-payment services remain disabled until approved credentials, callback verification, status checks and reconciliation are connected. This screen does not prepare or send a transaction.</span></div></div>}
     {section === "Reconciliation" && <div className="panel workflow-panel"><div className="panel-header"><div><h3>Ledger reconciliation</h3><p>Separate checks for each accounting stream</p></div><Activity size={20} className="panel-title-icon"/></div><div className="recon-row"><div className="ledger-tile-icon"><ShoppingBag size={18}/></div><div className="ledger-tile-copy"><strong>Retail cash reconciliation</strong><span>Expected cash vs counted cash · Retail ledger only</span></div><span className="status-pending">NOT STARTED</span></div><div className="recon-row"><div className="ledger-tile-icon"><Smartphone size={18}/></div><div className="ledger-tile-copy"><strong>Agency float reconciliation</strong><span>Cash, provider balances and recorded float movements</span></div><span className="status-pending">NOT STARTED</span></div><button className="secondary-button" onClick={()=>onNotice("Reconciliation needs persisted transactions, counted balances, and provider statements.")}>Review requirements</button></div>}
     {section === "Reports" && <div className="panel workflow-panel"><div className="panel-header"><div><h3>Available report templates</h3><p>Reports will be available after verified shop and agency records are connected.</p></div><Download size={20} className="panel-title-icon"/></div><div className="report-item"><div className="quick-icon violet-bg"><ShoppingBag size={18}/></div><div><strong>Retail sales & stock</strong><span>Sales, COGS, stock movements, invoice metadata</span></div><button className="secondary-button" onClick={()=>onNotice("No report generated. The reporting service is not connected yet.")}>Export <Download size={14}/></button></div><div className="report-item"><div className="quick-icon blue-bg"><Wallet size={18}/></div><div><strong>Fintech agency ledger</strong><span>Cash-in/out, float changes, commissions, volumes</span></div><button className="secondary-button" onClick={()=>onNotice("No report generated: provider and ledger data are not connected.")}>Export <Download size={14}/></button></div><div className="report-item"><div className="quick-icon green-bg"><ShieldCheck size={18}/></div><div><strong>Audit trail</strong><span>Privileged actions, approvals and change history</span></div><button className="secondary-button" onClick={()=>onNotice("Audit export will be available after audit storage is implemented.")}>Export <Download size={14}/></button></div></div>}
