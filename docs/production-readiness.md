@@ -24,6 +24,8 @@ The 2026-10-30 R2 SQL snapshots remain the last verified independent exports. PR
 
 ## 3. Data preservation and canonical database
 
+Verified current state (2026-11-09): `otyapoint-db` is the production OtyaPoint D1 target and its migration ledger ends at `0009_agency_cash_float_book.sql`. `omnipoint-dev` remains a separate legacy database with its own migration-history schema. Do not merge or delete the legacy database until its references, row contents, history, and recovery value are independently reviewed.
+
 - Compare schema definitions, migration history, row counts, and row contents using read-only queries.
 - Preserve `omnipoint-dev` and `otyapoint-db` until application bindings and data ownership are confirmed.
 - Select one authoritative writable OtyaPoint database only after review. Avoid dual writes.
