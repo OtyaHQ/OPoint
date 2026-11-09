@@ -19,8 +19,8 @@ function required(value, name) {
 }
 
 export function buildBackupObjectKey(date, runId, attempt) {
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) throw new Error("date must use YYYY-MM-DD");
-  if (!/^\\d+$/.test(String(runId)) || !/^\\d+$/.test(String(attempt))) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error("date must use YYYY-MM-DD");
+  if (!/^\d+$/.test(String(runId)) || !/^\d+$/.test(String(attempt))) {
     throw new Error("workflow run and attempt must contain digits only");
   }
   return `d1/otyapoint-db/${date}/backup-${runId}-${attempt}.sql`;
