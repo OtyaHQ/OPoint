@@ -7,7 +7,7 @@ OtyaPoint is the shop and financial-agency operations system of Otya Hold Ltd T/
 - Wrangler config names the API Worker `otyapoint-api`, binds D1 `DB` to `otyapoint-db`, R2 `PRIVATE_FILES` and `BACKUPS`, KV `CACHE`, queue producer `JOBS`, and the Otya Auth service binding.
 - `workers_dev = false`; no custom route is configured. **The API Worker is not confirmed deployed.**
 - The isolated D1 recovery snapshot recorded the original applied baseline `0001_core.sql`, `0002_company_scope.sql`, and `0003_staff_profile.sql`; it contained three migration records at the time of the 2026-10-30 snapshot.
-- The current development branch includes migrations `0004` through `0007`: sale-request idempotency fingerprinting; append-only ledger, stock-movement and audit history; one-time owner controls; and staff invitations. These follow-on migrations are source changes only and have not been applied to any remote D1 database.
+- The current development branch includes migrations `0004` through `0008`: sale-request idempotency fingerprinting; company-scoped sale idempotency; one-time owner controls; staff invitations; and append-only ledger, stock-movement and audit history. These follow-on migrations are source changes only and have not been applied to any remote D1 database.
 - The original core schema has nine business tables and four stock/sale triggers. The nine core business tables were verified empty in the recorded recovery snapshot.
 - The legacy `omnipoint-dev` D1 database also has zero rows in those nine business tables. Its core schema matches the new database, but the `d1_migrations` table definition differs: legacy uses `name` as its primary key; the new database has an integer `id` plus `name`. This is a migration-history difference, not proof that the databases are interchangeable.
 
@@ -67,7 +67,7 @@ The first owner is provisioned through `POST /api/bootstrap/sovereign`. This rou
 
 Provisioning sequence:
 
-1. Deploy the reviewed isolated API Worker and apply migrations `0005_append_only_history.sql`, `0006_sovereign_staff_membership_controls.sql` and `0007_staff_invitation_flow.sql` in sequence to the isolated OtyaPoint database only.
+1. Deploy the reviewed isolated API Worker and apply migrations `0005_company_scoped_sale_idempotency.sql`, `0006_sovereign_staff_membership_controls.sql`, `0007_staff_invitation_flow.sql` and `0008_append_only_history.sql` in sequence to the isolated OtyaPoint database only.
 2. Configure a unique high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` as a Worker secret, never as a Wrangler variable or browser value.
 3. The owner calls `POST /api/bootstrap/sovereign` with their own Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
 4. Remove the bootstrap secret immediately after successful owner provisioning. The audit marker keeps the route consumed after the secret is removed.
@@ -80,7 +80,7 @@ The invited person must sign in to their own Otya Account and accept with `POST 
 
 Private invitation delivery requires the same high-entropy `OTYAPOINT_INVITE_SERVICE_TOKEN` value to be configured as a Worker secret on both the OtyaPoint API and Otya Auth Worker. The Auth Worker additionally requires the service-binding marker `x-otya-service: otyapoint`; the shared secret is checked with constant-time digest comparison. This secret is intentionally not present in Git or Wrangler variables. Until the matching secrets and the isolated API deployment are configured, invitation emails fail closed and the invitation reports delivery failure.
 
-Membership listings omit the underlying Otya identity subject and remain company-scoped. Migration `0005_append_only_history.sql` also prevents edits or deletes to financial ledger entries, stock movements and audit events; corrections must be represented by compensating records. Invitation creation, delivery outcome, acceptance, status/role changes, revocation and bootstrap are recorded in the business audit stream. Do not provision either secret or run owner bootstrap against production during the development freeze.
+Membership listings omit the underlying Otya identity subject and remain company-scoped. Migration `0008_append_only_history.sql` also prevents edits or deletes to financial ledger entries, stock movements and audit events; corrections must be represented by compensating records. Invitation creation, delivery outcome, acceptance, status/role changes, revocation and bootstrap are recorded in the business audit stream. Do not provision either secret or run owner bootstrap against production during the development freeze.
 
 ## Money movement and production
 
