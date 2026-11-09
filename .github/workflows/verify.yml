@@ -1,4 +1,4 @@
-name: Verify OmniPoint
+name: Verify OtyaPoint
 
 on:
   pull_request:
@@ -45,6 +45,8 @@ jobs:
 
       - name: Test OmniPoint core schema and stock invariants
         run: python3 cloudflare-api/tests/test_core_schema.py
+      - name: Test agency cash and float book invariants
+        run: python3 cloudflare-api/tests/test_agency_cash_float_book.py
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
