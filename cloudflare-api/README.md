@@ -59,6 +59,21 @@ The current Next.js dashboard still imports Supabase Auth and Prisma. Its existi
 
 Migrate the dashboard behind a server-side API boundary in reviewed steps. Do not remove legacy packages or migrations until all runtime imports, login/session flows, staff provisioning, and UI data paths are migrated and tested. Do not add Supabase, Appwrite, or Vercel to the new runtime unless explicitly approved.
 
+## Owner bootstrap and staff administration
+
+The first owner is provisioned through `POST /api/bootstrap/sovereign`. This route is unavailable unless a high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` has been configured as a Cloudflare Worker secret. The request must also carry a valid Otya Auth bearer token. The route can be consumed only once per company; a durable audit record and a partial unique index prevent a second bootstrap.
+
+Provisioning sequence:
+
+1. Complete the reviewed isolated Worker deployment and apply migration `0006_sovereign_staff_membership_controls.sql` only to the approved isolated database.
+2. Store a unique bootstrap secret directly as a Worker secret; never place it in Wrangler vars, GitHub source, or the browser.
+3. The owner calls `POST /api/bootstrap/sovereign` with their Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
+4. Remove the bootstrap secret from the Worker immediately after the first successful owner provisioning. The durable audit record keeps the bootstrap endpoint consumed even after later owner status changes.
+
+After bootstrap, the active SOVEREIGN owner can list staff with `GET /api/staff`, create a PENDING membership with `POST /api/staff`, and change a membership with `PATCH /api/staff/:id`. Creating a staff membership requires the target user's own valid Otya Auth bearer token in the JSON `identityToken` field; the API verifies it server-side and derives the identity subject and email from Otya Auth. Role grants are limited to ATTENDANT, MANAGER, MANAGING_DIRECTOR and CHAIRMAN. The SOVEREIGN role cannot be granted through the staff endpoint. Memberships begin as PENDING and must be explicitly activated by the owner.
+
+Staff listings omit the underlying Otya identity subject and are always company-scoped. Membership creation, role/status changes and owner bootstrap write audit records atomically with the related D1 mutation. Do not configure the bootstrap secret or run the bootstrap request against production during the development freeze.
+
 ## Money movement and production
 
 Agency-provider transactions remain disabled. No public endpoint, custom domain, live payment-provider operation, or production cutover is enabled by this configuration. Before activation, verify signed provider callbacks, replay protection, idempotency, timeout/retry/reversal handling, reconciliation, balanced ledger invariants, backup schedule/restore drills, alert delivery, and applicable Uganda compliance requirements.
