@@ -55,7 +55,7 @@ Worker error responses use a stable JSON error code and may include a requestId.
 
 ## Readiness and release gates
 
-The source-level API contract includes the owner bootstrap and staff invitation routes, but end-to-end frontend connectivity is **not yet certified**. Migrations `0006_sovereign_staff_membership_controls.sql`, `0007_staff_invitation_flow.sql` and `0008_append_only_history.sql` are source-only and have not been applied to remote D1. `0008` makes ledger, stock-movement and audit history append-only; corrections must use compensating/new records. Before connecting a public deployment, maintainers must verify:
+The source-level API contract includes the owner bootstrap and staff invitation routes, but end-to-end frontend connectivity is **not yet certified**. Migrations `0004_sale_request_fingerprint.sql` through `0009_agency_cash_float_book.sql` are checked into source but remain unapplied on the inspected remote D1 database (whose recorded migration history currently ends at `0003_staff_profile.sql`). These changes add stronger sale idempotency, owner/staff membership and invitation controls, append-only financial/audit history, and a local cash/float book. The cash/float book is operator-recorded and unverified; it does not call a provider or enable live money movement. Before connecting a public deployment, maintainers must verify:
 
 - an approved Worker deployment and service binding/origin configuration;
 - a real sign-in flow and securely provisioned staff membership;

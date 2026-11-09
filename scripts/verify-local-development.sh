@@ -48,7 +48,7 @@ python3 - <<'PY'
 import json
 from pathlib import Path
 data = json.loads(Path('/tmp/otyapoint-local-health.json').read_text())
-assert data.get('service') == 'omnipoint-api', data
+assert data.get('service') == 'otyapoint-api', data
 assert data.get('status') == 'ok', data
 assert data.get('schemaReady') is True, data
 print('PASS: local D1 migrations and OtyaPoint schema readiness')

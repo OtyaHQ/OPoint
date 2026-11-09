@@ -26,7 +26,7 @@ The regular `wrangler.toml` identifies the isolated OtyaPoint API configuration 
 
 ## Implemented backend foundations
 
-Financial and operational history is protected at the database layer: migration `0008_append_only_history.sql` prevents updates/deletes to ledger entries, stock movements and audit events. Corrections must be recorded as compensating/new events. Migrations `0004` through `0008` are checked into source but have not been applied to remote D1.
+Financial and operational history is protected at the database layer: migration `0008_append_only_history.sql` prevents updates/deletes to ledger entries, stock movements and audit events. Corrections must be recorded as compensating/new events. Migrations `0004` through `0009` are checked into source but have not been applied to the inspected remote D1 database. This includes sale-idempotency controls, owner/staff invitation controls, append-only history and the local cash/float book.
 
 
 The Cloudflare API source includes authenticated product and stock routes, cash-only retail sale posting with idempotency and ledger/audit records, a one-time secret-gated first-owner bootstrap, and owner-controlled email invitations. Staff invitations use hashed one-time tokens, require the invited person's own verified Otya identity and matching email, expire, can be revoked or resent, and create PENDING memberships. The owner must explicitly activate a membership.
