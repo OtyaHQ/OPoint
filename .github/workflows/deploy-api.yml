@@ -37,7 +37,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: '22.23.4'
           package-manager-cache: false
 
       - name: Install locked dependencies
@@ -59,7 +59,7 @@ jobs:
           npm run build
 
       - name: Validate production Worker bundle without deploying
-        run: npx --yes wrangler@4.158.0 deploy --dry-run --config wrangler.toml
+        run: npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.toml
 
   deploy:
     name: Deploy private OtyaPoint API Worker
@@ -77,7 +77,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: '22.23.4'
           package-manager-cache: false
 
       - name: Install locked dependencies
@@ -100,7 +100,7 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4.158.0 deploy --config wrangler.toml
+        run: npx --yes wrangler@4.159.0 deploy --config wrangler.toml
 
       - name: Record deployment boundary
         run: |
