@@ -7,8 +7,8 @@ OtyaPoint is the shop and financial-agency operations product within the Otya ec
 - Wrangler config names the API Worker `otyapoint-api` and binds only D1 `DB` to `otyapoint-db` plus the private Otya Auth service binding. R2, KV and Queues are deliberately not active Worker dependencies because the current API does not use them.
 - `workers_dev = false`; no custom route is configured. **The API Worker is not confirmed deployed.**
 - The isolated D1 recovery snapshot recorded the original applied baseline `0001_core.sql`, `0002_company_scope.sql`, and `0003_staff_profile.sql`; it contained three migration records at the time of the 2026-10-30 snapshot.
-- The current source includes migrations `0004` through `0009`: sale fingerprinting, company-scoped sale idempotency, owner controls, staff invitations, append-only financial/audit history, and the local agency cash/float book. The inspected `otyapoint-db` migration history ends at `0003_staff_profile.sql`; these follow-on migrations are source changes only and have not been applied to that remote database.
-- The original core schema has nine business tables and four stock/sale triggers. The nine core business tables were verified empty in the recorded recovery snapshot.
+- Production `otyapoint-db` now records migrations `0001–0009`; migrations `0004–0009` were applied on 2026-11-09 after the same sequence succeeded on `otyapoint-restore-verify-20261030`.
+- Production schema verification found all 13 expected `omni_*` business tables and all required sale-idempotency, sovereign-owner, staff-invitation, append-only ledger/stock/audit, and cash/float indexes/triggers. All 13 business tables currently contain zero rows. This is the D1 schema state only; no OtyaPoint API Worker has been deployed.
 - The legacy `omnipoint-dev` D1 database also has zero rows in those nine business tables. Its core schema matches the new database, but the `d1_migrations` table definition differs: legacy uses `name` as its primary key; the new database has an integer `id` plus `name`. This is a migration-history difference, not proof that the databases are interchangeable.
 
 ## Backup and restore evidence (2026-10-30)
@@ -24,7 +24,7 @@ Verification databases:
 - `otyapoint-restore-verify-20261030`
 - `omnipoint-restore-verify-20261030`
 
-These are point-in-time recovery snapshots, not an automated backup schedule. Keep the snapshots and restore databases until a separate retention/cleanup review. Do not delete either source D1 database based on matching empty business-table counts alone.
+The 2026-10-30 exports remain the last verified independent recovery snapshots. The restore-verification database `otyapoint-restore-verify-20261030` was subsequently used to test migrations `0004–0009`; its migration ledger now also ends at `0009`, with the same zero business-record state. These snapshots are point-in-time recovery evidence, not an automated backup schedule. The scheduled backup workflow was added in PR #120 and merged, but its first run still requires a dedicated Cloudflare D1 Write + R2 Read/Write API token and repository variable/secret. Keep the original R2 objects and both verification databases until retention and cleanup are separately reviewed.
 
 ## Local development
 
@@ -37,7 +37,7 @@ npm run check:worker
 
 Local SQLite tests validate schema invariants; they do not prove Cloudflare D1 concurrency, deployed authentication behavior, or production readiness.
 
-Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bind a retail-sale idempotency key to its canonical payment method and normalized product/quantity list. Legacy rows remain unverified because their original request payload was not stored; retries for those rows intentionally return HTTP 409 rather than falsely claiming an exact replay. Apply only to the isolated development database after reviewing the target. Do not apply remotely or to production as part of this change.
+Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bind a retail-sale idempotency key to its canonical payment method and normalized product/quantity list. Legacy rows remain unverified because their original request payload was not stored; retries for those rows intentionally return HTTP 409 rather than falsely claiming an exact replay. It is now applied in both production and the isolated restore-verification database. Existing historical rows were empty at migration time.
 
 ## API surface
 
@@ -69,7 +69,7 @@ The first owner is provisioned through `POST /api/bootstrap/sovereign`. This rou
 
 Provisioning sequence:
 
-1. Deploy the reviewed isolated API Worker and apply migrations `0004_sale_request_fingerprint.sql` through `0009_agency_cash_float_book.sql` in order to the isolated OtyaPoint database only. Migration `0009` creates a local operator-recorded cash/float book; it does not enable provider execution.
+1. Migrations `0004–0009` are already applied to production `otyapoint-db` and the isolated restore-verification database. Do not rerun them. Migration `0009` creates a local operator-recorded cash/float book; it does not enable provider execution. The dedicated API Worker has not yet been deployed.
 2. Configure a unique high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` as a Worker secret, never as a Wrangler variable or browser value.
 3. The owner calls `POST /api/bootstrap/sovereign` with their own Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
 4. Remove the bootstrap secret immediately after successful owner provisioning. The audit marker keeps the route consumed after the secret is removed.
@@ -82,7 +82,7 @@ The invited person must sign in to their own Otya Account and accept with `POST 
 
 Private invitation delivery requires the same high-entropy `OTYAPOINT_INVITE_SERVICE_TOKEN` value to be configured as a Worker secret on both the OtyaPoint API and Otya Auth Worker. The Auth Worker additionally requires the service-binding marker `x-otya-service: otyapoint`; the shared secret is checked with constant-time digest comparison. This secret is intentionally not present in Git or Wrangler variables. Until the matching secrets and the isolated API deployment are configured, invitation emails fail closed and the invitation reports delivery failure.
 
-Membership listings omit the underlying Otya identity subject and remain company-scoped. Migration `0008_append_only_history.sql` prevents updates/deletes to financial ledger entries, stock movements and audit events; corrections must use compensating records. Invitation creation, delivery outcome, acceptance, status/role changes, revocation and bootstrap are recorded in the business audit stream. Do not provision either secret or run owner bootstrap against production during the development freeze.
+Membership listings omit the underlying Otya identity subject and remain company-scoped. Migration `0008_append_only_history.sql` prevents updates/deletes to financial ledger entries, stock movements and audit events; corrections must use compensating records. Invitation creation, delivery outcome, acceptance, status/role changes, revocation and bootstrap are recorded in the business audit stream. Do not provision either secret or run owner bootstrap until the Otya Auth session, service-token exchange, first-owner identity, and deployment route are verified. The current production staff-membership table is empty; no owner has been bootstrapped.
 
 ## Money movement and production
 
