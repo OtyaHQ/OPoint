@@ -25,22 +25,6 @@ database_name = "otyapoint-local"
 database_id = "11111111-1111-4111-8111-111111111111"
 migrations_dir = "cloudflare-api/migrations"
 
-[[r2_buckets]]
-binding = "PRIVATE_FILES"
-bucket_name = "otyapoint-local-private"
-
-[[r2_buckets]]
-binding = "BACKUPS"
-bucket_name = "otyapoint-local-backups"
-
-[[kv_namespaces]]
-binding = "CACHE"
-id = "0123456789abcdef0123456789abcdef"
-
-[[queues.producers]]
-binding = "JOBS"
-queue = "otyapoint-local-jobs"
-
 [[services]]
 binding = "AUTH"
 service = "otyapoint-auth-local"
