@@ -1,67 +1,85 @@
-# OmniPoint implementation gates
+# OtyaPoint implementation and release gates
 
-## Stage 0 — Isolated foundation
+This file records verified implementation status, not a claim that the full product is production-ready. The customer-facing product name is **OtyaPoint**; historical source/table prefixes remain for compatibility.
 
-- [x] Dedicated OmniPoint D1, R2, KV and queue resources provisioned.
-- [x] Separate OmniPoint migration-test D1 exists.
-- [x] Existing Otya resources inventoried and protected from reuse.
-- [ ] Dedicated OmniPoint Worker configuration and schema reviewed.
-- [ ] Contract tests run against the isolated test database.
-- [ ] No production route or custom domain attached.
+## Stage 0 — Cloudflare foundation and database
+
+- [x] Dedicated OtyaPoint production D1, private R2 buckets, KV and queue resources inventoried.
+- [x] Dedicated production Worker configuration reviewed; it disables `workers.dev` and has no public route.
+- [x] Production D1 records migrations `0001–0009`.
+- [x] Migrations `0004–0009` validated first on the isolated restore-verification database, then applied to production after checking the production baseline.
+- [x] Production schema has 13 OtyaPoint business tables, 36 indexes and 18 triggers.
+- [x] All 13 production business tables were verified empty when migrations were applied.
+- [x] A 2026-11-09 schema-and-ledger snapshot was uploaded to private R2, SHA-256 read-back verified, and restored into a new isolated EU D1 database.
+- [ ] The dedicated `otyapoint-api` Worker is deployed.
+- [ ] The scheduled full D1 export workflow has completed its first successful run.
+- [ ] Recurring recovery alerts and retention policy are established.
 
 ## Stage 1 — Identity and staff authorization
 
-- [ ] Confirm Otya Auth token issuer, signature algorithm/key, issuer, audience, expiry and revocation behavior from source and deployed configuration.
-- [ ] Add OmniPoint local staff membership, company, branch, role, status and approval records.
-- [ ] Require server-side identity-to-staff mapping on every protected API route.
-- [ ] Add rate limiting and audit events for authentication failures and privileged operations.
-- [ ] Never accept role or actor identity from request bodies.
+- [x] Worker source verifies bearer access tokens through the shared `otya-auth` service binding.
+- [x] Every protected business route maps the verified identity subject to an active company-scoped OtyaPoint staff membership.
+- [x] Local roles, membership status, company scope and owner bootstrap constraints are present in the schema.
+- [x] One-time staff invitations use random tokens whose SHA-256 digests are stored; acceptance requires the invitee's own verified Otya identity and matching email.
+- [x] Invitation and owner bootstrap paths fail closed if their required secrets are absent.
+- [ ] Production API Worker has the owner-bootstrap and shared Auth notification secrets provisioned.
+- [ ] First owner is provisioned through the verified one-time flow.
+- [ ] A same-origin dashboard session BFF is implemented with HttpOnly/Secure/SameSite cookies, CSRF/origin checks, refresh rotation, logout revocation and replay tests.
+- [ ] Browser/device sign-in and least-privilege access tests pass against the deployed services.
 
-## Stage 2 — Retail inventory and POS
+## Stage 2 — Retail inventory and point of sale
 
-- [ ] Product/SKU create, update, deactivate and read endpoints.
-- [ ] Opening stock and adjustment endpoints with mandatory reason and before/after audit data.
-- [ ] Atomic sale posting: receipt, sale lines, stock deduction, stock movements, balanced retail ledger and audit record in one transaction/batch.
-- [ ] Duplicate request and duplicate receipt tests.
-- [ ] Insufficient stock, inactive product, malformed amount, concurrency and rollback tests.
-- [ ] Returns/refunds are compensating entries, never edits to historical ledger rows.
-- [ ] EFRIS remains NOT_CONFIGURED until an approved integration and test credentials exist.
+- [x] Source includes company-scoped product and stock APIs.
+- [x] Source includes cash-only retail sale posting with request fingerprinting and idempotency.
+- [x] Sale-line triggers enforce company/product availability and stock deduction.
+- [x] Append-only ledger, stock-movement and audit protections are implemented in D1.
+- [x] Worker source and migration/runtime tests pass in CI and the isolated D1 restore.
+- [ ] API Worker is deployed and end-to-end health/auth/inventory/sales checks pass.
+- [ ] Dashboard has migrated from legacy Prisma/Supabase inventory and sales writes to the OtyaPoint API.
+- [ ] Receipt, returns/refunds, reporting and reconciliation workflows are verified against real shop procedures.
+- [ ] EFRIS integration is separately approved and validated; it remains unconfigured.
 
-## Stage 3 — Agency operations
+## Stage 3 — Mobile-money and agency operations
 
-- [ ] Record requests with idempotency keys and provider status state machine.
-- [ ] Verify provider callbacks cryptographically and/or query provider status server-side.
-- [ ] Do not mark cash-in/out, airtime or bill payment as successful based only on a browser response.
-- [ ] Separate cash, provider float, commission and settlement accounts in the agency ledger.
-- [ ] Add reversal/refund, duplicate callback and timeout/unknown-state tests.
-- [ ] No provider execution until contracts, credentials, settlement and compliance readiness are verified.
+- [x] Local operator-recorded cash/float accounts, agency operations, account movements and append-only guards are implemented in D1.
+- [x] Read-only agency overview/readiness source routes distinguish local operator records from provider-confirmed transactions.
+- [x] An InterSwitch bills sandbox client exists as an isolated adapter and is not wired into customer-facing routes.
+- [x] MTN MoMo, Airtel Money, Interswitch and Quickteller are kept distinct in the provider readiness model.
+- [ ] Provider write routes remain disabled until credentials, partner approval, signature/callback verification, status enquiry, replay protection, idempotency, settlement, reversals and reconciliation are independently validated.
+- [ ] Provider IP allow-list/stable egress requirements and applicable Uganda obligations are reviewed before live money movement.
+- [ ] No provider result is represented as successful without verified provider status.
 
 ## Stage 4 — Jobs, storage, backups and observability
 
-- [ ] Use queue events only after the business transaction commits; consumer idempotency and DLQ retry policy verified.
-- [ ] Keep R2 private; enforce signed/short-lived access and content-type/size validation.
-- [ ] Add scheduled encrypted backup exports, manifest/checksum, retention, alerting and restore drill.
-- [ ] Add operational metrics that do not leak customer data, credentials or payment references.
-- [ ] Test account-level recovery from an independent export; D1 Time Travel alone is not an independent backup.
+- [x] Private R2 buckets exist for OtyaPoint business files and backups.
+- [x] 2026-10-30 historical SQL snapshots remain preserved.
+- [x] A 2026-11-09 post-migration schema-and-ledger snapshot has been uploaded, read-back checksum verified and restored to a disposable EU D1 verification database.
+- [x] D1 backup automation code is merged and has unit tests for export polling, bounded downloads, checksum and safe key generation.
+- [ ] Configure the dedicated GitHub Actions Cloudflare account ID and backup API token, then confirm a scheduled/manual full D1 export succeeds and is read-back verified.
+- [ ] Define retention, failure alerts and recurring restore drills.
+- [ ] Queue consumers, retries and dead-letter handling are connected only after each handler is idempotent and tested.
 
 ## Stage 5 — Dashboard and shared ecosystem integration
 
-- [ ] Replace Supabase/Prisma runtime calls with the approved OmniPoint API only after backend contracts are stable.
-- [ ] Keep frontend demo fixtures on preview-only routes; never mix them with production data.
-- [ ] Integrate Otya Auth using server-side token validation and local role mapping.
-- [ ] Give Next only explicit, audited, scoped actions; no direct D1 access.
-- [ ] Publish public documentation through OtyaHub only after reviewing it for private infrastructure and sensitive details.
-- [ ] Verify mobile/touch UX, poor-network handling, receipts, keyboard workflows and accessible errors.
+- [x] The dashboard's old locally minted identity-token bridge is disabled and fails closed.
+- [x] A frontend/backend connection contract documents the required BFF, API routes and failure states.
+- [x] A gated private API deployment workflow has been added to `.github/workflows/deploy-api.yml`.
+- [ ] Deploy the API Worker from protected `main` after the production credentials are stored in the OtyaPoint GitHub production environment.
+- [ ] Deploy the Next.js dashboard on a verified Cloudflare runtime and add a private service binding to `otyapoint-api` and `otya-auth`.
+- [ ] Implement secure same-origin login/session and server-side API proxy routes.
+- [ ] Replace dashboard Supabase/Prisma business-data paths only after the replacement is end-to-end verified and existing records are reconciled.
+- [ ] Make the overview, POS, inventory, staff, agency, reconciliation and reports screens display only authoritative API responses.
+- [ ] Verify touch/mobile UX, poor-network handling, receipts, empty/error states and accessibility.
+- [ ] Publish public-safe integration documentation through OtyaHub.
 
-## Stage 6 — Release gates
+## Stage 6 — Release decision
 
-A stage is not complete until all are true:
+A public or financial release is blocked until all applicable items above are complete. A green build, a deployed private Worker, or a healthy database alone is not proof of a functioning customer-facing OtyaPoint system.
 
-1. CI build, lint, type checks, schema validation and tests pass.
-2. A second review confirms the security boundary and data ownership.
-3. Backups and restore have been tested for any stateful release.
-4. Logs and alerts are active without exposing secrets or personal data.
-5. No provider operation is represented as successful without provider truth.
-6. Rollback steps are written and rehearsed.
-7. The exact deployment target and affected resources are known.
-8. Production activation is a separate controlled step; a preview deployment is not a production cutover.
+Production changes must retain:
+1. CI, type, schema, security and integration checks.
+2. Independently verified recovery points and restore procedures for stateful changes.
+3. No browser access to D1, service tokens or provider credentials.
+4. Company/branch authorization and append-only audit/ledger controls.
+5. Provider truth as the only authority for payment completion.
+6. A known deployment target, rollback plan and monitored operational owner.
