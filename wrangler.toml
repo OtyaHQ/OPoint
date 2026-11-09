@@ -6,6 +6,9 @@ compatibility_date = "2026-10-28"
 workers_dev = false
 keep_vars = false
 
+[vars]
+OTYAPOINT_COMPANY_ID = "omnipoint-default"
+
 [observability]
 enabled = true
 
