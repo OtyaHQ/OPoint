@@ -20,6 +20,7 @@
     "test:sale-route-idempotency": "node --test cloudflare-api/tests/sale-route-idempotency.test.mjs",
     "test:auth-boundary": "node --test cloudflare-api/tests/auth-boundary.test.mjs",
     "test:agency-list": "node --test cloudflare-api/tests/agency-list.test.mjs",
+    "test:agency-readiness": "node --test cloudflare-api/tests/agency-readiness.test.mjs",
     "test:legacy-products-bridge": "node --test tests/legacy-products-bridge.test.mjs"
   },
   "dependencies": {
