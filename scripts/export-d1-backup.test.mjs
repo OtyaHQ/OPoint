@@ -1,136 +1,88 @@
-import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import test from 'node:test'
-import {
-  buildBackupObjectKey,
-  downloadD1Dump,
-  startAndPollD1Export,
-} from './export-d1-backup.mjs'
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildBackupObjectKey, exportOtyaPointD1 } from "./export-d1-backup.mjs";
 
-test('D1 export starts once and polls using the returned bookmark', async () => {
-  const calls = []
-  const fetchImpl = async (url, options) => {
-    calls.push({ url: String(url), body: JSON.parse(options.body), authorization: options.headers.authorization })
-    if (calls.length === 1) {
-      return new Response(JSON.stringify({ success: true, result: { at_bookmark: 'bookmark-1' } }))
-    }
-    return new Response(JSON.stringify({
-      success: true,
-      result: { signed_url: 'https://downloads.example/backup.sql?signature=opaque', filename: 'backup.sql' },
-    }))
-  }
+const base = {
+  accountId: "6c76d2a9e5f95d5f9b393e97374d9afb",
+  apiToken: "private-test-token",
+  date: "2026-11-09",
+  runId: "42600000000",
+  attempt: "1",
+};
 
-  const result = await startAndPollD1Export({
-    accountId: 'account-1',
-    databaseId: 'database-1',
-    apiToken: 'test-token',
-    fetchImpl,
-    sleepImpl: async () => {},
-    maxPolls: 2,
-    pollIntervalMs: 0,
-  })
+async function withDir(fn) {
+  const dir = await mkdtemp(join(tmpdir(), "otyapoint-d1-backup-"));
+  try { await fn(dir); } finally { await rm(dir, { recursive: true, force: true }); }
+}
 
-  assert.equal(result.bookmark, 'bookmark-1')
-  assert.equal(result.filename, 'backup.sql')
-  assert.equal(result.signedUrl, 'https://downloads.example/backup.sql?signature=opaque')
-  assert.equal(calls.length, 2)
-  assert.deepEqual(calls[0].body, { output_format: 'polling' })
-  assert.deepEqual(calls[1].body, { current_bookmark: 'bookmark-1' })
-  assert.equal(calls[0].authorization, 'Bearer test-token')
-})
-
-test('D1 export refuses a response without a bookmark', async () => {
-  await assert.rejects(
-    startAndPollD1Export({
-      accountId: 'account-1',
-      databaseId: 'database-1',
-      apiToken: 'test-token',
-      fetchImpl: async () => new Response(JSON.stringify({ success: true, result: {} })),
-      maxPolls: 1,
-      pollIntervalMs: 0,
-    }),
-    /did not return an export bookmark/,
-  )
-})
-
-test('D1 export stops on Cloudflare API errors without exposing request credentials', async () => {
-  await assert.rejects(
-    startAndPollD1Export({
-      accountId: 'account-1',
-      databaseId: 'database-1',
-      apiToken: 'secret-value',
-      fetchImpl: async () => new Response(JSON.stringify({
-        success: false,
-        errors: [{ message: 'permission denied' }],
-      }), { status: 403 }),
-    }),
-    error => error.message.includes('HTTP 403')
-      && error.message.includes('permission denied')
-      && !error.message.includes('secret-value'),
-  )
-})
-
-test('D1 export fails closed when polling does not finish within its bound', async () => {
-  let requests = 0
-  await assert.rejects(
-    startAndPollD1Export({
-      accountId: 'account-1',
-      databaseId: 'database-1',
-      apiToken: 'test-token',
-      fetchImpl: async () => {
-        requests += 1
-        return new Response(JSON.stringify({ success: true, result: { at_bookmark: 'bookmark-1' } }))
+test("uses official remote Wrangler D1 export and verifies its SQL file", async () => {
+  await withDir(async backupDir => {
+    let called;
+    const result = await exportOtyaPointD1({
+      ...base,
+      backupDir,
+      runWrangler: async (command, args, options) => {
+        called = { command, args, options };
+        await writeFile(args[args.indexOf("--output") + 1], "CREATE TABLE products (id TEXT);\\n", { flag: "wx" });
       },
-      sleepImpl: async () => {},
-      maxPolls: 2,
-      pollIntervalMs: 0,
-    }),
-    /not ready after 2 polling attempts/,
-  )
-  assert.equal(requests, 3)
-})
+    });
+    assert.equal(called.command, "npx");
+    assert.ok(called.args.includes("d1"));
+    assert.ok(called.args.includes("export"));
+    assert.ok(called.args.includes("--remote"));
+    assert.equal(called.args[called.args.indexOf("--config") + 1], "wrangler.toml");
+    assert.equal(called.options.env.CLOUDFLARE_API_TOKEN, "private-test-token");
+    assert.equal(called.args.includes("private-test-token"), false);
+    assert.equal(result.objectKey, buildBackupObjectKey(base.date, base.runId, base.attempt));
+    assert.equal(result.bytes, Buffer.byteLength("CREATE TABLE products (id TEXT);\\n"));
+    assert.equal(await readFile(result.filePath, "utf8"), "CREATE TABLE products (id TEXT);\\n");
+    assert.match(result.sha256, /^[a-f0-9]{64}$/);
+  });
+});
 
-test('D1 dump downloads with a SHA-256 digest', async () => {
-  const directory = await mkdtemp(join(tmpdir(), 'otya-d1-backup-test-'))
-  const filePath = join(directory, 'backup.sql')
-  try {
-    const result = await downloadD1Dump({
-      url: 'https://downloads.example/backup.sql?signature=opaque',
-      filePath,
-      fetchImpl: async () => new Response('CREATE TABLE test (id INTEGER);'),
-    })
-    const contents = await readFile(filePath, 'utf8')
-    assert.equal(contents, 'CREATE TABLE test (id INTEGER);')
-    assert.equal(result.bytes, Buffer.byteLength(contents))
-    assert.match(result.sha256, /^[a-f0-9]{64}$/)
-  } finally {
-    await rm(directory, { recursive: true, force: true })
-  }
-})
+test("fails closed when account or token configuration is missing", async () => {
+  await withDir(async backupDir => {
+    await assert.rejects(exportOtyaPointD1({
+      ...base, accountId: "", backupDir,
+      runWrangler: async () => { throw new Error("should not run"); },
+    }), /CLOUDFLARE_ACCOUNT_ID/);
+    await assert.rejects(exportOtyaPointD1({
+      ...base, apiToken: "", backupDir,
+      runWrangler: async () => { throw new Error("should not run"); },
+    }), /CLOUDFLARE_API_TOKEN/);
+  });
+});
 
-test('D1 dump rejects non-HTTPS URLs and oversized exports before upload', async () => {
-  await assert.rejects(
-    downloadD1Dump({ url: 'http://downloads.example/backup.sql', filePath: '/tmp/nope.sql' }),
-    /must be HTTPS/,
-  )
-  await assert.rejects(
-    downloadD1Dump({
-      url: 'https://downloads.example/backup.sql',
-      filePath: '/tmp/nope.sql',
-      maxBytes: 4,
-      fetchImpl: async () => new Response('12345', { headers: { 'content-length': '5' } }),
-    }),
-    /exceeds the configured 4-byte safety limit/,
-  )
-})
+test("fails and removes temporary file when Wrangler does not produce export", async () => {
+  await withDir(async backupDir => {
+    await assert.rejects(exportOtyaPointD1({
+      ...base, backupDir, runWrangler: async () => {},
+    }), /ENOENT|no such file/i);
+  });
+});
 
-test('R2 object paths include a date and unique workflow run attempt', () => {
+test("rejects oversize SQL dumps and deletes unsafe partial exports", async () => {
+  await withDir(async backupDir => {
+    await assert.rejects(exportOtyaPointD1({
+      ...base, backupDir,
+      runWrangler: async (_command, args) => {
+        const target = args[args.indexOf("--output") + 1];
+        await writeFile(target, "");
+        const { truncate } = await import("node:fs/promises");
+        await truncate(target, 512 * 1024 * 1024 + 1);
+      },
+    }), /512 MiB safety limit/);
+  });
+});
+
+test("object keys are unique per workflow attempt and path-safe", () => {
   assert.equal(
-    buildBackupObjectKey('2026-11-09', '42600000000', '2'),
-    'd1/otyapoint-db/2026-11-09/backup-42600000000-2.sql',
-  )
-  assert.throws(() => buildBackupObjectKey('../x', '1', '1'), /YYYY-MM-DD/)
-  assert.throws(() => buildBackupObjectKey('2026-11-09', '../1', '1'), /digits only/)
-})
+    buildBackupObjectKey("2026-11-09", "42600000000", "2"),
+    "d1/otyapoint-db/2026-11-09/backup-42600000000-2.sql",
+  );
+  assert.throws(() => buildBackupObjectKey("../x", "1", "1"), /YYYY-MM-DD/);
+  assert.throws(() => buildBackupObjectKey("2026-11-09", "../1", "1"), /digits only/);
+});
