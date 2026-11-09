@@ -37,7 +37,7 @@ function makeEnv({ staff = manager, totals = [3, 1, 1], providers = [], authResp
             if (this.sql.includes("FROM omni_staff_memberships")) return staff;
             if (this.sql.includes("COUNT(*) AS total")) {
               const index = this.sql.includes("provider_status IN ('DRAFT','PENDING')") ? 1
-                : this.sql.includes("provider_status IN ('UNKNOWN','RECONCILIATION_REQUIRED')") ? 2 : 0;
+                : this.sql.includes("provider_status = 'UNKNOWN'") ? 2 : 0;
               return { total: totals[index] };
             }
             throw new Error("Unexpected first query: " + this.sql);
