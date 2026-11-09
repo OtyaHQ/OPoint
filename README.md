@@ -30,6 +30,10 @@ The Cloudflare API source includes authenticated product and stock routes, cash-
 
 The agency-provider write route remains disabled. No MTN, Airtel, Interswitch or Quickteller provider request is enabled by this source change.
 
+## Frontend integration contract
+
+See [the frontend–backend connection contract](docs/FRONTEND_BACKEND_CONNECTION_CONTRACT.md) for the approved API boundary, neutral empty/error states, session migration requirements and the current unconnected dashboard status.
+
 ## Migration status and data safety
 
 The Next.js dashboard still contains a legacy Prisma/PostgreSQL and Supabase authentication/data path. Its Cloudflare inventory bridge is deliberately disabled because the previous locally minted token was not an approved Otya Auth identity contract. Do not treat the legacy dashboard and the new Cloudflare API as one migrated system yet.
