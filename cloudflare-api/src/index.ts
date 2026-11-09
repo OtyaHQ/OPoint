@@ -729,7 +729,7 @@ export default {
             "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND provider_status IN ('DRAFT','PENDING')"
           ).bind(staff.company_id).first<{ total: number }>(),
           env.DB.prepare(
-            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND provider_status IN ('UNKNOWN','RECONCILIATION_REQUIRED')"
+            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND provider_status = 'UNKNOWN'"
           ).bind(staff.company_id).first<{ total: number }>(),
           env.DB.prepare(
             "SELECT provider, COUNT(*) AS transactions FROM omni_agency_transactions WHERE company_id=?1 GROUP BY provider ORDER BY provider"
@@ -742,7 +742,8 @@ export default {
           mode: "LOCAL_RECORDS_ONLY",
           transactionCreation: "DISABLED_UNTIL_PROVIDER_ADAPTERS_AND_CONTROLS_ARE_VERIFIED",
           providers: [
-            { id: "interswitch_quickteller", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
+            { id: "interswitch_marketplace_routing", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
+            { id: "quickteller_business", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
             { id: "airtel_money", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
             { id: "mtn_mobile_money", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" }
           ],

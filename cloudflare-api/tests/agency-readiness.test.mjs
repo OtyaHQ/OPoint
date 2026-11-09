@@ -37,7 +37,7 @@ function makeEnv({ staff = manager, totals = [3, 1, 1], providers = [], authResp
             if (this.sql.includes("FROM omni_staff_memberships")) return staff;
             if (this.sql.includes("COUNT(*) AS total")) {
               const index = this.sql.includes("provider_status IN ('DRAFT','PENDING')") ? 1
-                : this.sql.includes("provider_status IN ('UNKNOWN','RECONCILIATION_REQUIRED')") ? 2 : 0;
+                : this.sql.includes("provider_status = 'UNKNOWN'") ? 2 : 0;
               return { total: totals[index] };
             }
             throw new Error("Unexpected first query: " + this.sql);
@@ -82,7 +82,8 @@ test("manager receives company-scoped operational counts and disabled provider s
   assert.equal(body.liveMoneyEnabled, false);
   assert.equal(body.transactionCreation, "DISABLED_UNTIL_PROVIDER_ADAPTERS_AND_CONTROLS_ARE_VERIFIED");
   assert.deepEqual(body.providers.map(provider => [provider.id, provider.status, provider.adapter]), [
-    ["interswitch_quickteller", "NOT_READY", "NOT_IMPLEMENTED"],
+    ["interswitch_marketplace_routing", "NOT_READY", "NOT_IMPLEMENTED"],
+    ["quickteller_business", "NOT_READY", "NOT_IMPLEMENTED"],
     ["airtel_money", "NOT_READY", "NOT_IMPLEMENTED"],
     ["mtn_mobile_money", "NOT_READY", "NOT_IMPLEMENTED"]
   ]);

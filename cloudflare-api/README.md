@@ -51,7 +51,7 @@ Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bin
 - `POST /api/bootstrap/sovereign`: one-time secret-gated first-owner provisioning.
 - `GET /api/staff`, `PATCH /api/staff/:id`: owner-controlled staff access administration.
 - `GET/POST /api/staff/invitations`, `POST /api/staff/invitations/accept`, and owner resend/revoke actions: email-bound staff invitation flow; accepted memberships remain PENDING until owner activation.
-- `GET /api/agency-readiness`: manager-only, company-scoped local agency counts; reports provider adapters as not ready and performs no provider calls or writes.
+- `GET /api/agency-readiness`: manager-only, company-scoped local agency counts; reports Interswitch Marketplace Routing and Quickteller Business separately, alongside Airtel Money and MTN Mobile Money; all remain not ready and the route performs no provider calls or writes.
 - `POST /api/agency-transactions`: disabled; no provider call is made and no transaction is represented as successful.
 
 ## Identity and dashboard integration
