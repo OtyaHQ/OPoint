@@ -7,7 +7,7 @@ OtyaPoint is the shop and financial-agency operations product within the Otya ec
 - Wrangler config names the API Worker `otyapoint-api` and binds only D1 `DB` to `otyapoint-db` plus the private Otya Auth service binding. R2, KV and Queues are deliberately not active Worker dependencies because the current API does not use them.
 - `workers_dev = false`; no custom route is configured. **The API Worker is not confirmed deployed.**
 - The isolated D1 recovery snapshot recorded the original applied baseline `0001_core.sql`, `0002_company_scope.sql`, and `0003_staff_profile.sql`; it contained three migration records at the time of the 2026-10-30 snapshot.
-- The current development branch includes migrations `0004` through `0008`: sale fingerprinting, company-scoped sale idempotency, owner controls, staff invitations and append-only financial/audit history. These follow-on migrations are source changes only and have not been applied to any remote D1 database.
+- The current source includes migrations `0004` through `0009`: sale fingerprinting, company-scoped sale idempotency, owner controls, staff invitations, append-only financial/audit history, and the local agency cash/float book. The inspected `otyapoint-db` migration history ends at `0003_staff_profile.sql`; these follow-on migrations are source changes only and have not been applied to that remote database.
 - The original core schema has nine business tables and four stock/sale triggers. The nine core business tables were verified empty in the recorded recovery snapshot.
 - The legacy `omnipoint-dev` D1 database also has zero rows in those nine business tables. Its core schema matches the new database, but the `d1_migrations` table definition differs: legacy uses `name` as its primary key; the new database has an integer `id` plus `name`. This is a migration-history difference, not proof that the databases are interchangeable.
 
@@ -41,7 +41,7 @@ Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bin
 
 ## API surface
 
-- `GET /health`: schema readiness only.
+- `GET /health`: schema readiness only. Returns ready only when the complete current table/index/trigger contract is present, including staff invitations, append-only financial/audit guards, and the local agency cash/float book; partial schema returns HTTP 503.
 - `GET /api/me`: verified Otya identity mapped to active local staff membership.
 - `GET /api/products`: authenticated inventory read.
 - `POST /api/products`: manager-authorized product creation with audit record.
@@ -69,7 +69,7 @@ The first owner is provisioned through `POST /api/bootstrap/sovereign`. This rou
 
 Provisioning sequence:
 
-1. Deploy the reviewed isolated API Worker and apply migrations `0005_company_scoped_sale_idempotency.sql`, `0006_sovereign_staff_membership_controls.sql`, `0007_staff_invitation_flow.sql` and `0008_append_only_history.sql` in sequence to the isolated OtyaPoint database only.
+1. Deploy the reviewed isolated API Worker and apply migrations `0004_sale_request_fingerprint.sql` through `0009_agency_cash_float_book.sql` in order to the isolated OtyaPoint database only. Migration `0009` creates a local operator-recorded cash/float book; it does not enable provider execution.
 2. Configure a unique high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` as a Worker secret, never as a Wrangler variable or browser value.
 3. The owner calls `POST /api/bootstrap/sovereign` with their own Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
 4. Remove the bootstrap secret immediately after successful owner provisioning. The audit marker keeps the route consumed after the secret is removed.
