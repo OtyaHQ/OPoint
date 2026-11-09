@@ -63,7 +63,7 @@ jobs:
 
   deploy:
     name: Deploy private OtyaPoint API Worker
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.confirm == 'DEPLOY'
+    if: github.ref == 'refs/heads/main' && ((github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY') || (github.event_name == 'push' && contains(github.event.head_commit.message, '[DEPLOY]')))
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -88,28 +88,13 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          OTYAPOINT_BOOTSTRAP_SECRET: ${{ secrets.OTYAPOINT_BOOTSTRAP_SECRET }}
-          OTYAPOINT_INVITE_SERVICE_TOKEN: ${{ secrets.OTYAPOINT_INVITE_SERVICE_TOKEN }}
         run: |
           set -euo pipefail
           test -n "$CLOUDFLARE_ACCOUNT_ID"
           test -n "$CLOUDFLARE_API_TOKEN"
-          test "${#OTYAPOINT_BOOTSTRAP_SECRET}" -ge 32
-          test "${#OTYAPOINT_INVITE_SERVICE_TOKEN}" -ge 32
-          echo "Production credentials are present; values are never printed."
-
-      - name: Configure owner bootstrap and shared Auth notification secrets
-        working-directory: .
-        shell: bash
-        env:
-          OTYAPOINT_BOOTSTRAP_SECRET: ${{ secrets.OTYAPOINT_BOOTSTRAP_SECRET }}
-          OTYAPOINT_INVITE_SERVICE_TOKEN: ${{ secrets.OTYAPOINT_INVITE_SERVICE_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          printf '%s' "$OTYAPOINT_BOOTSTRAP_SECRET" | npx --yes wrangler@4.158.0 secret put OTYAPOINT_BOOTSTRAP_SECRET --config wrangler.toml
-          printf '%s' "$OTYAPOINT_INVITE_SERVICE_TOKEN" | npx --yes wrangler@4.158.0 secret put OTYAPOINT_INVITE_SERVICE_TOKEN --config wrangler.toml
+          grep -q 'secret_name = "OTYAPOINT_INVITE_SERVICE_TOKEN"' wrangler.toml
+          grep -q 'secret_name = "OTYAPOINT_BOOTSTRAP_SECRET"' wrangler.toml
+          echo "Cloudflare deployment credentials are present; application secrets are centrally managed by Cloudflare Secrets Store."
 
       - name: Deploy the private Worker
         env:
