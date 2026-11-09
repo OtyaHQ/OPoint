@@ -15,7 +15,6 @@ concurrency:
 
 jobs:
   prune:
-    if: github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'cleanup: DELETE_ALL_NON_MAIN_BRANCHES')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -55,7 +54,7 @@ jobs:
           const marker = await request('/contents/.github/branch-cleanup.trigger?ref=main')
           if (!marker || marker.encoding !== 'base64') throw new Error('One-time cleanup marker is missing or unreadable.')
           const markerValue = Buffer.from(marker.content.replace(/\n/g, ''), 'base64').toString('utf8').trim()
-          if (markerValue !== 'DELETE_ALL_NON_MAIN_BRANCHES') throw new Error('The one-time cleanup marker does not match.')
+          if (markerValue !== 'DELETE_ALL_NON_MAIN_BRANCHES') throw new Error('The one-time cleanup marker does not match the exact approved value.')
           const branches = []
           for (let page = 1; page <= 20; page += 1) {
             const batch = await request(`/branches?per_page=100&page=${page}`)
@@ -77,15 +76,4 @@ jobs:
           const remaining = (verify || []).map(branch => branch.name).filter(name => name !== 'main')
           if (remaining.length) throw new Error(`Branch cleanup verification failed; remaining non-main branches: ${remaining.join(', ')}`)
           console.log('Verified: main is the only remaining branch.')
-          async function removeTemporaryFile(path, message) {
-            try {
-              const encoded = path.split('/').map(encodeURIComponent).join('/')
-              const file = await request(`/contents/${encoded}?ref=main`)
-              if (!file?.sha) return
-              await request(`/contents/${encoded}`, { method:'DELETE', body:JSON.stringify({message,sha:file.sha,branch:'main'}) })
-              console.log(`Removed temporary file ${path}`)
-            } catch (error) { console.log(`Could not remove ${path}: ${error.message}`) }
-          }
-          await removeTemporaryFile('.github/branch-cleanup.trigger', 'chore: consume one-time branch cleanup marker')
-          await removeTemporaryFile('.github/workflows/branch-cleanup-once.yml', 'chore: retire one-time branch cleanup workflow')
           NODE
