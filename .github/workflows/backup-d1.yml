@@ -1,15 +1,6 @@
 name: Backup OtyaPoint D1 to private R2
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/backup-d1.yml'
-      - 'scripts/export-d1-backup.mjs'
-      - 'scripts/export-d1-backup.test.mjs'
-      - 'docs/D1_BACKUP_AUTOMATION.md'
-  schedule:
-    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
