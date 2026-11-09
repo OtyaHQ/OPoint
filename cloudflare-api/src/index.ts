@@ -761,6 +761,57 @@ export default {
         });
       }
 
+      if (request.method === "GET" && url.pathname === "/api/agency-overview") {
+        // Read-only operations summary. Managers see company records; other
+        // staff see only records they created. Only provider-confirmed records
+        // contribute to the confirmed amount and commission totals.
+        const scopeSql = canManage(staff)
+          ? "company_id = ?1"
+          : "company_id = ?1 AND actor_id = ?2";
+        const scopeValues: unknown[] = [staff.company_id];
+        if (!canManage(staff)) scopeValues.push(staff.id);
+
+        const [totals, recent] = await Promise.all([
+          env.DB.prepare(
+            `SELECT COUNT(*) AS transaction_count,
+                    COALESCE(SUM(CASE WHEN provider_status = 'SUCCEEDED' THEN amount ELSE 0 END), 0) AS confirmed_amount,
+                    COALESCE(SUM(CASE WHEN provider_status = 'SUCCEEDED' THEN commission ELSE 0 END), 0) AS confirmed_commission,
+                    COALESCE(SUM(CASE WHEN provider_status IN ('PENDING','UNKNOWN') THEN 1 ELSE 0 END), 0) AS needs_reconciliation,
+                    COALESCE(SUM(CASE WHEN provider_status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failed_count
+               FROM omni_agency_transactions WHERE ${scopeSql}`
+          ).bind(...scopeValues).first<{
+            transaction_count: number;
+            confirmed_amount: number;
+            confirmed_commission: number;
+            needs_reconciliation: number;
+            failed_count: number;
+          }>(),
+          env.DB.prepare(
+            `SELECT id, reference, transaction_type, provider, provider_status,
+                    amount, commission, currency, created_at, updated_at
+               FROM omni_agency_transactions
+              WHERE ${scopeSql}
+              ORDER BY created_at DESC
+              LIMIT 10`
+          ).bind(...scopeValues).all()
+        ]);
+
+        return json({
+          source: "LOCAL_D1_RECORDS_ONLY",
+          currency: "UGX",
+          transactions: {
+            count: totals?.transaction_count ?? 0,
+            providerConfirmedAmount: totals?.confirmed_amount ?? 0,
+            providerConfirmedCommission: totals?.confirmed_commission ?? 0,
+            needsReconciliation: totals?.needs_reconciliation ?? 0,
+            failed: totals?.failed_count ?? 0
+          },
+          recent: recent.results,
+          scope: canManage(staff) ? "company" : "own",
+          requestId: rid
+        });
+      }
+
       if (request.method === "GET" && url.pathname === "/api/agency-transactions") {
         const type = url.searchParams.get("type");
         const status = url.searchParams.get("status");
