@@ -331,50 +331,144 @@ export default {
         return json({ data: result.results, requestId: rid });
       }
 
-      // Only the active sovereign owner may add staff. The target must present
-      // a valid Otya Account access token, so a browser cannot invent an
-      // identity subject or grant access to an arbitrary account.
-      if (request.method === "POST" && url.pathname === "/api/staff") {
+      // Staff administration is invitation-based. Owners never ask another user
+      // to share an Otya bearer token; the invitee accepts with their own login.
+      if (request.method === "GET" && url.pathname === "/api/staff/invitations") {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
+        const result = await env.DB.prepare(
+          "SELECT id,email,display_name,branch_id,role,agent_id,status,delivery_status,expires_at,accepted_staff_id,accepted_at,created_at,updated_at FROM omni_staff_invitations WHERE company_id=?1 ORDER BY created_at DESC LIMIT 250"
+        ).bind(staff.company_id).all();
+        return json({ data: result.results, requestId: rid });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/staff/invitations") {
         if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
         const body = await parseBody(request);
         if (isBodyResponse(body)) return body;
-        const targetToken = safeText(body.identityToken, 8192);
+        const email = safeText(body.email, 254).toLowerCase();
         const role = safeText(body.role, 32) as Role;
-        const displayName = safeText(body.displayName, 120);
+        const displayName = safeText(body.displayName, 120) || email.split("@")[0] || "OtyaPoint Staff";
         const branchId = body.branchId == null ? null : safeText(body.branchId, 64);
         const agentId = body.agentId == null ? null : safeText(body.agentId, 40).toUpperCase();
-        if (!targetToken.startsWith("Bearer ") || !assignableRoles.includes(role)) {
-          return json({ error: "identity_token_and_assignable_role_required" }, 400);
+        if (!validEmail(email) || !assignableRoles.includes(role)) {
+          return json({ error: "valid_email_and_assignable_role_required" }, 400);
         }
         if (body.branchId != null && !branchId) return json({ error: "invalid_branch_id" }, 400);
         if (agentId && !/^[A-Z0-9][A-Z0-9._-]{1,39}$/.test(agentId)) return json({ error: "invalid_agent_id" }, 400);
-        const identity = await verifyOtyaIdentity(targetToken, env);
-        if (!identity) return json({ error: "target_identity_verification_failed" }, 401);
-        if (identity.user_id === staff.identity_subject) return json({ error: "owner_membership_already_exists" }, 409);
+        if (staff.email && staff.email.toLowerCase() === email) return json({ error: "owner_cannot_invite_self" }, 409);
 
-        const duplicate = await env.DB.prepare(
-          "SELECT id FROM omni_staff_memberships WHERE identity_subject=?1 LIMIT 1"
-        ).bind(identity.user_id).first<{ id: string }>();
-        if (duplicate) return json({ error: "staff_membership_already_exists" }, 409);
+        const memberExists = await env.DB.prepare(
+          "SELECT id FROM omni_staff_memberships WHERE company_id=?1 AND lower(email)=?2 LIMIT 1"
+        ).bind(staff.company_id, email).first<{ id: string }>();
+        if (memberExists) return json({ error: "staff_membership_already_exists" }, 409);
+        const invitationExists = await env.DB.prepare(
+          "SELECT id FROM omni_staff_invitations WHERE company_id=?1 AND lower(email)=?2 AND status='PENDING' LIMIT 1"
+        ).bind(staff.company_id, email).first<{ id: string }>();
+        if (invitationExists) return json({ error: "pending_invitation_already_exists" }, 409);
 
-        const memberId = uuid();
-        const memberName = displayName || identity.email?.split("@")[0] || "OtyaPoint Staff";
+        const invitationId = uuid();
+        const token = newInvitationToken();
+        const tokenDigest = await sha256Hex(token);
+        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
         try {
           await env.DB.batch([
             env.DB.prepare(
-              "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,created_by,display_name,email,agent_id) VALUES (?1,?2,?3,?4,?5,'PENDING',?6,?7,?8,?9)"
-            ).bind(memberId, identity.user_id, staff.company_id, branchId, role, staff.id, memberName, identity.email, agentId),
+              "INSERT INTO omni_staff_invitations (id,company_id,email,display_name,branch_id,role,agent_id,token_digest,status,delivery_status,invited_by,expires_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'PENDING','PENDING',?9,?10)"
+            ).bind(invitationId, staff.company_id, email, displayName, branchId, role, agentId, tokenDigest, staff.id, expiresAt),
             env.DB.prepare(
-              "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'CREATE_STAFF_MEMBERSHIP','STAFF_MEMBERSHIP',?3,'Owner created a pending staff membership',?4,?5,?6)"
-            ).bind(uuid(), staff.id, memberId, JSON.stringify({ role, status: "PENDING", branchId, agentId }), rid, staff.company_id),
+              "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'CREATE_STAFF_INVITATION','STAFF_INVITATION',?3,'Owner created an email-bound staff invitation',?4,?5,?6)"
+            ).bind(uuid(), staff.id, invitationId, JSON.stringify({ email, role, branchId, agentId, expiresAt }), rid, staff.company_id),
           ]);
         } catch (error) {
           if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
-            return json({ error: "staff_membership_or_agent_id_conflict" }, 409);
+            return json({ error: "pending_invitation_conflict" }, 409);
           }
           throw error;
         }
-        return json({ data: { id: memberId, displayName: memberName, email: identity.email, agentId, branchId, role, status: "PENDING" }, requestId: rid }, 201);
+
+        const sent = await deliverStaffInvitation(env, { email, displayName, role, token, expiresAt });
+        const deliveryStatus = sent ? "SENT" : "FAILED";
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE omni_staff_invitations SET delivery_status=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND company_id=?3"
+          ).bind(deliveryStatus, invitationId, staff.company_id),
+          env.DB.prepare(
+            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,?3,'STAFF_INVITATION',?4,?5,?6,?7,?8)"
+          ).bind(uuid(), staff.id, sent ? "DELIVER_STAFF_INVITATION" : "STAFF_INVITATION_DELIVERY_FAILED", invitationId, sent ? "Invitation accepted by the Otya email service" : "Invitation email delivery failed", JSON.stringify({ deliveryStatus }), rid, staff.company_id),
+        ]);
+        return json({
+          data: { id: invitationId, email, displayName, role, branchId, agentId, status: "PENDING", deliveryStatus, expiresAt },
+          ...(sent ? {} : { message: "Invitation was saved but email delivery failed. Use the resend action after resolving the mail service issue." }),
+          requestId: rid,
+        }, sent ? 201 : 202);
+      }
+
+      const invitationAction = url.pathname.match(/^\/api\/staff\/invitations\/([^/]+)\/(resend|revoke)$/);
+      if (request.method === "POST" && invitationAction) {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
+        const invitationId = safeText(invitationAction[1], 64);
+        const action = invitationAction[2];
+        const invitation = await env.DB.prepare(
+          "SELECT id,email,display_name,role,branch_id,agent_id,status,expires_at FROM omni_staff_invitations WHERE id=?1 AND company_id=?2 LIMIT 1"
+        ).bind(invitationId, staff.company_id).first<{
+          id: string; email: string; display_name: string; role: Role;
+          branch_id: string | null; agent_id: string | null; status: string; expires_at: string;
+        }>();
+        if (!invitation) return json({ error: "invitation_not_found" }, 404);
+        if (invitation.status !== "PENDING") return json({ error: "invitation_not_pending" }, 409);
+
+        if (action === "revoke") {
+          await env.DB.batch([
+            env.DB.prepare(
+              "UPDATE omni_staff_invitations SET status='REVOKED',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND company_id=?2 AND status='PENDING'"
+            ).bind(invitationId, staff.company_id),
+            env.DB.prepare(
+              "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'REVOKE_STAFF_INVITATION','STAFF_INVITATION',?3,'Owner revoked the pending invitation',?4,?5,?6)"
+            ).bind(uuid(), staff.id, invitationId, JSON.stringify({ status: "REVOKED" }), rid, staff.company_id),
+          ]);
+          return json({ data: { id: invitationId, status: "REVOKED" }, requestId: rid });
+        }
+
+        const expiration = Date.parse(invitation.expires_at);
+        if (!Number.isFinite(expiration) || expiration <= Date.now()) {
+          await env.DB.prepare(
+            "UPDATE omni_staff_invitations SET status='EXPIRED',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND company_id=?2 AND status='PENDING'"
+          ).bind(invitationId, staff.company_id).run();
+          return json({ error: "invitation_expired" }, 410);
+        }
+
+        const token = newInvitationToken();
+        const tokenDigest = await sha256Hex(token);
+        const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE omni_staff_invitations SET token_digest=?1,expires_at=?2,delivery_status='PENDING',updated_at=CURRENT_TIMESTAMP WHERE id=?3 AND company_id=?4 AND status='PENDING'"
+          ).bind(tokenDigest, expiresAt, invitationId, staff.company_id),
+          env.DB.prepare(
+            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'RESEND_STAFF_INVITATION','STAFF_INVITATION',?3,'Owner rotated the one-time invitation token',?4,?5,?6)"
+          ).bind(uuid(), staff.id, invitationId, JSON.stringify({ expiresAt }), rid, staff.company_id),
+        ]);
+        const sent = await deliverStaffInvitation(env, {
+          email: invitation.email,
+          displayName: invitation.display_name,
+          role: invitation.role,
+          token,
+          expiresAt,
+        });
+        const deliveryStatus = sent ? "SENT" : "FAILED";
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE omni_staff_invitations SET delivery_status=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND company_id=?3"
+          ).bind(deliveryStatus, invitationId, staff.company_id),
+          env.DB.prepare(
+            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,?3,'STAFF_INVITATION',?4,?5,?6,?7,?8)"
+          ).bind(uuid(), staff.id, sent ? "DELIVER_STAFF_INVITATION" : "STAFF_INVITATION_DELIVERY_FAILED", invitationId, sent ? "Replacement invitation accepted by Otya email service" : "Replacement invitation email delivery failed", JSON.stringify({ deliveryStatus, expiresAt }), rid, staff.company_id),
+        ]);
+        return json({ data: { id: invitationId, status: "PENDING", deliveryStatus, expiresAt }, requestId: rid }, sent ? 200 : 202);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/staff") {
+        return json({ error: "staff_invitation_required", invitationEndpoint: "/api/staff/invitations" }, 410);
       }
 
       // Membership changes are deliberately owner-only. SOVEREIGN role
