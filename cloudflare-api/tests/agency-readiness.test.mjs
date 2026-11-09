@@ -82,7 +82,8 @@ test("manager receives company-scoped operational counts and disabled provider s
   assert.equal(body.liveMoneyEnabled, false);
   assert.equal(body.transactionCreation, "DISABLED_UNTIL_PROVIDER_ADAPTERS_AND_CONTROLS_ARE_VERIFIED");
   assert.deepEqual(body.providers.map(provider => [provider.id, provider.status, provider.adapter]), [
-    ["interswitch_quickteller", "NOT_READY", "NOT_IMPLEMENTED"],
+    ["interswitch_marketplace_routing", "NOT_READY", "NOT_IMPLEMENTED"],
+    ["quickteller_business", "NOT_READY", "NOT_IMPLEMENTED"],
     ["airtel_money", "NOT_READY", "NOT_IMPLEMENTED"],
     ["mtn_mobile_money", "NOT_READY", "NOT_IMPLEMENTED"]
   ]);
