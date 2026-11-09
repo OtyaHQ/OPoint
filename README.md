@@ -42,6 +42,10 @@ python3 migration/d1/test_schema.py
 python3 cloudflare-api/tests/test_core_schema.py
 ```
 
+## Owner and staff provisioning
+
+The Cloudflare API now contains a one-time, secret-gated owner bootstrap and owner-controlled staff membership endpoints. The bootstrap requires both Otya Auth verification and a separately stored high-entropy Worker secret; it is not enabled until that secret is provisioned. Staff memberships are company-scoped, begin in PENDING state, and are activated explicitly by the owner. Agency-provider writes remain disabled.
+
 ## Cloudflare API work
 
 - `wrangler.toml` is the single configuration and points only to the isolated `omnipoint-dev` database and development resources.
