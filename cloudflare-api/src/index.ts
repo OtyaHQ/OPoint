@@ -82,6 +82,44 @@ async function matchesBootstrapSecret(provided: string, expected: string): Promi
   return difference === 0;
 }
 
+async function sha256Hex(value: string): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)));
+  return Array.from(digest).map(byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function newInvitationToken(): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function validEmail(value: string): boolean {
+  return value.length <= 254 && /^[^\\s@<>]+@[^\\s@<>]+\\.[^\\s@<>]+$/.test(value);
+}
+
+async function deliverStaffInvitation(
+  env: Env,
+  invitation: { email: string; displayName: string; role: Role; token: string; expiresAt: string },
+): Promise<boolean> {
+  if (!env.AUTH) return false;
+  try {
+    const response = await env.AUTH.fetch(new Request("https://auth/internal/notifications/omnipoint/staff-invitation", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-otya-service": "otyapoint",
+      },
+      body: JSON.stringify(invitation),
+      signal: AbortSignal.timeout(10000),
+    }));
+    if (!response.ok) return false;
+    const result = await response.json() as { accepted?: boolean };
+    return result.accepted === true;
+  } catch {
+    return false;
+  }
+}
+
 async function authenticate(request: Request, env: Env): Promise<Staff | Response> {
   const header = request.headers.get("authorization") || "";
   if (!header.startsWith("Bearer ") || header.length > 8192) return json({ error: "unauthorized" }, 401);
