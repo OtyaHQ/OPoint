@@ -20,7 +20,7 @@ On 2026-10-30, SQL snapshots for both `otyapoint-db` and `omnipoint-dev` were up
 
 On 2026-11-09, migrations `0004–0009` were applied successfully to `otyapoint-restore-verify-20261030` and then to production `otyapoint-db`. Production now records migrations `0001–0009`, contains all 13 expected business tables and required integrity objects, and has zero business rows in all 13 tables. The restore-verification database is now a post-migration test copy, not a pristine baseline.
 
-The 2026-10-30 R2 SQL snapshots remain the last verified independent exports. PR #120 added a scheduled backup workflow with SHA-256 read-back verification, but its first execution still requires the dedicated GitHub Actions Cloudflare API token and account-ID repository variable. Retention, failure alerting, and recurring restore drills are not yet established.
+The 2026-10-30 R2 SQL snapshots remain preserved. On 2026-11-09, a fresh post-migration schema-and-ledger snapshot was written to `otyapoint-backups/d1/otyapoint-db/2026-11-09/post-migration-schema-snapshot.sql` (22,711 bytes; SHA-256 `3a088cc0162ed347343e7873f0c5558f1f13e73296a955b5d76c194236bffba1`). The R2 object was read back and its byte count and SHA-256 matched exactly. All 13 OtyaPoint business tables were confirmed empty when captured. The snapshot was restored into a newly created isolated EU D1 database `otyapoint-restore-verify-20261109`; verification found all nine migration-ledger records, 13 business tables, 36 indexes, 18 triggers, and zero business rows. This is a schema-and-ledger recovery snapshot, not a recurring full D1 export. PR #120's scheduled export workflow remains unverified until its dedicated GitHub Actions Cloudflare API token and account-ID variable are configured and a scheduled/manual export succeeds. Retention and failure alerting are not yet established.
 
 ## 3. Data preservation and canonical database
 
@@ -36,7 +36,7 @@ Verified current state (2026-11-09): `otyapoint-db` is the production OtyaPoint 
 ## 4. Identity, staff access, and owner recovery
 
 - Verify the Otya Auth token contract, issuer, audience, expiry, revocation, and service-to-service authentication expectations.
-- The existing dashboard bridge currently mints a local HS256 token and sends it to Otya Auth `/auth/verify`. That contract is unverified; do not enable it in production.
+- The former local HS256 bridge was retired. The current `/api/bridge/products` handler deliberately fails closed with HTTP 503 until a server-side Otya Auth session and staff-membership exchange is implemented. Do not reintroduce locally minted identity tokens.
 - Ensure a valid Otya identity does not grant OtyaPoint access without an active local staff membership.
 - Test least-privilege roles, company scoping, disabled staff, expired/revoked sessions, and denied requests.
 - Create the first manager through a reviewed, authenticated administrative procedure. Do not create a public bootstrap endpoint, store passwords in SQL, or grant a role solely because an email address matches.
@@ -54,7 +54,8 @@ Verified current state (2026-11-09): `otyapoint-db` is the production OtyaPoint 
 
 ## 6. Private preview and operational monitoring
 
-- Deploy only to a restricted preview without changing DNS, public routes, or the existing customer-facing site.
+- The dedicated API deploy workflow now exists at `.github/workflows/deploy-api.yml`; it validates the mainline release, requires explicit `DEPLOY`, and deploys with `workers_dev=false` and no custom route. It is not yet run because production Worker credentials and the bootstrap/invitation secrets must be provisioned in the OtyaPoint GitHub production environment.
+- Deploy only to a restricted private Worker without changing DNS, public routes, or the existing customer-facing site.
 - Verify required bindings and secret presence without printing secret values.
 - Test health, identity, authorization, inventory, staff, stock adjustments, cash-sale idempotency, ledger balance, and rollback behavior.
 - Confirm logs and traces redact sensitive values, and verify alert routing with a controlled non-production alert.
