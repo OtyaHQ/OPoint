@@ -1,6 +1,6 @@
 # OtyaPoint build and operational status
 
-Last verified: 2026-10-30.
+Last verified: 2026-11-09.
 
 ## Architecture decision
 
@@ -19,7 +19,7 @@ Last verified: 2026-10-30.
 - D1 `omnipoint-dev`, UUID `2c4de5d4-6898-4768-9a60-091bca7779b5`, EU jurisdiction. Preserve until its role is formally retired.
 - D1 `otya-auth-db` and `otya-store-db` are shared ecosystem resources; do not repurpose or delete them.
 - R2 `otyapoint-private` and `otyapoint-backups` are dedicated OtyaPoint buckets.
-- The backup bucket now contains verified point-in-time SQL snapshots for both OtyaPoint databases; see `cloudflare-api/README.md` for object keys and hashes.
+- The backup bucket contains verified point-in-time SQL snapshots for both OtyaPoint databases. PR #120 added a daily R2 backup workflow with SHA-256 read-back verification, but its first run requires the dedicated GitHub Actions Cloudflare API token and account-ID repository variable; see `docs/D1_BACKUP_AUTOMATION.md`.
 - The snapshots were restored into isolated EU D1 verification databases: `otyapoint-restore-verify-20261030` and `omnipoint-restore-verify-20261030`.
 - KV `otyapoint-dev-cache` retains namespace ID `69ca8a463e60410d907749d4e863faf4`.
 - Queues `otyapoint-dev-jobs` and `otyapoint-dev-jobs-dlq` exist; no consumer should be attached until retry and DLQ behavior are tested.
@@ -27,7 +27,7 @@ Last verified: 2026-10-30.
 
 ## D1 state and differences
 
-Both `otyapoint-db` and `omnipoint-dev` have nine core business tables, four stock/sale triggers, and zero rows in the nine core business tables. Both have three recorded migrations. Their business schemas match by object definitions, but the migration-history table differs:
+Production `otyapoint-db` now has 13 OtyaPoint business tables and the required sale-idempotency, owner/staff invitation, append-only history, and agency cash/float integrity objects. All 13 business tables currently contain zero rows. Its migration ledger was verified through `0009_agency_cash_float_book.sql` on 2026-11-09. `omnipoint-dev` remains a separate legacy database with its earlier schema and migration history. The two migration-history table definitions differ:
 - `otyapoint-db`: `d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, applied_at ...)`
 - `omnipoint-dev`: `d1_migrations(name TEXT PRIMARY KEY, applied_at ...)`
 
@@ -42,7 +42,7 @@ Do not delete either database or treat their migration histories as interchangea
 ## Deployment and application state
 
 - Root `wrangler.toml` targets `otyapoint-api` and `otyapoint-db`.
-- `workers_dev=false`; no custom route is configured. A direct read-only Cloudflare account inventory on 2026-10-30 listed only `otya-auth`, `otya-core`, and `otya-next`; the `otyapoint-api` deployment lookup returned 404 (Worker does not exist) in the inspected account.
+- `workers_dev=false`; no custom route is configured. The latest live Cloudflare inventory still lists only `otya-auth`, `otya-core`, and `otya-next`; the `otyapoint-api` Worker is not deployed. Production D1 is schema-ready through `0009`, but the application service is not yet reachable.
 - The existing Next.js dashboard still imports Supabase Auth and Prisma and is not yet fully connected to the Cloudflare API.
 - The products bridge is now deliberately disabled with a non-cacheable 503 and regression coverage until dashboard login/session uses Otya Auth and the verified identity maps to an active D1 staff membership.
 - Agency-provider transaction execution remains disabled. No live payments or public route were enabled.
