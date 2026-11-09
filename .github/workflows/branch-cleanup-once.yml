@@ -1,0 +1,91 @@
+name: One-time branch cleanup
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/branch-cleanup.trigger'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-time-branch-cleanup-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.ref == 'refs/heads/main' && startsWith(github.event.head_commit.message, 'cleanup: DELETE_ALL_NON_MAIN_BRANCHES')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Delete every unprotected branch except main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const repo = process.env.GITHUB_REPOSITORY
+          const token = process.env.GH_TOKEN
+          if (!repo || !token) throw new Error('Missing GitHub repository or token')
+          const api = `https://api.github.com/repos/${repo}`
+          const headers = {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${token}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+            'Content-Type': 'application/json',
+          }
+          async function request(path, options = {}) {
+            const response = await fetch(`${api}${path}`, {
+              ...options,
+              headers: { ...headers, ...(options.headers || {}) },
+              signal: AbortSignal.timeout(20000),
+            })
+            if (response.status === 204) return null
+            const body = await response.text()
+            let parsed = null
+            try { parsed = body ? JSON.parse(body) : null } catch {}
+            if (!response.ok) throw new Error(`GitHub API ${options.method || 'GET'} ${path} failed (${response.status}): ${body.slice(0, 500)}`)
+            return parsed
+          }
+          const repository = await request('')
+          if (repository.default_branch !== 'main') throw new Error(`Refusing cleanup: default branch is '${repository.default_branch}', not 'main'.`)
+          const marker = await request('/contents/.github/branch-cleanup.trigger?ref=main')
+          if (!marker || marker.encoding !== 'base64') throw new Error('One-time cleanup marker is missing or unreadable.')
+          const markerValue = Buffer.from(marker.content.replace(/\n/g, ''), 'base64').toString('utf8').trim()
+          if (markerValue !== 'DELETE_ALL_NON_MAIN_BRANCHES') throw new Error('The one-time cleanup marker does not match.')
+          const branches = []
+          for (let page = 1; page <= 20; page += 1) {
+            const batch = await request(`/branches?per_page=100&page=${page}`)
+            if (!Array.isArray(batch)) throw new Error('GitHub returned an invalid branch listing.')
+            branches.push(...batch)
+            if (batch.length < 100) break
+            if (page === 20) throw new Error('Refusing cleanup: branch listing exceeded the safety pagination limit.')
+          }
+          const targets = branches.filter(branch => branch.name !== 'main')
+          const protectedBranches = targets.filter(branch => branch.protected)
+          if (protectedBranches.length) throw new Error(`Refusing cleanup: protected non-main branches remain: ${protectedBranches.map(branch => branch.name).join(', ')}`)
+          console.log(`Repository ${repo}: preserving main; deleting ${targets.length} other branch(es).`)
+          for (const branch of targets) {
+            const refPath = `/git/refs/heads/${branch.name.split('/').map(encodeURIComponent).join('/')}`
+            await request(refPath, { method: 'DELETE' })
+            console.log(`Deleted ${branch.name}`)
+          }
+          const verify = await request('/branches?per_page=100&page=1')
+          const remaining = (verify || []).map(branch => branch.name).filter(name => name !== 'main')
+          if (remaining.length) throw new Error(`Branch cleanup verification failed; remaining non-main branches: ${remaining.join(', ')}`)
+          console.log('Verified: main is the only remaining branch.')
+          async function removeTemporaryFile(path, message) {
+            try {
+              const encoded = path.split('/').map(encodeURIComponent).join('/')
+              const file = await request(`/contents/${encoded}?ref=main`)
+              if (!file?.sha) return
+              await request(`/contents/${encoded}`, { method:'DELETE', body:JSON.stringify({message,sha:file.sha,branch:'main'}) })
+              console.log(`Removed temporary file ${path}`)
+            } catch (error) { console.log(`Could not remove ${path}: ${error.message}`) }
+          }
+          await removeTemporaryFile('.github/branch-cleanup.trigger', 'chore: consume one-time branch cleanup marker')
+          await removeTemporaryFile('.github/workflows/branch-cleanup-once.yml', 'chore: retire one-time branch cleanup workflow')
+          NODE
