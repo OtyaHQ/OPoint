@@ -30,3 +30,21 @@ CREATE INDEX idx_omni_staff_invitation_company_status
 
 CREATE INDEX idx_omni_staff_invitation_expiry
   ON omni_staff_invitations(status, expires_at);
+
+-- The API marks invitation-originated membership inserts with the invitation ID
+-- and presented token digest. This trigger prevents a stale/revoked/rotated code
+-- from creating a membership even if the API read occurred before another write.
+CREATE TRIGGER omni_staff_invitation_membership_guard
+BEFORE INSERT ON omni_staff_memberships
+WHEN NEW.created_by LIKE 'staff-invitation:%'
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1
+    FROM omni_staff_invitations invitation
+    WHERE invitation.id = substr(NEW.created_by, 18, 36)
+      AND invitation.token_digest = substr(NEW.created_by, 55)
+      AND invitation.company_id = NEW.company_id
+      AND invitation.status = 'PENDING'
+      AND datetime(invitation.expires_at) > CURRENT_TIMESTAMP
+  ) THEN RAISE(ABORT, 'STAFF_INVITATION_NOT_PENDING') END;
+END;
