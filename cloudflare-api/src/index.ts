@@ -21,6 +21,8 @@ export interface Env {
   CACHE: KVNamespace;
   JOBS: Queue;
   AUTH?: { fetch(request: Request): Promise<Response> };
+  OTYAPOINT_BOOTSTRAP_SECRET?: string;
+  OTYAPOINT_COMPANY_ID?: string;
 }
 type Role = "SOVEREIGN" | "ATTENDANT" | "MANAGER" | "MANAGING_DIRECTOR" | "CHAIRMAN";
 type Staff = { id: string; identity_subject: string; company_id: string; branch_id: string | null; role: Role; status: string; display_name: string; email: string | null; agent_id: string | null; verified_email?: string | null };
@@ -157,9 +159,9 @@ export default {
 
       const companyId = safeText(env.OTYAPOINT_COMPANY_ID, 64) || "omnipoint-default";
       const existing = await env.DB.prepare(
-        "SELECT COUNT(*) AS count FROM omni_staff_memberships WHERE company_id=?1 AND role='SOVEREIGN' AND status='ACTIVE'"
-      ).bind(companyId).first<{ count: number }>();
-      if (Number(existing?.count || 0) > 0) return json({ error: "owner_already_provisioned" }, 409);
+        "SELECT id FROM omni_audit_events WHERE company_id=?1 AND action='BOOTSTRAP_OWNER' LIMIT 1"
+      ).bind(companyId).first<{ id: string }>();
+      if (existing) return json({ error: "owner_bootstrap_already_consumed" }, 409);
 
       const ownerId = uuid();
       const displayName = safeText(body.displayName, 120) || identity.email?.split("@")[0] || "OtyaPoint Owner";
@@ -270,7 +272,7 @@ export default {
       // cannot be reactivated.
       if (request.method === "PATCH" && url.pathname.startsWith("/api/staff/")) {
         if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
-        const memberId = safeText(decodeURIComponent(url.pathname.slice("/api/staff/".length)), 64);
+        const memberId = safeText(url.pathname.slice("/api/staff/".length), 64);
         if (!memberId || memberId.includes("/")) return json({ error: "invalid_staff_id" }, 400);
         if (memberId === staff.id) return json({ error: "cannot_modify_own_membership" }, 409);
         const body = await parseBody(request);
