@@ -44,7 +44,7 @@ python3 cloudflare-api/tests/test_core_schema.py
 
 ## Owner and staff provisioning
 
-The Cloudflare API now contains a one-time, secret-gated owner bootstrap and owner-controlled staff membership endpoints. The bootstrap requires both Otya Auth verification and a separately stored high-entropy Worker secret; it is not enabled until that secret is provisioned. Staff memberships are company-scoped, begin in PENDING state, and are activated explicitly by the owner. Agency-provider writes remain disabled.
+The Cloudflare API has a one-time secret-gated owner bootstrap and an email-bound staff invitation flow. Otya Auth verifies identities and sends invitations through the existing Resend transport. Invitation tokens are hashed at rest, expire, can be revoked or rotated, and create only PENDING staff memberships. The owner must activate each membership. Agency-provider writes remain disabled.
 
 ## Cloudflare API work
 
