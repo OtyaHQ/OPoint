@@ -266,7 +266,7 @@ export default {
           // so SQLite foreign-key enforcement remains valid within the batch.
           env.DB.prepare(
             "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,created_by,display_name,email,agent_id) VALUES (?1,?2,?3,?4,?5,'PENDING',?6,?7,?8,?9)"
-          ).bind(memberId, identity.user_id, invitation.company_id, invitation.branch_id, invitation.role, "staff-invitation:" + invitation.id, invitation.display_name, identity.email, invitation.agent_id),
+          ).bind(memberId, identity.user_id, invitation.company_id, invitation.branch_id, invitation.role, "staff-invitation:" + invitation.id + ":" + digest, invitation.display_name, identity.email, invitation.agent_id),
           env.DB.prepare(
             "UPDATE omni_staff_invitations SET status='ACCEPTED',accepted_staff_id=?1,accepted_at=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?3 AND status='PENDING' AND token_digest=?4"
           ).bind(memberId, requestTime, invitation.id, digest),
