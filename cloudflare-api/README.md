@@ -1,10 +1,10 @@
 # OtyaPoint Cloudflare API
 
-OtyaPoint is the shop and financial-agency operations system of Otya Hold Ltd T/A OtyaPoint. The intended runtime is Cloudflare Workers + D1 + R2 + KV + Queues, with GitHub for source control and Resend for shared transactional email where required.
+OtyaPoint is the shop and financial-agency operations system of Otya Hold Ltd T/A OtyaPoint. The Worker currently uses Cloudflare Workers + D1 and a private Otya Auth service binding. GitHub is the source-control/release system and Resend remains behind Otya Auth for transactional email. R2 backup objects remain in the account for recovery, but R2, KV and Queues are not bound to this Worker until an implemented feature needs them.
 
 ## Current verified state
 
-- Wrangler config names the API Worker `otyapoint-api`, binds D1 `DB` to `otyapoint-db`, R2 `PRIVATE_FILES` and `BACKUPS`, KV `CACHE`, queue producer `JOBS`, and the Otya Auth service binding.
+- Wrangler config names the API Worker `otyapoint-api` and binds only D1 `DB` to `otyapoint-db` plus the private Otya Auth service binding. R2, KV and Queues are deliberately not active Worker dependencies because the current API does not use them.
 - `workers_dev = false`; no custom route is configured. **The API Worker is not confirmed deployed.**
 - The isolated D1 recovery snapshot recorded the original applied baseline `0001_core.sql`, `0002_company_scope.sql`, and `0003_staff_profile.sql`; it contained three migration records at the time of the 2026-10-30 snapshot.
 - The current development branch includes migrations `0004` through `0008`: sale fingerprinting, company-scoped sale idempotency, owner controls, staff invitations and append-only financial/audit history. These follow-on migrations are source changes only and have not been applied to any remote D1 database.
@@ -99,7 +99,7 @@ npm run test:local-auth
 npm run dev:local
 ```
 
-The first config starts the OtyaPoint API with local-only D1/R2/KV/Queue simulations. The second config starts a synthetic Auth verifier and is attached through a local service binding. The synthetic verifier accepts only `Bearer otya-local-test-token` and returns the test identity `synthetic-otyapoint-local-owner`. It is not Otya Auth and must never be deployed or used for production authentication.
+The first config starts the OtyaPoint API with a local-only D1 simulation. The second config starts a synthetic Auth verifier and is attached through a local service binding. No unused R2, KV or Queue simulations are created. The synthetic verifier accepts only `Bearer otya-local-test-token` and returns the test identity `synthetic-otyapoint-local-owner`. It is not Otya Auth and must never be deployed or used for production authentication.
 
 The local bootstrap applies the checked-in migrations to Wrangler's local D1 state and upserts one synthetic `SOVEREIGN` staff membership. It inserts no business, customer, inventory, sale, cash, float, ledger or payment rows. No provider credentials or live provider adapters are configured.
 
