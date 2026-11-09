@@ -262,12 +262,14 @@ export default {
       const requestTime = new Date().toISOString();
       try {
         await env.DB.batch([
-          env.DB.prepare(
-            "UPDATE omni_staff_invitations SET status='ACCEPTED',accepted_staff_id=?1,accepted_at=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?3 AND status='PENDING' AND token_digest=?4"
-          ).bind(memberId, requestTime, invitation.id, digest),
+          // Insert the referenced membership before linking it from the invitation
+          // so SQLite foreign-key enforcement remains valid within the batch.
           env.DB.prepare(
             "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,created_by,display_name,email,agent_id) VALUES (?1,?2,?3,?4,?5,'PENDING',?6,?7,?8,?9)"
           ).bind(memberId, identity.user_id, invitation.company_id, invitation.branch_id, invitation.role, "staff-invitation:" + invitation.id, invitation.display_name, identity.email, invitation.agent_id),
+          env.DB.prepare(
+            "UPDATE omni_staff_invitations SET status='ACCEPTED',accepted_staff_id=?1,accepted_at=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?3 AND status='PENDING' AND token_digest=?4"
+          ).bind(memberId, requestTime, invitation.id, digest),
           env.DB.prepare(
             "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'ACCEPT_STAFF_INVITATION','STAFF_INVITATION',?3,'Invited Otya identity accepted the invitation',?4,?5,?6)"
           ).bind(uuid(), memberId, invitation.id, JSON.stringify({ membershipStatus: "PENDING", role: invitation.role }), rid, invitation.company_id),
