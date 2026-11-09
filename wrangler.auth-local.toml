@@ -1,0 +1,10 @@
+# LOCAL-ONLY synthetic identity verifier for OtyaPoint development.
+# It has no routes, no workers.dev endpoint, no secrets and no remote bindings.
+name = "otyapoint-auth-local"
+main = "cloudflare-api/dev-auth/index.mjs"
+compatibility_date = "2026-11-09"
+workers_dev = false
+keep_vars = false
+
+[vars]
+LOCAL_AUTH_ONLY = "true"

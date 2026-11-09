@@ -4,6 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "bash scripts/dev-local.sh",
+    "dev:local:check": "node scripts/check-local-development.mjs",
+    "test:local-auth": "node --test cloudflare-api/dev-auth/index.test.mjs",
+    "test:local-runtime": "bash scripts/verify-local-development.sh",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",

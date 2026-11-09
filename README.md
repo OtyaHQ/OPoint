@@ -42,11 +42,15 @@ python3 migration/d1/test_schema.py
 python3 cloudflare-api/tests/test_core_schema.py
 ```
 
+## Owner and staff provisioning
+
+The Cloudflare API has a one-time secret-gated owner bootstrap and an email-bound staff invitation flow. Otya Auth verifies identities and sends invitations through the existing Resend transport. Invitation tokens are hashed at rest, expire, can be revoked or rotated, and create only PENDING staff memberships. The owner must activate each membership. Agency-provider writes remain disabled.
+
 ## Cloudflare API work
 
 - `wrangler.toml` is the single configuration and points only to the isolated `omnipoint-dev` database and development resources.
 - It has `workers_dev = false`; no Worker has been deployed from this configuration, and no public route or custom domain is configured.
-- Use `npx wrangler dev --config wrangler.toml` for local development. Do not deploy until the release gates pass.
+- Use `npm run dev:local` for local development. It selects dedicated local configs, adds `--local`, and uses a synthetic Auth Worker rather than the deployed Otya Auth service. Do not use `--remote` or deploy the local configs.
 - Business routes validate Otya Auth through a service binding, then require an active local OmniPoint staff record. Browser-supplied roles are never trusted.
 - Cash POS posting is designed around a D1 batch with stock guards, stock movements, balanced retail ledger entries and audit logging. Concurrency, idempotency and rollback tests remain required.
 - Agency transactions remain disabled until provider adapters, cryptographic callback verification, status reconciliation and settlement controls are ready.
@@ -65,3 +69,24 @@ Before cutover, export and verify the approved data set, compare row counts and 
 - Do not store raw national ID numbers or identity-document images unless an approved, compliant requirement is established.
 - Never commit credentials, database URLs, signing keys, provider secrets, or production data.
 - No EFRIS, mobile-money, airtime or bill-payment integration should be represented as live until provider approval and end-to-end verification are complete.
+
+
+## Safe local development environment (2026-11-09)
+
+Use the dedicated local multi-Worker setup instead of pointing local development at the regular Wrangler config:
+
+```sh
+npm run dev:local:check
+npm run test:local-auth
+npm run dev:local
+```
+
+The local API and synthetic Auth verifier run together through Wrangler's local service binding. The API uses a local D1 database, local R2 buckets, local KV and a local Queue simulation. The mock verifier accepts only the documented synthetic local token; it does not call the deployed Otya Auth Worker. The local seed creates one synthetic staff identity only. It does not insert products, customers, sales, cash, float, ledger entries or payment records.
+
+For the full local smoke test, including schema migrations, identity-to-staff mapping and the disabled agency-payment endpoint:
+
+```sh
+npm run test:local-runtime
+```
+
+This smoke test must remain local-only. Never add `remote = true`, `--remote`, production identifiers, live secrets, custom domains or payment credentials to either local Wrangler config. The existing `wrangler.toml` remains a separate isolated Cloudflare configuration; production remains a separate, approval-gated release decision.

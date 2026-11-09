@@ -10,3 +10,7 @@ coverage/
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
+
+# Cloudflare local development state and local-only variables
+.wrangler/
+.dev.vars*

@@ -88,8 +88,17 @@ jobs:
       - name: Type-check Cloudflare Worker
         run: npm run check:worker
 
+      - name: Validate local-only Wrangler configuration
+        run: npm run dev:local:check
+
+      - name: Test synthetic local Auth verifier
+        run: npm run test:local-auth
+
+      - name: Verify isolated local multi-Worker runtime
+        run: npm run test:local-runtime
+
       - name: Validate and bundle the single Wrangler configuration without deploying
-        run: npx wrangler@4 deploy --dry-run --config wrangler.toml
+        run: npx --yes wrangler@4.158.0 deploy --dry-run --config wrangler.toml
 
       - name: Lint
         run: npm run lint
