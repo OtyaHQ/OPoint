@@ -1,7 +1,5 @@
 # LOCAL DEVELOPMENT ONLY.
-# Never deploy this file. All bindings use Wrangler's local simulations.
-# This configuration deliberately does not bind to production D1/R2/KV/Queues
-# or the deployed Otya Auth Worker.
+# Never deploy this file. It binds only a local D1 simulation and synthetic local Auth.
 
 name = "otyapoint-api-local"
 main = "cloudflare-api/src/index.ts"
