@@ -221,6 +221,78 @@ export default {
       return json({ data: { id: ownerId, displayName, email: identity.email, role: "SOVEREIGN", status: "ACTIVE" }, requestId: rid }, 201);
     }
 
+    // Invitation acceptance is an authenticated identity operation, not a staff
+    // operation: the invited user does not yet have an OmniPoint membership.
+    if (request.method === "POST" && url.pathname === "/api/staff/invitations/accept") {
+      const identity = await verifyOtyaIdentity(request.headers.get("authorization") || "", env);
+      if (!identity) return json({ error: "identity_verification_failed" }, 401);
+      if (!identity.email) return json({ error: "verified_email_required" }, 403);
+      const body = await parseBody(request);
+      if (isBodyResponse(body)) return body;
+      const token = safeText(body.token, 128).toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(token)) return json({ error: "invalid_invitation_token" }, 400);
+      const digest = await sha256Hex(token);
+      const invitation = await env.DB.prepare(
+        "SELECT id,company_id,email,display_name,branch_id,role,agent_id,status,expires_at FROM omni_staff_invitations WHERE token_digest=?1 LIMIT 1"
+      ).bind(digest).first<{
+        id: string; company_id: string; email: string; display_name: string;
+        branch_id: string | null; role: Role; agent_id: string | null;
+        status: string; expires_at: string;
+      }>();
+      if (!invitation) return json({ error: "invitation_not_found" }, 404);
+      if (invitation.status !== "PENDING") return json({ error: "invitation_not_pending" }, 409);
+      const expiration = Date.parse(invitation.expires_at);
+      if (!Number.isFinite(expiration) || expiration <= Date.now()) {
+        await env.DB.prepare(
+          "UPDATE omni_staff_invitations SET status='EXPIRED',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND status='PENDING'"
+        ).bind(invitation.id).run();
+        return json({ error: "invitation_expired" }, 410);
+      }
+      if (identity.email.toLowerCase() !== invitation.email.toLowerCase()) {
+        return json({ error: "invitation_email_mismatch" }, 403);
+      }
+      const existing = await env.DB.prepare(
+        "SELECT id FROM omni_staff_memberships WHERE identity_subject=?1 LIMIT 1"
+      ).bind(identity.user_id).first<{ id: string }>();
+      if (existing) return json({ error: "staff_membership_already_exists" }, 409);
+
+      const memberId = uuid();
+      const requestTime = new Date().toISOString();
+      try {
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE omni_staff_invitations SET status='ACCEPTED',accepted_staff_id=?1,accepted_at=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?3 AND status='PENDING' AND token_digest=?4"
+          ).bind(memberId, requestTime, invitation.id, digest),
+          env.DB.prepare(
+            "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,created_by,display_name,email,agent_id) VALUES (?1,?2,?3,?4,?5,'PENDING',?6,?7,?8,?9)"
+          ).bind(memberId, identity.user_id, invitation.company_id, invitation.branch_id, invitation.role, "staff-invitation:" + invitation.id, invitation.display_name, identity.email, invitation.agent_id),
+          env.DB.prepare(
+            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'ACCEPT_STAFF_INVITATION','STAFF_INVITATION',?3,'Invited Otya identity accepted the invitation',?4,?5,?6)"
+          ).bind(uuid(), memberId, invitation.id, JSON.stringify({ membershipStatus: "PENDING", role: invitation.role }), rid, invitation.company_id),
+          env.DB.prepare(
+            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'CREATE_STAFF_MEMBERSHIP','STAFF_MEMBERSHIP',?3,'Invitation acceptance created a pending staff membership',?4,?5,?6)"
+          ).bind(uuid(), memberId, memberId, JSON.stringify({ status: "PENDING", role: invitation.role, branchId: invitation.branch_id }), rid, invitation.company_id),
+        ]);
+      } catch (error) {
+        if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+          return json({ error: "invitation_already_accepted_or_membership_exists" }, 409);
+        }
+        throw error;
+      }
+      return json({
+        data: {
+          id: memberId,
+          displayName: invitation.display_name,
+          email: identity.email,
+          branchId: invitation.branch_id,
+          role: invitation.role,
+          status: "PENDING",
+        },
+        message: "Invitation accepted. The OtyaPoint owner must activate your membership before you can access shop operations.",
+        requestId: rid,
+      }, 201);
+    }
+
     const staff = await authenticate(request, env);
     if (isResponse(staff)) return staff;
 
