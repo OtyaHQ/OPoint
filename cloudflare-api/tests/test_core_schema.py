@@ -288,5 +288,55 @@ class OmniPointCoreSchemaTests(unittest.TestCase):
             db.close()
 
 
+    def test_ledger_stock_movements_and_audit_events_are_append_only(self):
+        self.db.execute(
+            """INSERT INTO omni_ledger_entries
+               (id, ledger_type, account_code, currency, debit, credit, source_type,
+                source_id, idempotency_key, description)
+               VALUES ('ledger-append-only', 'RETAIL', 'CASH_ON_HAND', 'UGX',
+                       100, 0, 'TEST', 'source-append-only', 'ledger-key-append-only',
+                       'Synthetic test entry')"""
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "LEDGER_APPEND_ONLY"):
+            self.db.execute(
+                "UPDATE omni_ledger_entries SET description='edited' WHERE id='ledger-append-only'"
+            )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "LEDGER_APPEND_ONLY"):
+            self.db.execute(
+                "DELETE FROM omni_ledger_entries WHERE id='ledger-append-only'"
+            )
+
+        self.add_product(product_id="p-append-only", quantity=0)
+        self.db.execute(
+            """INSERT INTO omni_stock_movements
+               (id, product_id, actor_id, movement_type, quantity_delta,
+                quantity_after, reason)
+               VALUES ('movement-append-only', 'p-append-only', 'staff-test',
+                       'OPENING', 3, 3, 'synthetic test')"""
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "STOCK_MOVEMENT_APPEND_ONLY"):
+            self.db.execute(
+                "UPDATE omni_stock_movements SET reason='edited' WHERE id='movement-append-only'"
+            )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "STOCK_MOVEMENT_APPEND_ONLY"):
+            self.db.execute(
+                "DELETE FROM omni_stock_movements WHERE id='movement-append-only'"
+            )
+
+        self.db.execute(
+            """INSERT INTO omni_audit_events
+               (id, actor_id, action, entity_type, entity_id, reason)
+               VALUES ('audit-append-only', 'staff-test', 'TEST', 'TEST_ENTITY',
+                       'entity-1', 'synthetic test')"""
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "AUDIT_EVENT_APPEND_ONLY"):
+            self.db.execute(
+                "UPDATE omni_audit_events SET reason='edited' WHERE id='audit-append-only'"
+            )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "AUDIT_EVENT_APPEND_ONLY"):
+            self.db.execute(
+                "DELETE FROM omni_audit_events WHERE id='audit-append-only'"
+            )
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
