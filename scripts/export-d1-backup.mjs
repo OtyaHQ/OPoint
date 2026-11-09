@@ -113,18 +113,18 @@ async function main() {
         `object_key=${result.objectKey}`,
         `sha256=${result.sha256}`,
         `bytes=${result.bytes}`,
-      ].join("\\n") + "\\n",
+      ].join("\n") + "\n",
       { mode: 0o600 },
     );
   }
   process.stdout.write(
-    `Prepared otyapoint-db: ${result.bytes} bytes; SHA-256 ${result.sha256}; destination otyapoint-backups/${result.objectKey}.\\n`,
+    `Prepared otyapoint-db: ${result.bytes} bytes; SHA-256 ${result.sha256}; destination otyapoint-backups/${result.objectKey}.\n`,
   );
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) {
   main().catch(error => {
-    process.stderr.write(`D1 backup export failed: ${error instanceof Error ? error.message : "unknown error"}\\n`);
+    process.stderr.write(`D1 backup export failed: ${error instanceof Error ? error.message : "unknown error"}\n`);
     process.exitCode = 1;
   });
 }
