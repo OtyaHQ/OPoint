@@ -22,6 +22,7 @@ export interface Env {
   JOBS: Queue;
   AUTH?: { fetch(request: Request): Promise<Response> };
   OTYAPOINT_BOOTSTRAP_SECRET?: string;
+  OTYAPOINT_INVITE_SERVICE_TOKEN?: string;
   OTYAPOINT_COMPANY_ID?: string;
 }
 type Role = "SOVEREIGN" | "ATTENDANT" | "MANAGER" | "MANAGING_DIRECTOR" | "CHAIRMAN";
@@ -101,13 +102,14 @@ async function deliverStaffInvitation(
   env: Env,
   invitation: { email: string; displayName: string; role: Role; token: string; expiresAt: string },
 ): Promise<boolean> {
-  if (!env.AUTH) return false;
+  if (!env.AUTH || !env.OTYAPOINT_INVITE_SERVICE_TOKEN || env.OTYAPOINT_INVITE_SERVICE_TOKEN.length < 32) return false;
   try {
     const response = await env.AUTH.fetch(new Request("https://auth/internal/notifications/omnipoint/staff-invitation", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-otya-service": "otyapoint",
+        "x-otya-service-token": env.OTYAPOINT_INVITE_SERVICE_TOKEN,
       },
       body: JSON.stringify(invitation),
       signal: AbortSignal.timeout(10000),
