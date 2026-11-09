@@ -60,7 +60,7 @@ export async function exportOtyaPointD1({
 
   try {
     const args = [
-      "--yes", "wrangler@4.158.0", "d1", "export", DATABASE.name,
+      "--yes", "wrangler@4.159.0", "d1", "export", DATABASE.name,
       "--remote",
       "--output", filePath,
       "--skip-confirmation",
