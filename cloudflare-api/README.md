@@ -61,18 +61,24 @@ Migrate the dashboard behind a server-side API boundary in reviewed steps. Do no
 
 ## Owner bootstrap and staff administration
 
-The first owner is provisioned through `POST /api/bootstrap/sovereign`. This route is unavailable unless a high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` has been configured as a Cloudflare Worker secret. The request must also carry a valid Otya Auth bearer token. The route can be consumed only once per company; a durable audit record and a partial unique index prevent a second bootstrap.
+The first owner is provisioned through `POST /api/bootstrap/sovereign`. This route is unavailable unless a high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` has been configured directly as a Cloudflare Worker secret. The request also requires a valid Otya Auth bearer token. A durable audit record and a unique partial index make the bootstrap one-time per company.
 
 Provisioning sequence:
 
-1. Complete the reviewed isolated Worker deployment and apply migration `0006_sovereign_staff_membership_controls.sql` only to the approved isolated database.
-2. Store a unique bootstrap secret directly as a Worker secret; never place it in Wrangler vars, GitHub source, or the browser.
-3. The owner calls `POST /api/bootstrap/sovereign` with their Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
-4. Remove the bootstrap secret from the Worker immediately after the first successful owner provisioning. The durable audit record keeps the bootstrap endpoint consumed even after later owner status changes.
+1. Deploy the reviewed isolated API Worker and apply migrations `0006_sovereign_staff_membership_controls.sql` and `0007_staff_invitation_flow.sql` to the isolated OtyaPoint database only.
+2. Configure a unique high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` as a Worker secret, never as a Wrangler variable or browser value.
+3. The owner calls `POST /api/bootstrap/sovereign` with their own Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
+4. Remove the bootstrap secret immediately after successful owner provisioning. The audit marker keeps the route consumed after the secret is removed.
 
-After bootstrap, the active SOVEREIGN owner can list staff with `GET /api/staff`, create a PENDING membership with `POST /api/staff`, and change a membership with `PATCH /api/staff/:id`. Creating a staff membership requires the target user's own valid Otya Auth bearer token in the JSON `identityToken` field; the API verifies it server-side and derives the identity subject and email from Otya Auth. Role grants are limited to ATTENDANT, MANAGER, MANAGING_DIRECTOR and CHAIRMAN. The SOVEREIGN role cannot be granted through the staff endpoint. Memberships begin as PENDING and must be explicitly activated by the owner.
+After bootstrap, the active SOVEREIGN owner can list staff with `GET /api/staff`, create invitations with `POST /api/staff/invitations`, list/review invitations with `GET /api/staff/invitations`, resend with `POST /api/staff/invitations/:id/resend`, revoke with `POST /api/staff/invitations/:id/revoke`, and update memberships with `PATCH /api/staff/:id`.
 
-Staff listings omit the underlying Otya identity subject and are always company-scoped. Membership creation, role/status changes and owner bootstrap write audit records atomically with the related D1 mutation. Do not configure the bootstrap secret or run the bootstrap request against production during the development freeze.
+The owner invitation endpoint accepts an email address, a non-SOVEREIGN role, and optional branch/agent metadata. The API generates a 256-bit one-time code, stores only its SHA-256 digest in D1, and sends the code through the private OtyaPoint-to-Otya Auth service binding. Otya Auth sends the email via the existing Resend account; no second email provider or OtyaPoint Resend API key is introduced.
+
+The invited person must sign in to their own Otya Account and accept with `POST /api/staff/invitations/accept`. Acceptance requires the verified Otya Auth email to match the invitation. The token is consumed once, and the membership is created as `PENDING`; the SOVEREIGN owner must explicitly activate it. The invitation is time-limited, revocable, and re-sendable with token rotation. Raw invitation tokens are never stored in D1 or returned to the owner browser.
+
+Private invitation delivery requires the same high-entropy `OTYAPOINT_INVITE_SERVICE_TOKEN` value to be configured as a Worker secret on both the OtyaPoint API and Otya Auth Worker. The Auth Worker additionally requires the service-binding marker `x-otya-service: otyapoint`; the shared secret is checked with constant-time digest comparison. This secret is intentionally not present in Git or Wrangler variables. Until the matching secrets and the isolated API deployment are configured, invitation emails fail closed and the invitation reports delivery failure.
+
+Membership listings omit the underlying Otya identity subject and remain company-scoped. Invitation creation, delivery outcome, acceptance, status/role changes, revocation and bootstrap are recorded in the business audit stream. Do not provision either secret or run owner bootstrap against production during the development freeze.
 
 ## Money movement and production
 
