@@ -14,8 +14,8 @@ interface D1Database {
 export interface Env {
   DB: D1Database;
   AUTH?: { fetch(request: Request): Promise<Response> };
-  OTYAPOINT_BOOTSTRAP_SECRET?: string;
-  OTYAPOINT_INVITE_SERVICE_TOKEN?: string;
+  OTYAPOINT_BOOTSTRAP_SECRET?: string | { get(): Promise<string> };
+  OTYAPOINT_INVITE_SERVICE_TOKEN?: string | { get(): Promise<string> };
   OTYAPOINT_COMPANY_ID?: string;
 }
 type Role = "SOVEREIGN" | "ATTENDANT" | "MANAGER" | "MANAGING_DIRECTOR" | "CHAIRMAN";
@@ -32,6 +32,17 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
     "content-security-policy": "default-src 'none'; frame-ancestors 'none'"
   }
 });
+async function resolveSecretStoreValue(value: string | { get(): Promise<string> } | undefined): Promise<string> {
+  if (typeof value === "string") return value;
+  if (!value || typeof value.get !== "function") return "";
+  try {
+    const secret = await value.get();
+    return typeof secret === "string" ? secret : "";
+  } catch {
+    return "";
+  }
+}
+
 const uuid = () => crypto.randomUUID();
 const safeText = (value: unknown, max = 180) => typeof value === "string" ? value.trim().slice(0, max) : "";
 const int = (value: unknown, min = 0) => Number.isSafeInteger(value) && Number(value) >= min ? Number(value) : null;
@@ -95,14 +106,16 @@ async function deliverStaffInvitation(
   env: Env,
   invitation: { invitationId: string; email: string; displayName: string; role: Role; token: string; expiresAt: string },
 ): Promise<boolean> {
-  if (!env.AUTH || !env.OTYAPOINT_INVITE_SERVICE_TOKEN || env.OTYAPOINT_INVITE_SERVICE_TOKEN.length < 32) return false;
+  if (!env.AUTH) return false;
+  const inviteServiceToken = await resolveSecretStoreValue(env.OTYAPOINT_INVITE_SERVICE_TOKEN);
+  if (inviteServiceToken.length < 32) return false;
   try {
     const response = await env.AUTH.fetch(new Request("https://auth/internal/notifications/omnipoint/staff-invitation", {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-otya-service": "otyapoint",
-        "x-otya-service-token": env.OTYAPOINT_INVITE_SERVICE_TOKEN,
+        "x-otya-service-token": inviteServiceToken,
       },
       body: JSON.stringify(invitation),
       signal: AbortSignal.timeout(10000),
@@ -219,7 +232,7 @@ export default {
     // Otya Auth still verifies the owner identity; the bootstrap secret never
     // substitutes for identity authentication.
     if (request.method === "POST" && url.pathname === "/api/bootstrap/sovereign") {
-      const expectedSecret = env.OTYAPOINT_BOOTSTRAP_SECRET || "";
+      const expectedSecret = await resolveSecretStoreValue(env.OTYAPOINT_BOOTSTRAP_SECRET);
       if (expectedSecret.length < 32) return json({ error: "owner_bootstrap_not_configured" }, 503);
       const providedSecret = request.headers.get("x-otyapoint-bootstrap-key") || "";
       if (!(await matchesBootstrapSecret(providedSecret, expectedSecret))) return json({ error: "forbidden" }, 403);
