@@ -16,9 +16,11 @@ The Wrangler configuration disables public `workers.dev` access and declares no 
 
 ## 2. Current recovery evidence
 
-On 2026-10-30, SQL snapshots for both `otyapoint-db` and `omnipoint-dev` were uploaded to `otyapoint-backups`, retrieved successfully, and restored into isolated EU D1 databases. The restored databases each reproduced 35 schema objects, all three migration records, and the nine core business-table row counts. Both snapshots have recorded SHA-256 hashes in `cloudflare-api/README.md`.
+On 2026-10-30, SQL snapshots for both `otyapoint-db` and `omnipoint-dev` were uploaded to `otyapoint-backups`, retrieved successfully, and restored into isolated EU D1 databases. The original restores reproduced 35 schema objects, all three baseline migration records, and the nine core business-table row counts. Both snapshots have recorded SHA-256 hashes in `cloudflare-api/README.md`.
 
-This is a successful point-in-time restore test. It does **not** establish automated backup scheduling, retention, alerting, or recovery point objectives. Keep both snapshots and restore databases until a separate cleanup review. The two source databases' `d1_migrations` definitions differ, so preserve both snapshots and histories until the canonical database decision is made.
+On 2026-11-09, migrations `0004–0009` were applied successfully to `otyapoint-restore-verify-20261030` and then to production `otyapoint-db`. Production now records migrations `0001–0009`, contains all 13 expected business tables and required integrity objects, and has zero business rows in all 13 tables. The restore-verification database is now a post-migration test copy, not a pristine baseline.
+
+The 2026-10-30 R2 SQL snapshots remain the last verified independent exports. PR #120 added a scheduled backup workflow with SHA-256 read-back verification, but its first execution still requires the dedicated GitHub Actions Cloudflare API token and account-ID repository variable. Retention, failure alerting, and recurring restore drills are not yet established.
 
 ## 3. Data preservation and canonical database
 
