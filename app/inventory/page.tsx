@@ -56,9 +56,9 @@ export default async function InventoryPage({ searchParams }: PageProps) {
           <Link href="/" style={styles.back}><ArrowLeft size={15} /> Back to dashboard</Link>
           <div style={styles.eyebrow}><Boxes size={15} /> OMNIPOINT · RETAIL OPERATIONS</div>
           <h1 style={styles.title}>Inventory workspace</h1>
-          <p style={styles.muted}>Live product records from OmniPoint&apos;s database, with auditable stock changes.</p>
+          <p style={styles.muted}>Live product records from OtyaPoint&apos;s database, with auditable stock changes.</p>
         </div>
-        <div style={styles.livePill}><span style={styles.dot} /> LIVE DATABASE</div>
+        <div style={styles.statusPill}><span style={styles.dot} /> INVENTORY RECORDS</div>
       </header>
 
       <div style={styles.notice}>
@@ -124,7 +124,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
         </div>
         <p style={styles.footnote}>Amounts are shown in UGX. This screen manages inventory records only; it does not create a retail sale or post a financial ledger entry.</p>
       </section>
-      <footer style={styles.footer}>OmniPoint UG Limited · Retail inventory · Access: {staff.role.replaceAll("_", " ")}</footer>
+      <footer style={styles.footer}>OtyaPoint · Retail inventory · Access: {staff.role.replaceAll("_", " ")}</footer>
     </main>
   );
 }
@@ -136,7 +136,7 @@ const styles: Record<string, React.CSSProperties> = {
   eyebrow: { display: "flex", alignItems: "center", gap: 8, color: "#a8b8ff", fontSize: 10, letterSpacing: 1.4, fontWeight: 700, marginBottom: 10 },
   title: { fontSize: "clamp(28px, 4vw, 40px)", letterSpacing: -1.2, margin: "0 0 8px" },
   muted: { color: "#8d9bb0", margin: 0, lineHeight: 1.6, maxWidth: 720 },
-  livePill: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #355e54", background: "#122c29", color: "#79e0b5", padding: "9px 12px", borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: 1 },
+  statusPill: { display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #355e54", background: "#122c29", color: "#79e0b5", padding: "9px 12px", borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: 1 },
   dot: { width: 7, height: 7, borderRadius: "50%", background: "#55d6a3" },
   notice: { display: "flex", gap: 12, alignItems: "flex-start", padding: 16, border: "1px solid #2d4663", background: "#111e30", borderRadius: 12, marginBottom: 22, color: "#a8b8ff" },
   message: { borderRadius: 9, padding: 12, margin: "0 0 18px", fontSize: 13 },
