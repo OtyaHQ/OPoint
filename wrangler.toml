@@ -2,7 +2,7 @@
 # This config targets isolated OtyaPoint resources. Do not deploy until release gates pass.
 name = "otyapoint-api"
 main = "cloudflare-api/src/index.ts"
-compatibility_date = "2026-10-28"
+compatibility_date = "2026-11-09"
 workers_dev = false
 keep_vars = false
 
@@ -15,6 +15,10 @@ enabled = true
 [observability.logs]
 enabled = true
 head_sampling_rate = 1
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.05
 
 [[d1_databases]]
 binding = "DB"
