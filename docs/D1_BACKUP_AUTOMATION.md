@@ -29,7 +29,7 @@ Give this token only the permissions needed for this backup:
 
 Restrict the token to the Otya Cloudflare account and, where the token editor supports resource-level scoping, to the `otyapoint-backups` bucket. Do not reuse an owner-wide API token. Do not paste the token into chat, source code, workflow files, or build logs.
 
-The workflow deliberately fails before export if either configuration value is missing. No production database migration or Worker deployment is performed.
+The workflow deliberately fails before export if either configuration value is missing. It does not perform database migrations or deploy the API Worker.
 
 ## Backup naming and integrity
 
@@ -47,4 +47,4 @@ A green backup run proves that the export was stored in R2 and the stored object
 
 Before production financial use, separately complete a restore drill into a disposable D1 database, verify the migration ledger, tables, indexes, triggers and representative business invariants, and document the exact restore commands. Keep the existing 30 October 2026 snapshots and restore-verification databases until that drill and a retention review are complete.
 
-The OtyaPoint API is still not deployed. Migrations `0004–0009` remain unapplied to the production D1 database, and provider money movement remains disabled. This backup workflow does not change either state.
+Production `otyapoint-db` records migrations `0001–0009` as applied (verified 2026-11-09). The same `0004–0009` sequence was first exercised against the isolated restore-verification D1 database. Production contains all 13 expected business tables and the expected integrity indexes/triggers; the business tables were empty at the time of migration. The dedicated OtyaPoint API Worker is still not deployed, and provider money movement remains disabled. This backup workflow does not change either state.
