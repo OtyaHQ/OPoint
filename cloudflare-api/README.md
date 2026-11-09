@@ -62,3 +62,22 @@ Migrate the dashboard behind a server-side API boundary in reviewed steps. Do no
 ## Money movement and production
 
 Agency-provider transactions remain disabled. No public endpoint, custom domain, live payment-provider operation, or production cutover is enabled by this configuration. Before activation, verify signed provider callbacks, replay protection, idempotency, timeout/retry/reversal handling, reconciliation, balanced ledger invariants, backup schedule/restore drills, alert delivery, and applicable Uganda compliance requirements.
+
+
+## Isolated local multi-Worker development (2026-11-09)
+
+The safe local runtime is defined by the root `wrangler.local.toml` and `wrangler.auth-local.toml` files. Start it with:
+
+```sh
+npm run dev:local:check
+npm run test:local-auth
+npm run dev:local
+```
+
+The first config starts the OtyaPoint API with local-only D1/R2/KV/Queue simulations. The second config starts a synthetic Auth verifier and is attached through a local service binding. The synthetic verifier accepts only `Bearer otya-local-test-token` and returns the test identity `synthetic-otyapoint-local-owner`. It is not Otya Auth and must never be deployed or used for production authentication.
+
+The local bootstrap applies the checked-in migrations to Wrangler's local D1 state and upserts one synthetic `SOVEREIGN` staff membership. It inserts no business, customer, inventory, sale, cash, float, ledger or payment rows. No provider credentials or live provider adapters are configured.
+
+Run the full local smoke test using `npm run test:local-runtime`. It verifies schema readiness, the synthetic Auth-to-staff mapping, and that `POST /api/agency-transactions` returns HTTP 501 without calling a provider. Wrangler commands are pinned to version 4.158.0 for repeatable tooling.
+
+Never run these commands with `--remote`, never add `remote = true` to a binding, and never deploy either local Wrangler config. The regular `wrangler.toml` and live Otya Auth service remain separate release concerns.
