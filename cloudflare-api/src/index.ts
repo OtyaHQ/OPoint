@@ -716,6 +716,50 @@ export default {
         return json({ data: { id: saleId, receiptNumber, subtotal, total: subtotal, currency: "UGX", status: "COMPLETED" }, requestId: rid }, 201);
       }
 
+      if (request.method === "GET" && url.pathname === "/api/agency-readiness") {
+        if (!canManage(staff)) return json({ error: "forbidden" }, 403);
+
+        // This is an operations snapshot of locally recorded rows only.
+        // It never contacts a provider, creates a transaction, or posts a ledger entry.
+        const [totals, pending, unknown, providers] = await Promise.all([
+          env.DB.prepare(
+            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1"
+          ).bind(staff.company_id).first<{ total: number }>(),
+          env.DB.prepare(
+            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND provider_status IN ('DRAFT','PENDING')"
+          ).bind(staff.company_id).first<{ total: number }>(),
+          env.DB.prepare(
+            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND provider_status IN ('UNKNOWN','RECONCILIATION_REQUIRED')"
+          ).bind(staff.company_id).first<{ total: number }>(),
+          env.DB.prepare(
+            "SELECT provider, COUNT(*) AS transactions FROM omni_agency_transactions WHERE company_id=?1 GROUP BY provider ORDER BY provider"
+          ).bind(staff.company_id).all<{ provider: string | null; transactions: number }>()
+        ]);
+
+        return json({
+          service: "otyapoint-agency",
+          currency: "UGX",
+          mode: "LOCAL_RECORDS_ONLY",
+          transactionCreation: "DISABLED_UNTIL_PROVIDER_ADAPTERS_AND_CONTROLS_ARE_VERIFIED",
+          providers: [
+            { id: "interswitch_quickteller", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
+            { id: "airtel_money", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
+            { id: "mtn_mobile_money", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" }
+          ],
+          records: {
+            total: totals?.total ?? 0,
+            pending: pending?.total ?? 0,
+            unknownOrNeedsReconciliation: unknown?.total ?? 0,
+            byProvider: providers.results.map(row => ({
+              provider: row.provider || "UNSPECIFIED",
+              transactions: row.transactions
+            }))
+          },
+          liveMoneyEnabled: false,
+          requestId: rid
+        });
+      }
+
       if (request.method === "GET" && url.pathname === "/api/agency-transactions") {
         const type = url.searchParams.get("type");
         const status = url.searchParams.get("status");
