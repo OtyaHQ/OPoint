@@ -1,6 +1,6 @@
 # OtyaPoint Cloudflare API
 
-OtyaPoint is the shop and financial-agency operations system of Otya Hold Ltd T/A OtyaPoint. The Worker currently uses Cloudflare Workers + D1 and a private Otya Auth service binding. GitHub is the source-control/release system and Resend remains behind Otya Auth for transactional email. R2 backup objects remain in the account for recovery, but R2, KV and Queues are not bound to this Worker until an implemented feature needs them.
+OtyaPoint is the shop and financial-agency operations product within the Otya ecosystem. The Worker currently uses Cloudflare Workers + D1 and a private Otya Auth service binding. GitHub is the source-control/release system and Resend remains behind Otya Auth for transactional email. R2 backup objects remain in the account for recovery, but R2, KV and Queues are not bound to this Worker until an implemented feature needs them.
 
 ## Current verified state
 
