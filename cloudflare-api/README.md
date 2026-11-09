@@ -6,8 +6,9 @@ OtyaPoint is the shop and financial-agency operations system of Otya Hold Ltd T/
 
 - Wrangler config names the API Worker `otyapoint-api`, binds D1 `DB` to `otyapoint-db`, R2 `PRIVATE_FILES` and `BACKUPS`, KV `CACHE`, queue producer `JOBS`, and the Otya Auth service binding.
 - `workers_dev = false`; no custom route is configured. **The API Worker is not confirmed deployed.**
-- The three checked-in migrations are `0001_core.sql`, `0002_company_scope.sql`, and `0003_staff_profile.sql`.
-- The core schema has nine business tables and four stock/sale triggers. The nine core business tables currently contain zero rows; `d1_migrations` contains three migration records.
+- The isolated D1 recovery snapshot recorded the original applied baseline `0001_core.sql`, `0002_company_scope.sql`, and `0003_staff_profile.sql`; it contained three migration records at the time of the 2026-10-30 snapshot.
+- The current development branch includes migrations `0004` through `0007` for sale idempotency, owner controls and staff invitations. These follow-on migrations are source changes only and have not been applied to any remote D1 database.
+- The original core schema has nine business tables and four stock/sale triggers. The nine core business tables were verified empty in the recorded recovery snapshot.
 - The legacy `omnipoint-dev` D1 database also has zero rows in those nine business tables. Its core schema matches the new database, but the `d1_migrations` table definition differs: legacy uses `name` as its primary key; the new database has an integer `id` plus `name`. This is a migration-history difference, not proof that the databases are interchangeable.
 
 ## Backup and restore evidence (2026-10-30)
@@ -38,8 +39,6 @@ Local SQLite tests validate schema invariants; they do not prove Cloudflare D1 c
 
 Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bind a retail-sale idempotency key to its canonical payment method and normalized product/quantity list. Legacy rows remain unverified because their original request payload was not stored; retries for those rows intentionally return HTTP 409 rather than falsely claiming an exact replay. Apply only to the isolated development database after reviewing the target. Do not apply remotely or to production as part of this change.
 
-Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bind a retail-sale idempotency key to its canonical payment method and normalized product/quantity list. Legacy rows remain unverified because their original request payload was not stored; retries for those rows intentionally return HTTP 409 rather than falsely claiming an exact replay. Apply only to the isolated development database after reviewing the target. Do not apply remotely or to production as part of this change.
-
 ## API surface
 
 - `GET /health`: schema readiness only.
@@ -49,6 +48,9 @@ Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bin
 - `POST /api/stock-adjustments`: manager-authorized audited stock movement.
 - `POST /api/sales`: cash-only retail sale with idempotency and ledger/audit records.
 - `GET /api/summary` and `GET /api/ledger`: manager-authorized views.
+- `POST /api/bootstrap/sovereign`: one-time secret-gated first-owner provisioning.
+- `GET /api/staff`, `PATCH /api/staff/:id`: owner-controlled staff access administration.
+- `GET/POST /api/staff/invitations`, `POST /api/staff/invitations/accept`, and owner resend/revoke actions: email-bound staff invitation flow; accepted memberships remain PENDING until owner activation.
 - `POST /api/agency-transactions`: disabled; no provider call is made and no transaction is represented as successful.
 
 ## Identity and dashboard integration
