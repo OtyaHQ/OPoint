@@ -278,7 +278,10 @@ export default {
           ).bind(uuid(), memberId, memberId, JSON.stringify({ status: "PENDING", role: invitation.role, branchId: invitation.branch_id }), rid, invitation.company_id),
         ]);
       } catch (error) {
-        if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+        if (error instanceof Error && (
+          error.message.includes("UNIQUE constraint failed")
+          || error.message.includes("STAFF_INVITATION_NOT_PENDING")
+        )) {
           return json({ error: "invitation_already_accepted_or_membership_exists" }, 409);
         }
         throw error;
