@@ -14,10 +14,8 @@ Configure these in **OtyaPoint → Settings → Secrets and variables → Action
 
 - Variable `CLOUDFLARE_ACCOUNT_ID` (or repository/environment secret with the same name).
 - Secret `CLOUDFLARE_API_TOKEN`, narrowly scoped to this Cloudflare account with Workers Scripts Write and the minimum D1 read permission required to resolve the configured D1 binding.
-- Secret `OTYAPOINT_BOOTSTRAP_SECRET`: a fresh random value of at least 32 characters. Never store it in Git or paste it into chat.
-- Secret `OTYAPOINT_INVITE_SERVICE_TOKEN`: the same service-to-service token configured on Otya Auth for the OtyaPoint staff-invitation notification endpoint. Do not generate a different value on only one side.
 
-The workflow refuses to deploy if the owner-bootstrap or shared notification secret is missing or too short. It transfers them to Cloudflare with Wrangler secret commands; it never logs their values.
+Both secret values are stored centrally in Cloudflare Secrets Store and are bound to the exact Workers that need them. Otya Auth and OtyaPoint read the service token through a purpose-specific binding; OtyaPoint reads the one-time bootstrap secret through its own binding. The values are write-only in the Secrets Store API and are never copied into GitHub, source code, Wrangler variables or chat. The deployment API token must have Account Secrets Store Edit permission so Wrangler can resolve/deploy these bindings.
 
 ## After the Worker deploys
 
