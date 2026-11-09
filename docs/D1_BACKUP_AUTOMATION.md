@@ -12,11 +12,11 @@ The workflow:
 4. Downloads the R2 object again and checks both SHA-256 and byte count against the source export.
 5. Removes temporary SQL files from the GitHub runner.
 
-The workflow is scheduled daily at 03:17 UTC and can also be started manually from the Actions tab. It runs only from `main`, serializes runs, and does not run on pull requests.
+Automatic OtyaPoint backups are orchestrated by the central OtyaEnd operations workflow `.github/workflows/backup-core-auth-d1.yml`, which runs daily at 04:15 UTC and exports Core, Auth and OtyaPoint using the shared production Cloudflare credential. The OtyaPoint-local workflow is retained as a manual fallback only; it does not run on every source push or create a second daily schedule.
 
 ## One-time GitHub configuration
 
-Add the following repository configuration in **Settings → Secrets and variables → Actions**:
+For the central scheduled backup, configure the Cloudflare account ID and token in the OtyaEnd production GitHub environment. The token is shared by the OtyaEnd Core/Auth backup job and the OtyaPoint backup job. The OtyaPoint-local manual fallback still reads the repository settings below when run directly:
 
 - Repository variable `CLOUDFLARE_ACCOUNT_ID`: the Cloudflare account ID.
 - Repository secret `OTYAPOINT_BACKUP_CLOUDFLARE_API_TOKEN`: a dedicated account API token.
