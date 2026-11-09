@@ -22,23 +22,6 @@ database_name = "otyapoint-db"
 database_id = "65cc4aee-154a-474f-9ed4-aabea0924c98"
 migrations_dir = "cloudflare-api/migrations"
 
-[[r2_buckets]]
-binding = "PRIVATE_FILES"
-bucket_name = "otyapoint-private"
-
-[[r2_buckets]]
-binding = "BACKUPS"
-bucket_name = "otyapoint-backups"
-
-[[kv_namespaces]]
-binding = "CACHE"
-id = "69ca8a463e60410d907749d4e863faf4"
-
-[[queues.producers]]
-binding = "JOBS"
-queue = "otyapoint-dev-jobs"
-
-# No queue consumer until idempotency, retries and dead-letter behavior pass tests.
 # No custom domain, public endpoint, or live payment-provider binding.
 [[services]]
 binding = "AUTH"

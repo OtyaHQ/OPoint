@@ -11,15 +11,8 @@ interface D1Database {
   prepare(query: string): D1Statement;
   batch<T = unknown>(statements: D1Statement[]): Promise<T[]>;
 }
-interface R2Bucket { get(key: string): Promise<unknown>; put(key: string, value: unknown, options?: unknown): Promise<unknown> }
-interface KVNamespace { get(key: string): Promise<string | null>; put(key: string, value: string, options?: unknown): Promise<void> }
-interface Queue { send(message: unknown): Promise<void> }
 export interface Env {
   DB: D1Database;
-  PRIVATE_FILES: R2Bucket;
-  BACKUPS: R2Bucket;
-  CACHE: KVNamespace;
-  JOBS: Queue;
   AUTH?: { fetch(request: Request): Promise<Response> };
   OTYAPOINT_BOOTSTRAP_SECRET?: string;
   OTYAPOINT_INVITE_SERVICE_TOKEN?: string;

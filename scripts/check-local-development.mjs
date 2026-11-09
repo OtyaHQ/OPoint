@@ -16,9 +16,7 @@ function forbidMatch(source, pattern, message) {
 requireMatch(api, /^name\s*=\s*"otyapoint-api-local"$/m, "API local Worker name must be isolated");
 requireMatch(api, /^workers_dev\s*=\s*false$/m, "API local config must not create a public workers.dev endpoint");
 requireMatch(api, /database_name\s*=\s*"otyapoint-local"/, "API must use a local-only D1 name");
-requireMatch(api, /bucket_name\s*=\s*"otyapoint-local-private"/, "Private files must use a local-only R2 bucket");
-requireMatch(api, /bucket_name\s*=\s*"otyapoint-local-backups"/, "Backups must use a local-only R2 bucket");
-requireMatch(api, /queue\s*=\s*"otyapoint-local-jobs"/, "Jobs must use a local-only queue");
+forbidMatch(api, /\[\[r2_buckets\]\]|\[\[kv_namespaces\]\]|\[\[queues\.producers\]\]/, "Unused R2, KV and Queue bindings must stay out until runtime code uses them");
 requireMatch(api, /service\s*=\s*"otyapoint-auth-local"/, "API must use the synthetic local auth Worker");
 requireMatch(api, /migrations_dir\s*=\s*"cloudflare-api\/migrations"/, "Local API must use the reviewed migration sequence");
 forbidMatch(api, /remote\s*=\s*true/i, "Remote bindings are forbidden in local development");
