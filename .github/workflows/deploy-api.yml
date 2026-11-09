@@ -1,0 +1,125 @@
+name: Deploy OtyaPoint API
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type DEPLOY to authorize the private production Worker deployment
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: otyapoint-api-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate the exact mainline API release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate local configuration and tests
+        run: |
+          set -euo pipefail
+          npm run check:worker
+          npm run test:sale-fingerprint
+          npm run test:sale-route-idempotency
+          npm run test:auth-boundary
+          npm run test:agency-list
+          npm run test:legacy-products-bridge
+          npm run dev:local:check
+          npm run test:local-auth
+          npm run test:local-runtime
+          npm run lint
+          npm run build
+
+      - name: Validate production Worker bundle without deploying
+        run: npx --yes wrangler@4.158.0 deploy --dry-run --config wrangler.toml
+
+  deploy:
+    name: Deploy private OtyaPoint API Worker
+    if: github.ref == 'refs/heads/main' && inputs.confirm == 'DEPLOY'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Require narrowly scoped production credentials
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          OTYAPOINT_BOOTSTRAP_SECRET: ${{ secrets.OTYAPOINT_BOOTSTRAP_SECRET }}
+          OTYAPOINT_INVITE_SERVICE_TOKEN: ${{ secrets.OTYAPOINT_INVITE_SERVICE_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test "${#OTYAPOINT_BOOTSTRAP_SECRET}" -ge 32
+          test "${#OTYAPOINT_INVITE_SERVICE_TOKEN}" -ge 32
+          echo "Production credentials are present; values are never printed."
+
+      - name: Configure owner bootstrap and shared Auth notification secrets
+        working-directory: .
+        shell: bash
+        env:
+          OTYAPOINT_BOOTSTRAP_SECRET: ${{ secrets.OTYAPOINT_BOOTSTRAP_SECRET }}
+          OTYAPOINT_INVITE_SERVICE_TOKEN: ${{ secrets.OTYAPOINT_INVITE_SERVICE_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$OTYAPOINT_BOOTSTRAP_SECRET" | npx --yes wrangler@4.158.0 secret put OTYAPOINT_BOOTSTRAP_SECRET --config wrangler.toml
+          printf '%s' "$OTYAPOINT_INVITE_SERVICE_TOKEN" | npx --yes wrangler@4.158.0 secret put OTYAPOINT_INVITE_SERVICE_TOKEN --config wrangler.toml
+
+      - name: Deploy the private Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.158.0 deploy --config wrangler.toml
+
+      - name: Record deployment boundary
+        run: |
+          {
+            echo "## OtyaPoint API deployment"
+            echo
+            echo "- Worker: `otyapoint-api`."
+            echo "- Target: Cloudflare production account."
+            echo "- Public workers.dev route: disabled."
+            echo "- Custom domain or DNS: unchanged."
+            echo "- D1 migrations: not applied by this workflow."
+            echo "- Provider money movement: remains disabled."
+            echo "- Browser dashboard: not connected by this deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
