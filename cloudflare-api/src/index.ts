@@ -164,13 +164,52 @@ export default {
     const rid = requestId(request);
     if (request.method === "GET" && url.pathname === "/health") {
       try {
-        const found = await env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'omni_%'").all<{ name: string }>();
-        const expected = ["omni_products", "omni_retail_sales", "omni_retail_sale_lines", "omni_stock_movements", "omni_agency_transactions", "omni_ledger_entries", "omni_reconciliation_sessions", "omni_audit_events", "omni_staff_memberships"];
-        const names = new Set(found.results.map(row => row.name));
-        const ready = expected.every(name => names.has(name));
-        return json({ service: "omnipoint-api", status: ready ? "ok" : "schema_not_ready", schemaReady: ready, requestId: rid }, ready ? 200 : 503);
+        const [tables, integrityObjects] = await Promise.all([
+          env.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'omni_%'").all<{ name: string }>(),
+          env.DB.prepare("SELECT name FROM sqlite_master WHERE type IN ('index','trigger') AND name NOT LIKE 'sqlite_%'").all<{ name: string }>(),
+        ]);
+        // Readiness must reflect the complete API contract, not only the original
+        // retail tables. In particular, the owner invitation guard, immutable
+        // history triggers and cash/float book are required by current source.
+        const expectedTables = [
+          "omni_products", "omni_retail_sales", "omni_retail_sale_lines",
+          "omni_stock_movements", "omni_agency_transactions", "omni_ledger_entries",
+          "omni_reconciliation_sessions", "omni_audit_events", "omni_staff_memberships",
+          "omni_staff_invitations", "omni_agency_accounts", "omni_agency_operations",
+          "omni_agency_account_movements",
+        ];
+        const expectedObjects = [
+          "idx_omni_sales_company_idempotency",
+          "idx_omni_one_active_sovereign_per_company",
+          "idx_omni_owner_bootstrap_once",
+          "idx_omni_staff_company_status_role",
+          "idx_omni_staff_invitation_pending_email",
+          "idx_omni_staff_invitation_company_status",
+          "idx_omni_staff_invitation_expiry",
+          "omni_staff_invitation_membership_guard",
+          "omni_ledger_entries_no_update",
+          "omni_ledger_entries_no_delete",
+          "omni_stock_movements_no_update",
+          "omni_stock_movements_no_delete",
+          "omni_audit_events_no_update",
+          "omni_audit_events_no_delete",
+          "idx_omni_agency_one_active_cash_drawer",
+          "idx_omni_agency_one_active_provider_float",
+          "omni_agency_account_movement_guard",
+          "omni_agency_account_movement_apply",
+          "omni_agency_operations_guard",
+          "omni_agency_operations_no_update",
+          "omni_agency_operations_no_delete",
+          "omni_agency_account_movements_no_update",
+          "omni_agency_account_movements_no_delete",
+        ];
+        const tableNames = new Set(tables.results.map(row => row.name));
+        const objectNames = new Set(integrityObjects.results.map(row => row.name));
+        const ready = expectedTables.every(name => tableNames.has(name))
+          && expectedObjects.every(name => objectNames.has(name));
+        return json({ service: "otyapoint-api", status: ready ? "ok" : "schema_not_ready", schemaReady: ready, requestId: rid }, ready ? 200 : 503);
       } catch {
-        return json({ service: "omnipoint-api", status: "database_unavailable", requestId: rid }, 503);
+        return json({ service: "otyapoint-api", status: "database_unavailable", requestId: rid }, 503);
       }
     }
     if (request.method === "OPTIONS") return json({ error: "cors_not_enabled" }, 405);
