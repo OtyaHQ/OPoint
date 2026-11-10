@@ -73,8 +73,9 @@ test("concurrent callers share one token request and status enquiry is read-only
   for (const call of statusCalls) {
     const url = new URL(call.url);
     assert.equal(url.origin + url.pathname, QUICKTELLER_SANDBOX_STATUS_URL);
-    assert.ok(url.searchParams.get("transactionRef").startsWith("otya-ref-"));
-    assert.equal(url.searchParams.get("amount"), "12500");
+    assert.equal(url.search, "");
+    assert.ok(call.init.headers.transactionRef.startsWith("otya-ref-"));
+    assert.equal(call.init.headers.amount, "12500");
     assert.equal(call.init.headers.Authorization, "Bearer sandbox-token");
     assert.equal(call.init.redirect, "error");
   }
