@@ -10,16 +10,16 @@ The deploy job targets the `production` GitHub Environment. Configure that envir
 
 The workflow deploys only the private Worker from the checked-in `wrangler.toml`. It does not apply D1 migrations, create DNS/custom routes, enable the `workers.dev` subdomain, enable payment-provider writes, or publish the dashboard. Do not run it from an unreviewed branch.
 
-The workflow deploys `otyapoint-api` using the root `wrangler.toml`. That config keeps `workers_dev = false`, exposes no public route, and binds the OtyaPoint D1 database, the shared `otya-auth` service, the one-time owner/invitation secrets, and the four Quickteller Secrets Store entries scoped only to this Worker. It does not apply remote migrations, alter DNS, enable a public endpoint, or enable payment-provider writes. The Quickteller bindings support an owner-only sandbox OAuth diagnostic; they do not enable checkout or money movement.
+The root `wrangler.toml` keeps `workers_dev = false`, exposes no public route, and binds the OtyaPoint D1 database, the shared `otya-auth` service, the one-time owner/invitation secrets, and the four Quickteller Secrets Store entries scoped only to this Worker. It does not apply remote migrations, alter DNS, enable a public endpoint, or enable payment-provider writes. The Quickteller bindings support an owner-only sandbox OAuth diagnostic; they do not enable checkout or money movement.
 
 ## Required GitHub Actions credentials
 
-Configure these in **OtyaPoint → Settings → Secrets and variables → Actions** (prefer the `production` environment for the three Worker secrets):
+Configure these as **environment-level values** under **OtyaPoint → Settings → Environments → production**:
 
-- Variable `CLOUDFLARE_ACCOUNT_ID` (or repository/environment secret with the same name).
-- Secret `CLOUDFLARE_API_TOKEN`, narrowly scoped to this Cloudflare account with Workers Scripts Write and the minimum D1 read permission required to resolve the configured D1 binding.
+- Variable `CLOUDFLARE_ACCOUNT_ID`: the Otya Cloudflare account ID.
+- Secret `CLOUDFLARE_API_TOKEN`: a dedicated, narrowly scoped Cloudflare API token for this repository's private Worker deployment. Grant only the permissions required by Wrangler: Workers Scripts Write, D1 Read for the configured binding, and Account Secrets Store Edit so Wrangler can resolve the configured Secrets Store bindings.
 
-Both secret values are stored centrally in Cloudflare Secrets Store and are bound to the exact Workers that need them. Otya Auth and OtyaPoint read the service token through a purpose-specific binding; OtyaPoint reads the one-time bootstrap secret through its own binding. The values are write-only in the Secrets Store API and are never copied into GitHub, source code, Wrangler variables or chat. The deployment API token must have Account Secrets Store Edit permission so Wrangler can resolve/deploy these bindings.
+Do not reuse Quickteller credentials as a deployment token. Do not paste the Cloudflare API token into chat, source code, build variables or logs. The separate `OTYAPOINT_BOOTSTRAP_SECRET`, `OTYAPOINT_INVITE_SERVICE_TOKEN` and Quickteller values remain in Cloudflare Secrets Store and are bound only to the Workers that need them; they are not GitHub Actions deployment credentials.
 
 ## Verified live Worker baseline (2026-11-10)
 
