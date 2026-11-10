@@ -33,7 +33,7 @@ export default async function StaffManagementPage({ searchParams }: PageProps) {
 
   return (
     <main style={{ maxWidth: 1080, margin: "0 auto", padding: 24, color: "#e2e8f0" }}>
-      <p style={{ color: "#a5b4fc", fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>OMNIPOINT · MANAGEMENT</p>
+      <p style={{ color: "#a5b4fc", fontSize: 12, fontWeight: 700, letterSpacing: 2 }}>OTYAPOINT · MANAGEMENT</p>
       <h1 style={{ fontSize: 30, margin: "8px 0" }}>Staff onboarding and access</h1>
       <p style={{ color: "#94a3b8", maxWidth: 760 }}>
         Only the Managing Director and Chairman can invite or approve staff. Invitations do not grant access.
