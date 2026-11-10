@@ -1,6 +1,10 @@
-# OmniPoint clean foundation — current status
+# OtyaPoint foundation history — legacy development baseline
 
-**Project scope:** Otya Hold Ltd T/A OmniPoint, the owner's own shop and agency operations. This is a private development project, not a public launch.
+**Product:** OtyaPoint, the retail and mobile-money agency operations product in the Otya ecosystem.
+
+**Parent-entity status:** Otya Holdings Limited is the intended parent entity; URSB registration is in progress. Until incorporation and formal provider re-verification are complete, individual merchant and payment-provider accounts remain in the verified account holder's legal name. Otya and OtyaPoint are product/brand identities and must not be presented as a registered company or as the legal merchant.
+
+**Document status:** This file records an earlier isolated development baseline. It is not the current production status; see `docs/production-readiness.md` and `docs/API_DEPLOYMENT.md` for current release evidence.
 
 ## Architecture decision
 
@@ -9,7 +13,7 @@
 - Cloudflare R2: private file and backup objects.
 - Cloudflare KV: non-authoritative cache only; never use it as the ledger or source of truth.
 - Cloudflare Queues: optional background work after transaction/idempotency and dead-letter handling tests.
-- Otya Auth: shared identity service through a Worker service binding; OmniPoint roles remain local and server-enforced.
+- Otya Auth: shared identity service through a Worker service binding; OtyaPoint roles remain local and server-enforced.
 - GitHub: source control, code review and CI.
 - AWS: not part of the default stack. Reconsider only if a verified payment-provider requirement cannot be met safely by Cloudflare.
 
@@ -22,14 +26,14 @@
 - Queue `omnipoint-dev-jobs` — `e8e3721ce4934094b2cb3d8fb5cb2edb`.
 - Queue `omnipoint-dev-jobs-dlq` — `ef493d90b8d64801b5c95c2af31f0e31`.
 
-The D1 core schema, company-scoping migration and staff-profile migration have been applied to the new development database. A read-only verification found the expected OmniPoint tables, indexes and triggers and zero rows in the nine business tables. This verifies schema setup, not application correctness.
+The D1 core schema, company-scoping migration and staff-profile migration have been applied to the new development database. A read-only verification found the expected OtyaPoint tables, indexes and triggers and zero rows in the nine business tables. This verifies schema setup, not application correctness.
 
 ## Safety boundaries
 
 - No public route or custom domain is configured for the new Worker.
 - No Worker has been deployed from this branch.
 - No live payment/provider operation is enabled.
-- Existing Otya Workers, Otya databases, Otya assets, and legacy OmniPoint resources have not been deleted.
+- Existing Otya Workers, Otya databases, Otya assets, and legacy OtyaPoint resources have not been deleted.
 - No credentials, tokens or secrets are stored in this repository.
 - The older `omnipoint-prod` database remains untouched pending a final inventory and retirement plan.
 
@@ -45,4 +49,4 @@ The D1 core schema, company-scoping migration and staff-profile migration have b
 
 ## Resource cleanup policy
 
-Do not delete old resources just because a newer development resource exists. First verify bindings, routes, data, object counts, queue consumers/producers, and dependencies. Remove an old resource only when it is confirmed OmniPoint-only, has no remaining consumers, and the replacement has passed its recovery and acceptance tests.
+Do not delete old resources just because a newer development resource exists. First verify bindings, routes, data, object counts, queue consumers/producers, and dependencies. Remove an old resource only when it is confirmed OtyaPoint-only, has no remaining consumers, and the replacement has passed its recovery and acceptance tests.
