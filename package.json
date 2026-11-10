@@ -21,7 +21,8 @@
     "test:auth-boundary": "node --test cloudflare-api/tests/auth-boundary.test.mjs",
     "test:agency-list": "node --test cloudflare-api/tests/agency-list.test.mjs cloudflare-api/tests/agency-readiness.test.mjs",
     "test:agency-readiness": "node --test cloudflare-api/tests/agency-readiness.test.mjs",
-    "test:legacy-products-bridge": "node --test tests/legacy-products-bridge.test.mjs"
+    "test:legacy-products-bridge": "node --test tests/legacy-products-bridge.test.mjs",
+    "test:quickteller": "node --test cloudflare-api/tests/quickteller-business-sandbox.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.2.0",
