@@ -8,7 +8,7 @@
 - For the API integration, the current profile must be an **Individual Business** profile inside Quickteller Business, not a consumer Quickteller wallet. Confirm the exact account-type label in the merchant dashboard before using it for merchant acceptance.
 - OtyaPoint contains an isolated sandbox client for OAuth 2.0 token acquisition and read-only transaction-status enquiry.
 - The client has no payment-initiation, refund, payout, wallet-balance or live endpoint method.
-- The four Quickteller credential entries are present and active in the connected Cloudflare account Secrets Store, scoped to Workers, and are being bound only to the private `otyapoint-api` Worker. Metadata confirms their names and status, not that the stored values successfully authenticate with Interswitch.
+- The four Quickteller credential entries are present and active in the connected Cloudflare account Secrets Store, scoped to Workers, and are now bound only to the private `otyapoint-api` Worker. Metadata confirms their names and status, not that the stored values successfully authenticate with Interswitch.
 - The current Worker source still exposes no Quickteller payment-initiation, refund, payout or provider-status route. No Quickteller request has been sent from OtyaPoint and no provider payment route is enabled.
 - OtyaPoint's agency transaction write route remains disabled. This source addition does not enable money movement.
 
