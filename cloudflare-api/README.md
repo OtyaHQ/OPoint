@@ -4,11 +4,11 @@ OtyaPoint is the shop and financial-agency operations product within the Otya ec
 
 ## Current verified state
 
-- Wrangler config names the API Worker `otyapoint-api` and binds only D1 `DB` to `otyapoint-db` plus the private Otya Auth service binding. R2, KV and Queues are deliberately not active Worker dependencies because the current API does not use them.
-- `workers_dev = false`; no custom route is configured. **The API Worker is not confirmed deployed.**
+- Wrangler config names the API Worker `otyapoint-api` and binds D1 `DB`, the private Otya Auth service, first-owner/invitation secrets, and four Quickteller Business Secrets Store entries scoped only to this Worker. R2, KV and Queues are deliberately not active Worker dependencies because the current API does not use them.
+- `workers_dev = false`; no custom route is configured. The live Cloudflare account reports a published private Worker deployment with its `workers.dev` subdomain disabled. This does not certify the dashboard is connected or make the API publicly reachable.
 - The isolated D1 recovery snapshot recorded the original applied baseline `0001_core.sql`, `0002_company_scope.sql`, and `0003_staff_profile.sql`; it contained three migration records at the time of the 2026-10-30 snapshot.
 - Production `otyapoint-db` now records migrations `0001–0009`; migrations `0004–0009` were applied on 2026-11-09 after the same sequence succeeded on `otyapoint-restore-verify-20261030`.
-- Production schema verification found all 13 expected `omni_*` business tables and all required sale-idempotency, sovereign-owner, staff-invitation, append-only ledger/stock/audit, and cash/float indexes/triggers. All 13 business tables currently contain zero rows. This is the D1 schema state only; no OtyaPoint API Worker has been deployed.
+- Production schema verification found all 13 expected `omni_*` business tables and all required sale-idempotency, sovereign-owner, staff-invitation, append-only ledger/stock/audit, and cash/float indexes/triggers. All 13 business tables were empty at the 2026-11-10 inspection; no owner membership, products, staff or sales had been provisioned at that inspection.
 - The legacy `omnipoint-dev` D1 database also has zero rows in those nine business tables. Its core schema matches the new database, but the `d1_migrations` table definition differs: legacy uses `name` as its primary key; the new database has an integer `id` plus `name`. This is a migration-history difference, not proof that the databases are interchangeable.
 
 ## Backup and restore evidence (2026-10-30)
@@ -59,6 +59,7 @@ Migration `0004_sale_request_fingerprint.sql` adds a nullable fingerprint to bin
 - `GET/POST /api/staff/invitations`, `POST /api/staff/invitations/accept`, and owner resend/revoke actions: email-bound staff invitation flow; accepted memberships remain PENDING until owner activation.
 - `GET /api/agency-readiness`: manager-only, company-scoped local agency counts; reports Interswitch Marketplace Routing and Quickteller Business separately, alongside Airtel Money and MTN Mobile Money; all remain not ready and the route performs no provider calls or writes.
 - `GET /api/agency-overview`: read-only operational totals and the latest ten agency records; managers see company records, other staff see only their own; confirmed amount/commission totals include only provider-confirmed successes.
+- `POST /api/integrations/quickteller/sandbox-auth`: SOVEREIGN-only, owner-authenticated sandbox OAuth diagnostic. It returns sanitized configuration/authentication metadata, never a token or credential, and does not initiate or verify a transaction.
 - `POST /api/agency-transactions`: disabled; no provider call is made and no transaction is represented as successful.
 
 ## Identity and dashboard integration
@@ -75,7 +76,7 @@ The first owner is provisioned through `POST /api/bootstrap/sovereign`. This rou
 
 Provisioning sequence:
 
-1. Migrations `0004–0009` are already applied to production `otyapoint-db` and tested on isolated restore-verification databases. Do not rerun them. Migration `0009` creates a local operator-recorded cash/float book; it does not enable provider execution. The dedicated API Worker has not yet been deployed. A gated private deployment workflow is available at `.github/workflows/deploy-api.yml`; it requires production GitHub environment credentials and exact manual `DEPLOY` input.
+1. Migrations `0004–0009` are already applied to production `otyapoint-db` and tested on isolated restore-verification databases. Do not rerun them. Migration `0009` creates a local operator-recorded cash/float book; it does not enable provider execution. The dedicated API Worker is deployed privately. A gated private deployment workflow is available at `.github/workflows/deploy-api.yml`; it requires production GitHub environment credentials and exact manual `DEPLOY` input.
 2. Configure a unique high-entropy `OTYAPOINT_BOOTSTRAP_SECRET` as a Worker secret, never as a Wrangler variable or browser value.
 3. The owner calls `POST /api/bootstrap/sovereign` with their own Otya Auth bearer token, the bootstrap secret in `x-otyapoint-bootstrap-key`, and an optional display name.
 4. Remove the bootstrap secret immediately after successful owner provisioning. The audit marker keeps the route consumed after the secret is removed.
