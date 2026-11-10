@@ -11,6 +11,7 @@ OTYAPOINT_COMPANY_ID = "omnipoint-default"
 
 [observability]
 enabled = true
+redact_query_string = true
 
 [observability.logs]
 enabled = true
