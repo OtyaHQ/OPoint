@@ -78,6 +78,9 @@ jobs:
       - name: Test legacy products bridge fails closed
         run: npm run test:legacy-products-bridge
 
+      - name: Test isolated Quickteller Business sandbox adapter
+        run: npm run test:quickteller
+
       - name: Set up Node.js for Miniflare
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
