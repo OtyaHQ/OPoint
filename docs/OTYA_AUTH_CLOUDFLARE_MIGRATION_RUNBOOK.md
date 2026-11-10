@@ -1,6 +1,6 @@
 # OtyaPoint Cloudflare-only dashboard and Otya Auth migration runbook
 
-Last reviewed: 2026-10-30
+Last reviewed: 2026-11-10
 
 ## Goal
 
@@ -14,7 +14,8 @@ Finish the existing OtyaPoint application as one connected system: GitHub source
 - Regression coverage for missing tokens, failed identity verification, Auth service failure, inactive staff, unknown roles, and successful identity-to-staff mapping was merged in PR #82.
 - The dashboard login action in `app/login/actions.ts` still calls `createSupabaseServerClient()`. Other active Supabase SSR, Supabase admin, Prisma, middleware, staff invitation, and data-access paths remain. The dashboard is not yet fully connected to the Cloudflare API.
 - PR #85 removed the legacy `app/api/bridge/products/route.ts` local HS256-token flow and made the route fail closed with a non-cacheable HTTP 503 until dashboard sessions use Otya Auth and the verified identity is mapped to an active OtyaPoint staff membership. The bridge is not a production integration.
-- A direct read-only Cloudflare account inventory on 2026-10-30 listed only `otya-auth`, `otya-core`, and `otya-next`; querying the deployment endpoint for `otyapoint-api` returned 404 (Worker does not exist). Therefore the OtyaPoint API Worker is **not deployed in the inspected account**. No custom Worker route is configured in the checked-in Wrangler config. Do not infer live availability from local code or passing CI.
+- A direct read-only Cloudflare account inventory on 2026-11-10 confirms `otyapoint-api` exists and has a published deployment receiving 100% of Worker traffic (latest observed deployment: `2026-11-10T05:48:48Z`). The Worker remains private: `workers_dev = false`, with no public route or custom domain attached. Its live bindings include the dedicated `otyapoint-db` D1 database, the `otya-auth` service, and account-level owner-bootstrap and staff-invitation secrets. This is a private backend deployment, not a customer-facing launch; it does not prove the dashboard is connected or that the API has passed end-to-end browser acceptance. The older 2026-10-30 inventory is historical and superseded by this inspection.
+- The same 2026-11-10 read-only D1 inspection confirmed migrations `0001–0009` are recorded and all 13 expected OtyaPoint business tables currently contain zero rows. No owner membership, products, staff, sales, ledger entries or agency records have been provisioned. No production business records were written during this inspection.
 
 ## Target trust boundaries
 
