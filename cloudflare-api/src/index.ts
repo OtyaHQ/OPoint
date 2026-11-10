@@ -17,6 +17,10 @@ export interface Env {
   OTYAPOINT_BOOTSTRAP_SECRET?: string | { get(): Promise<string> };
   OTYAPOINT_INVITE_SERVICE_TOKEN?: string | { get(): Promise<string> };
   OTYAPOINT_COMPANY_ID?: string;
+  QUICKTELLER_CLIENT_ID?: string | { get(): Promise<string> };
+  QUICKTELLER_CLIENT_SECRET?: string | { get(): Promise<string> };
+  QUICKTELLER_MERCHANT_CODE?: string | { get(): Promise<string> };
+  QUICKTELLER_PAY_ITEM_ID?: string | { get(): Promise<string> };
 }
 type Role = "SOVEREIGN" | "ATTENDANT" | "MANAGER" | "MANAGING_DIRECTOR" | "CHAIRMAN";
 type Staff = { id: string; identity_subject: string; company_id: string; branch_id: string | null; role: Role; status: string; display_name: string; email: string | null; agent_id: string | null; verified_email?: string | null };
