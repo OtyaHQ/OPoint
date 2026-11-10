@@ -14,7 +14,7 @@ It brings together shop inventory, retail sales, staff access, agency operations
 - **Resend** is reused through Otya Auth for transactional messages; OtyaPoint does not need a separate mail provider.
 - **GitHub Actions** validates source and configuration. Production deployment and remote migrations remain separately approval-gated.
 
-The regular `wrangler.toml` identifies the isolated OtyaPoint API configuration and its D1 database `otyapoint-db`. The Worker is not confirmed deployed in the inspected Cloudflare account; `workers_dev = false`, with no public route or custom domain configured. Configuration in Git is not evidence of a deployed service.
+The regular `wrangler.toml` identifies the isolated OtyaPoint API configuration and its D1 database `otyapoint-db`. The connected Cloudflare account has a deployed `otyapoint-api` Worker, but it remains private: `workers_dev = false`, with no public route or custom domain attached. Production D1 migrations `0001–0009` are applied; all 13 OtyaPoint business tables were empty at the 2026-11-10 inspection. The dashboard is not yet certified as connected to this API. A deployed private Worker is not a customer-facing service.
 
 ## Product boundaries
 
@@ -71,7 +71,7 @@ Never add `remote = true`, `--remote`, production identifiers or live secrets to
 
 ## Money movement and release safety
 
-Provider integrations, EFRIS submissions, mobile-money collections/disbursements, bill payments and float purchases remain disabled until the exact Uganda product contracts, credentials, callback verification, replay protection, idempotency, status enquiries, reconciliation, settlement controls, operational support and applicable compliance requirements have been reviewed.
+Provider integrations, EFRIS submissions, mobile-money collections/disbursements, bill payments and float purchases remain disabled until the exact Uganda product contracts, credentials, callback verification, replay protection, idempotency, status enquiries, reconciliation, settlement controls, operational support and applicable compliance requirements have been reviewed. Quickteller Business is a separate adapter from InterSwitch Marketplace Routing; see [Quickteller Business readiness](docs/QUICKTELLER_BUSINESS_READINESS.md).
 
 A source merge is not a production deployment. Never apply source migrations to a remote D1 database just because they are present in the repository. Require an independently verified recovery point and a reviewed rollback plan first.
 
