@@ -4,8 +4,9 @@
 
 ## Current implementation status
 
-- The Quickteller Business account has been reported as Test mode with onboarding incomplete.
-- OtyaPoint now contains an isolated sandbox client for OAuth 2.0 token acquisition and read-only transaction-status enquiry.
+- The current onboarding path is the owner's individual/personal stage; the future company profile will be introduced only after the company documents are verified by Interswitch.
+- For the API integration, the current profile must be an **Individual Business** profile inside Quickteller Business, not a consumer Quickteller wallet. Confirm the exact account-type label in the merchant dashboard before using it for merchant acceptance.
+- OtyaPoint contains an isolated sandbox client for OAuth 2.0 token acquisition and read-only transaction-status enquiry.
 - The client has no payment-initiation, refund, payout, wallet-balance or live endpoint method.
 - The client is not yet bound to the deployed OtyaPoint Worker because the expected Quickteller entries are not present in the connected Cloudflare Secrets Store. No Quickteller request has been sent from OtyaPoint and no provider payment route is enabled.
 - OtyaPoint's agency transaction write route remains disabled. This source addition does not enable money movement.
@@ -39,13 +40,21 @@ The server constructs the Basic Authorization value from the Quickteller Busines
 
 The read-only transaction-status enquiry uses the documented sandbox API reference:
 
-`GET https://sandbox.interswitchng.com/api/v3/purchases?transactionRef={reference}&amount={amount}`
+`GET https://sandbox.interswitchng.com/api/v3/purchases`
 
-For this API reference, the transaction amount is documented in the major denomination. Pass the exact amount used for the original transaction; do not copy a create-payment amount into the requery call without applying the endpoint's own amount convention. The client reports success only when the provider returns `ResponseCode = "00"` **and** the returned amount matches the amount supplied for verification. Any other result remains unconfirmed.
+Send `Authorization: Bearer <token>`, `amount: <major-unit amount>` and `transactionRef: <original reference>` as **HTTP headers**. The endpoint documents the amount in the major denomination. This differs from the Web Checkout payment-creation flow, which uses its own request contract and expects amount in minor currency. Do not mix the status endpoint's headers, Web Checkout's `merchant_code` / `pay_item_id` body fields, or InterSwitch Marketplace Routing's credentials.
 
-Interswitch's FAQ lists `UGX = 800` as a supported currency code. Confirm the merchant account's actual Uganda product, currency, settlement and transaction permissions with Interswitch before building the payment-initiation flow. The QuickStart payment-initiation guide describes amounts in minor currency for its separate creation flow; do not confuse that convention with the status API's documented amount parameter.
+The sandbox status client reports success only when the provider returns `responseCode = "00"` (or the documented legacy `ResponseCode`) **and** the returned amount exactly matches the original amount. Any other result remains unconfirmed. A 404, timeout, amount mismatch or malformed payload must never be treated as a successful payment.
 
-Quickteller Business test mode does not support webhook URLs; Interswitch supplies a transaction-confirmation endpoint for test verification. A browser return page, client-side callback or HTTP success alone is never proof that a payment succeeded.
+Interswitch lists `UGX = 800` as a supported currency code and lists Uganda payment methods separately. This confirms that UGX exists in its broader API materials, not that this particular Quickteller Business merchant profile is approved for Uganda. Confirm the account's country, product, UGX settlement bank, payment methods and limits with Interswitch before enabling checkout.
+
+### Individual profile now; company profile later
+
+Interswitch documents an `Individual Business` account type with personal information fields (first name, last name, phone and date of birth). Its generic KYC page also mentions BVN and a 500k settlement cap for that profile. The BVN wording is Nigeria-oriented; do **not** assume it is applicable to a Uganda account or submit an unrelated/national identifier in its place. Ask Interswitch to confirm the correct Uganda ID, proof-of-address, settlement-account and individual-profile limits in writing.
+
+When the company documents are verified and Interswitch approves the company profile, expect the merchant profile and possibly the merchant code / Pay Item ID / integration credentials to change. Treat that as a provider-account migration: verify the new profile and currency, rotate/reissue any affected credentials, update the OtyaPoint Secrets Store values, test against the new sandbox/approved live account, and only then switch the active merchant profile. Do not assume that an individual profile's settlement history or limits transfer automatically.
+
+A browser return page or client-side callback is never proof that a payment succeeded. Use the provider's server-side confirmation contract for the exact payment product.
 
 Official references:
 - [Getting Integration Credentials](https://docs.interswitchgroup.com/docs/getting-integration-credentials)

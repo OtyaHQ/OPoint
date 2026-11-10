@@ -73,8 +73,9 @@ test("concurrent callers share one token request and status enquiry is read-only
   for (const call of statusCalls) {
     const url = new URL(call.url);
     assert.equal(url.origin + url.pathname, QUICKTELLER_SANDBOX_STATUS_URL);
-    assert.ok(url.searchParams.get("transactionRef").startsWith("otya-ref-"));
-    assert.equal(url.searchParams.get("amount"), "12500");
+    assert.equal(url.search, "");
+    assert.ok(call.init.headers.transactionRef.startsWith("otya-ref-"));
+    assert.equal(call.init.headers.amount, "12500");
     assert.equal(call.init.headers.Authorization, "Bearer sandbox-token");
     assert.equal(call.init.redirect, "error");
   }
@@ -129,6 +130,41 @@ test("authentication errors never expose the client secret or provider response 
       assert.equal(error.httpStatus, 401);
       assert.equal(error.message.includes(credentials.clientSecret), false);
       assert.equal(error.message.includes("sensitive-provider-detail"), false);
+      return true;
+    }
+  );
+});
+
+
+test("status enquiry accepts the documented lower-case response shape", async () => {
+  const client = new QuicktellerBusinessSandboxClient({
+    ...credentials,
+    fetchImpl: async url => String(url).startsWith(QUICKTELLER_SANDBOX_TOKEN_URL)
+      ? Response.json({ access_token: "sandbox-token", token_type: "bearer", expires_in: 3600 })
+      : Response.json({ responseCode: "00", amount: "1500.00" })
+  });
+
+  const result = await client.getTransactionStatus("QTB-UG-001", 1500);
+  assert.deepEqual(result, {
+    status: "CONFIRMED_SUCCESS", responseCode: "00", amountMatched: true
+  });
+});
+
+test("provider HTTP errors remain errors and never become successful payment states", async () => {
+  const client = new QuicktellerBusinessSandboxClient({
+    ...credentials,
+    fetchImpl: async url => String(url).startsWith(QUICKTELLER_SANDBOX_TOKEN_URL)
+      ? Response.json({ access_token: "sandbox-token", token_type: "bearer", expires_in: 3600 })
+      : new Response("provider-private-detail", { status: 404 })
+  });
+
+  await assert.rejects(
+    () => client.getTransactionStatus("QTB-UG-404", 1500),
+    error => {
+      assert.ok(error instanceof QuicktellerBusinessError);
+      assert.equal(error.kind, "http");
+      assert.equal(error.httpStatus, 404);
+      assert.equal(error.message.includes("provider-private-detail"), false);
       return true;
     }
   );
