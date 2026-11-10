@@ -247,6 +247,7 @@ export default {
       const body = await parseBody(request);
       if (isBodyResponse(body)) return body;
 
+      // Stable internal tenant key retained for schema compatibility; this is not the legal entity name or public brand.
       const companyId = safeText(env.OTYAPOINT_COMPANY_ID, 64) || "omnipoint-default";
       const existing = await env.DB.prepare(
         "SELECT id FROM omni_audit_events WHERE company_id=?1 AND action='BOOTSTRAP_OWNER' LIMIT 1"
