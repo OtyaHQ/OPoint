@@ -42,3 +42,24 @@ secret_name = "OTYAPOINT_INVITE_SERVICE_TOKEN"
 binding = "OTYAPOINT_BOOTSTRAP_SECRET"
 store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
 secret_name = "OTYAPOINT_BOOTSTRAP_SECRET"
+
+# Account-level Quickteller Business credentials are isolated to this private Worker.
+[[secrets_store_secrets]]
+binding = "QUICKTELLER_CLIENT_ID"
+store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
+secret_name = "QUICKTELLER_CLIENT_ID"
+
+[[secrets_store_secrets]]
+binding = "QUICKTELLER_CLIENT_SECRET"
+store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
+secret_name = "QUICKTELLER_CLIENT_SECRET"
+
+[[secrets_store_secrets]]
+binding = "QUICKTELLER_MERCHANT_CODE"
+store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
+secret_name = "QUICKTELLER_MERCHANT_CODE"
+
+[[secrets_store_secrets]]
+binding = "QUICKTELLER_PAY_ITEM_ID"
+store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
+secret_name = "QUICKTELLER_PAY_ITEM_ID"

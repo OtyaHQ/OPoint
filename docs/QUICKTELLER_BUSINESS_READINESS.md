@@ -8,7 +8,8 @@
 - For the API integration, the current profile must be an **Individual Business** profile inside Quickteller Business, not a consumer Quickteller wallet. Confirm the exact account-type label in the merchant dashboard before using it for merchant acceptance.
 - OtyaPoint contains an isolated sandbox client for OAuth 2.0 token acquisition and read-only transaction-status enquiry.
 - The client has no payment-initiation, refund, payout, wallet-balance or live endpoint method.
-- The client is not yet bound to the deployed OtyaPoint Worker because the expected Quickteller entries are not present in the connected Cloudflare Secrets Store. No Quickteller request has been sent from OtyaPoint and no provider payment route is enabled.
+- The four Quickteller credential entries are present and active in the connected Cloudflare account Secrets Store, scoped to Workers, and are being bound only to the private `otyapoint-api` Worker. Metadata confirms their names and status, not that the stored values successfully authenticate with Interswitch.
+- The current Worker source still exposes no Quickteller payment-initiation, refund, payout or provider-status route. No Quickteller request has been sent from OtyaPoint and no provider payment route is enabled.
 - OtyaPoint's agency transaction write route remains disabled. This source addition does not enable money movement.
 
 ## Credential custody
@@ -24,7 +25,7 @@ The expected server-side names are:
 | `QUICKTELLER_MERCHANT_CODE` | Merchant/account identifier |
 | `QUICKTELLER_PAY_ITEM_ID` | Product/service payment-item identifier |
 
-Store all four as account-level secrets scoped to `workers`, then bind them only to `otyapoint-api`. Do not bind a credential to Otya Auth, Otya Core, Otya Next, Otya Media or another product unless that product has a documented need. Do not add a binding until the named secret exists and its scope includes `workers`. Cloudflare's Secrets Store API never returns a secret value after creation; metadata listing can confirm only the name, status and scopes.
+Store all four as account-level secrets scoped to `workers`, then bind them only to `otyapoint-api`. The four expected names are now present and active in the connected Secrets Store. Do not bind a credential to Otya Auth, Otya Core, Otya Next, Otya Media or another product unless that product has a documented need. Cloudflare's Secrets Store API never returns a secret value after creation; metadata listing can confirm only the name, status and scopes.
 
 The dashboard's `Data Ref`, QR Merchant ID and TILL Alias fields must remain separately classified. Their exact API meaning has not been established from the documented WebPay transaction flow; do not map them to Pay Item ID, QR ID or Till Alias by guessing. Confirm their usage against the country/product-specific contract with Interswitch.
 
