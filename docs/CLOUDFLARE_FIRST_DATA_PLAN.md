@@ -2,7 +2,7 @@
 
 ## Decision
 
-OtyaPoint is the shop and financial-agency operations system of Otya Hold Ltd T/A OmniPoint. Cloudflare is the target runtime and operational data platform; GitHub is source control; Resend is the shared transactional email provider. The dedicated OtyaPoint D1 database remains separate from Otya Auth/Core/Media data. Do not introduce Supabase, Appwrite, or Vercel into the target runtime unless explicitly approved.
+OtyaPoint is the retail and financial-agency operations product in the Otya ecosystem. Otya Holdings Limited is the intended parent entity and its URSB registration is in progress. Until incorporation and formal merchant re-verification are complete, provider accounts and merchant KYC must remain in the verified individual account holder's legal name. Use Otya or OtyaPoint as a customer-facing brand/trading identity only where the provider permits it; do not submit corporate KYC, claim corporate settlement ownership, or append “Limited” as though registration were complete. Cloudflare is the target runtime and operational data platform; GitHub is source control; Resend is the shared transactional email provider. The dedicated OtyaPoint D1 database remains separate from Otya Auth/Core/Media data. Do not introduce Supabase, Appwrite, or Vercel into the target runtime unless explicitly approved.
 
 This plan does not claim that dashboard migration, service authentication, scheduled backups, or production API deployment are complete.
 
