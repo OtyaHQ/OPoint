@@ -34,7 +34,8 @@ This file records verified implementation status, not a claim that the full prod
 - [x] Sale-line triggers enforce company/product availability and stock deduction.
 - [x] Append-only ledger, stock-movement and audit protections are implemented in D1.
 - [x] Worker source and migration/runtime tests pass in CI and the isolated D1 restore.
-- [x] API Worker is deployed privately at 100% (verified 2026-11-10).\n- [ ] End-to-end health, authentication, inventory and sales checks pass against the deployed services.
+- [x] API Worker is deployed privately at 100% (verified 2026-11-10).
+- [ ] End-to-end health, authentication, inventory and sales checks pass against the deployed services.
 - [ ] Dashboard has migrated from legacy Prisma/Supabase inventory and sales writes to the OtyaPoint API.
 - [ ] Receipt, returns/refunds, reporting and reconciliation workflows are verified against real shop procedures.
 - [ ] EFRIS integration is separately approved and validated; it remains unconfigured.
