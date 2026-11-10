@@ -128,15 +128,16 @@ export class QuicktellerBusinessSandboxClient {
     }
 
     const token = await this.getAccessToken();
-    const url = new URL(QUICKTELLER_SANDBOX_STATUS_URL);
-    url.searchParams.set("transactionRef", reference);
-    url.searchParams.set("amount", String(amountMajor));
-
-    const response = await this.fetchWithTimeout(url.toString(), {
+    // Interswitch documents amount and transactionRef as request headers,
+    // not query parameters. Amount is in the major denomination for this
+    // status endpoint (distinct from Web Checkout's minor-unit create amount).
+    const response = await this.fetchWithTimeout(QUICKTELLER_SANDBOX_STATUS_URL, {
       method: "GET",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
+        amount: String(amountMajor),
+        transactionRef: reference
       },
       redirect: "error"
     });
