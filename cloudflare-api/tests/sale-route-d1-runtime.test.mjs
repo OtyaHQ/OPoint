@@ -11,8 +11,13 @@ const migrationsDir = new URL("../migrations/", import.meta.url);
 const workerSource = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(workerSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
-}).outputText;
+}).outputText.replace('./providers/quickteller-business-sandbox', './quickteller-business-sandbox.mjs');
 const tempDir = mkdtempSync(join(tmpdir(), "omnipoint-d1-runtime-"));
+const providerSource = readFileSync(new URL("../src/providers/quickteller-business-sandbox.ts", import.meta.url), "utf8");
+const compiledProvider = ts.transpileModule(providerSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
+}).outputText;
+writeFileSync(join(tempDir, "quickteller-business-sandbox.mjs"), compiledProvider);
 writeFileSync(join(tempDir, "index.mjs"), compiled);
 copyFileSync(new URL("../src/sale-fingerprint.mjs", import.meta.url), join(tempDir, "sale-fingerprint.mjs"));
 const worker = (await import(pathToFileURL(join(tempDir, "index.mjs")).href)).default;

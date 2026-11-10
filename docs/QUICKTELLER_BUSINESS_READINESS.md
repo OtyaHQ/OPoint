@@ -8,8 +8,8 @@
 - For the API integration, the current profile must be an **Individual Business** profile inside Quickteller Business, not a consumer Quickteller wallet. Confirm the exact account-type label in the merchant dashboard before using it for merchant acceptance.
 - OtyaPoint contains an isolated sandbox client for OAuth 2.0 token acquisition and read-only transaction-status enquiry.
 - The client has no payment-initiation, refund, payout, wallet-balance or live endpoint method.
-- The four Quickteller credential entries are present and active in the connected Cloudflare account Secrets Store, scoped to Workers, and are being bound only to the private `otyapoint-api` Worker. Metadata confirms their names and status, not that the stored values successfully authenticate with Interswitch.
-- The current Worker source still exposes no Quickteller payment-initiation, refund, payout or provider-status route. No Quickteller request has been sent from OtyaPoint and no provider payment route is enabled.
+- The four Quickteller credential entries are present and active in the connected Cloudflare account Secrets Store, scoped to Workers, and are bound only to the private `otyapoint-api` Worker. Live Worker settings confirm all four bindings. Metadata confirms names and status, not that stored values successfully authenticate with Interswitch.
+- The Worker exposes a SOVEREIGN-only `POST /api/integrations/quickteller/sandbox-auth` diagnostic route. It verifies Otya Auth identity and active owner membership, obtains a sandbox OAuth token only, records a sanitized audit result, and never returns or logs the token or credential values. This route has not yet been invoked by a provisioned owner account. No payment-initiation, refund, payout or provider transaction-status route is exposed, and no provider payment route is enabled.
 - OtyaPoint's agency transaction write route remains disabled. This source addition does not enable money movement.
 
 ## Credential custody
@@ -25,7 +25,7 @@ The expected server-side names are:
 | `QUICKTELLER_MERCHANT_CODE` | Merchant/account identifier |
 | `QUICKTELLER_PAY_ITEM_ID` | Product/service payment-item identifier |
 
-Store all four as account-level secrets scoped to `workers`, then bind them only to `otyapoint-api`. The four expected names are now present and active in the connected Secrets Store. Do not bind a credential to Otya Auth, Otya Core, Otya Next, Otya Media or another product unless that product has a documented need. Cloudflare's Secrets Store API never returns a secret value after creation; metadata listing can confirm only the name, status and scopes.
+Store all four as account-level secrets scoped to `workers`, then bind them only to `otyapoint-api`. The four expected names are present and active in the connected Secrets Store and the live Worker settings show the four corresponding bindings. Do not bind a credential to Otya Auth, Otya Core, Otya Next, Otya Media or another product unless that product has a documented need. Cloudflare's Secrets Store API never returns a secret value after creation; metadata listing can confirm only the name, status and scopes.
 
 The dashboard's `Data Ref`, QR Merchant ID and TILL Alias fields must remain separately classified. Their exact API meaning has not been established from the documented WebPay transaction flow; do not map them to Pay Item ID, QR ID or Till Alias by guessing. Confirm their usage against the country/product-specific contract with Interswitch.
 
@@ -82,4 +82,4 @@ Before live mode, complete provider onboarding/KYC and obtain explicit approval 
 
 ## Release rule
 
-Quickteller remains **not enabled** until credentials are confirmed in Cloudflare, the provider adapter is bound and reviewed, payment-intent/reconciliation controls pass, provider approval is evidenced, and the complete test suite succeeds. Adding credentials alone must never activate a payment route.
+Quickteller payment processing remains **not enabled**. The credentials are present and bound; the owner-only sandbox OAuth diagnostic is implemented but still requires an active SOVEREIGN membership and a successful live check. Payment initiation, transaction-status processing, callbacks, idempotency and reconciliation remain separate implementation and approval gates. Provider approval and Uganda-specific settlement/compliance confirmation are also required. Adding credentials or obtaining an OAuth token must never activate a payment route.

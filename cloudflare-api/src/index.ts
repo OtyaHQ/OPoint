@@ -1,3 +1,4 @@
+import { QuicktellerBusinessSandboxClient, QuicktellerBusinessError } from "./providers/quickteller-business-sandbox";
 import { saleRequestFingerprint } from "./sale-fingerprint.mjs";
 
 interface D1Result<T> { results: T[] }
@@ -353,6 +354,87 @@ export default {
     if (isResponse(staff)) return staff;
 
     try {
+      // Provider credential checks are restricted to the one-time-provisioned owner.
+      // This route obtains a sandbox OAuth token only; it cannot create or move money.
+      if (request.method === "POST" && url.pathname === "/api/integrations/quickteller/sandbox-auth") {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
+
+        const [clientId, clientSecret, merchantCode, payItemId] = await Promise.all([
+          resolveSecretStoreValue(env.QUICKTELLER_CLIENT_ID),
+          resolveSecretStoreValue(env.QUICKTELLER_CLIENT_SECRET),
+          resolveSecretStoreValue(env.QUICKTELLER_MERCHANT_CODE),
+          resolveSecretStoreValue(env.QUICKTELLER_PAY_ITEM_ID),
+        ]);
+        const credentialConfiguration = {
+          clientIdPresent: Boolean(clientId),
+          clientSecretPresent: Boolean(clientSecret),
+          merchantCodePresent: Boolean(merchantCode),
+          payItemIdPresent: Boolean(payItemId),
+        };
+        const checkedAt = new Date().toISOString();
+
+        if (!clientId || !clientSecret) {
+          await audit(
+            env, staff.id, "QUICKTELLER_SANDBOX_AUTH_CHECK", "INTEGRATION", "quickteller-business",
+            "Owner requested a sandbox OAuth credential check",
+            null,
+            { environment: "sandbox", outcome: "not_configured", credentialConfiguration, checkedAt },
+            rid,
+          );
+          return json({
+            error: "quickteller_oauth_credentials_incomplete",
+            data: { provider: "quickteller-business", environment: "sandbox", authentication: "not_checked", credentialConfiguration, checkedAt },
+            requestId: rid,
+          }, 503);
+        }
+
+        try {
+          const client = new QuicktellerBusinessSandboxClient({ clientId, clientSecret });
+          await client.getAccessToken();
+          await audit(
+            env, staff.id, "QUICKTELLER_SANDBOX_AUTH_CHECK", "INTEGRATION", "quickteller-business",
+            "Owner completed a read-only sandbox OAuth credential check",
+            null,
+            { environment: "sandbox", outcome: "authenticated", credentialConfiguration, checkedAt },
+            rid,
+          );
+          return json({
+            data: {
+              provider: "quickteller-business",
+              environment: "sandbox",
+              authentication: "successful",
+              merchantConfiguration: credentialConfiguration.merchantCodePresent && credentialConfiguration.payItemIdPresent ? "complete" : "incomplete",
+              credentialConfiguration,
+              checkedAt,
+            },
+            requestId: rid,
+          });
+        } catch (error) {
+          const providerError = error instanceof QuicktellerBusinessError ? error : null;
+          const authenticationRejected = providerError?.httpStatus === 401 || providerError?.httpStatus === 403;
+          const providerStatus = providerError?.httpStatus ?? null;
+          await audit(
+            env, staff.id, "QUICKTELLER_SANDBOX_AUTH_CHECK", "INTEGRATION", "quickteller-business",
+            "Owner completed a read-only sandbox OAuth credential check",
+            null,
+            { environment: "sandbox", outcome: authenticationRejected ? "rejected" : "unavailable", providerStatus, credentialConfiguration, checkedAt },
+            rid,
+          );
+          return json({
+            error: authenticationRejected ? "quickteller_authentication_rejected" : "quickteller_authentication_unavailable",
+            data: {
+              provider: "quickteller-business",
+              environment: "sandbox",
+              authentication: "failed",
+              providerStatus,
+              credentialConfiguration,
+              checkedAt,
+            },
+            requestId: rid,
+          }, 502);
+        }
+      }
+
       if (request.method === "GET" && url.pathname === "/api/me") {
         return json({
           data: {

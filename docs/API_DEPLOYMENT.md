@@ -6,7 +6,7 @@ The production D1 database is prepared through migration `0009_agency_cash_float
 
 Use `.github/workflows/deploy-api.yml` from the protected `main` branch. It runs the Worker, local runtime, security-boundary, agency, dashboard build, lint and Wrangler dry-run checks before deployment. The deployment job requires the exact input `DEPLOY` and the `production` GitHub Environment.
 
-The workflow deploys `otyapoint-api` using the root `wrangler.toml`. That config keeps `workers_dev = false`, exposes no public route, and binds only the OtyaPoint D1 database and the shared `otya-auth` service. It does not apply remote migrations, alter DNS, enable a public endpoint, or enable payment-provider writes.
+The workflow deploys `otyapoint-api` using the root `wrangler.toml`. That config keeps `workers_dev = false`, exposes no public route, and binds the OtyaPoint D1 database, the shared `otya-auth` service, the one-time owner/invitation secrets, and the four Quickteller Secrets Store entries scoped only to this Worker. It does not apply remote migrations, alter DNS, enable a public endpoint, or enable payment-provider writes. The Quickteller bindings support an owner-only sandbox OAuth diagnostic; they do not enable checkout or money movement.
 
 ## Required GitHub Actions credentials
 
