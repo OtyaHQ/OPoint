@@ -31,7 +31,7 @@ Financial and operational history is protected at the database layer: migration 
 
 The Cloudflare API source includes authenticated product and stock routes, cash-only retail sale posting with idempotency and ledger/audit records, a one-time secret-gated first-owner bootstrap, and owner-controlled email invitations. Staff invitations use hashed one-time tokens, require the invited person's own verified Otya identity and matching email, expire, can be revoked or resent, and create PENDING memberships. The owner must explicitly activate a membership.
 
-The agency-provider write route remains disabled. No MTN, Airtel, Interswitch or Quickteller provider request is enabled by this source change.
+The agency-provider write route remains disabled. An isolated Quickteller Business sandbox module now supports OAuth token acquisition and read-only transaction-status enquiry only; it has no payment-initiation or refund method and is not yet bound to the deployed Worker. No MTN, Airtel, Interswitch Marketplace Routing or Quickteller payment request is enabled by this source change.
 
 ## Frontend integration contract
 
