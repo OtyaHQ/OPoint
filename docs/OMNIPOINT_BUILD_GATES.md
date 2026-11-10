@@ -9,9 +9,9 @@ This file records verified implementation status, not a claim that the full prod
 - [x] Production D1 records migrations `0001–0009`.
 - [x] Migrations `0004–0009` validated first on the isolated restore-verification database, then applied to production after checking the production baseline.
 - [x] Production schema has 13 OtyaPoint business tables, 36 indexes and 18 triggers.
-- [x] All 13 production business tables were verified empty when migrations were applied.
+- [x] All 13 production business tables were verified empty when migrations were applied and rechecked read-only on 2026-11-10; no owner, products, staff, sales or ledger records are provisioned.
 - [x] A 2026-11-09 schema-and-ledger snapshot was uploaded to private R2, SHA-256 read-back verified, and restored into a new isolated EU D1 database.
-- [ ] The dedicated `otyapoint-api` Worker is deployed.
+- [x] The dedicated `otyapoint-api` Worker is deployed privately to Cloudflare with a 100% deployment version (verified 2026-11-10); `workers_dev` is disabled and no public route or custom domain is attached.
 - [ ] The scheduled full D1 export workflow has completed its first successful run.
 - [ ] Recurring recovery alerts and retention policy are established.
 
@@ -22,7 +22,7 @@ This file records verified implementation status, not a claim that the full prod
 - [x] Local roles, membership status, company scope and owner bootstrap constraints are present in the schema.
 - [x] One-time staff invitations use random tokens whose SHA-256 digests are stored; acceptance requires the invitee's own verified Otya identity and matching email.
 - [x] Invitation and owner bootstrap paths fail closed if their required secrets are absent.
-- [ ] Production API Worker has the owner-bootstrap and shared Auth notification secrets provisioned.
+- [x] The private API Worker has its account-level owner-bootstrap and staff-invitation secrets bound; secret values remain protected and were not read.
 - [ ] First owner is provisioned through the verified one-time flow.
 - [ ] A same-origin dashboard session BFF is implemented with HttpOnly/Secure/SameSite cookies, CSRF/origin checks, refresh rotation, logout revocation and replay tests.
 - [ ] Browser/device sign-in and least-privilege access tests pass against the deployed services.
@@ -34,7 +34,8 @@ This file records verified implementation status, not a claim that the full prod
 - [x] Sale-line triggers enforce company/product availability and stock deduction.
 - [x] Append-only ledger, stock-movement and audit protections are implemented in D1.
 - [x] Worker source and migration/runtime tests pass in CI and the isolated D1 restore.
-- [ ] API Worker is deployed and end-to-end health/auth/inventory/sales checks pass.
+- [x] API Worker is deployed privately at 100% (verified 2026-11-10).
+- [ ] End-to-end health, authentication, inventory and sales checks pass against the deployed services.
 - [ ] Dashboard has migrated from legacy Prisma/Supabase inventory and sales writes to the OtyaPoint API.
 - [ ] Receipt, returns/refunds, reporting and reconciliation workflows are verified against real shop procedures.
 - [ ] EFRIS integration is separately approved and validated; it remains unconfigured.
@@ -64,7 +65,7 @@ This file records verified implementation status, not a claim that the full prod
 - [x] The dashboard's old locally minted identity-token bridge is disabled and fails closed.
 - [x] A frontend/backend connection contract documents the required BFF, API routes and failure states.
 - [x] A gated private API deployment workflow has been added to `.github/workflows/deploy-api.yml`.
-- [ ] Deploy the API Worker from protected `main` after the production credentials are stored in the OtyaPoint GitHub production environment.
+- [ ] Complete a protected-main release through GitHub Actions using verified production environment credentials, then run the deployment and smoke-test gates.
 - [ ] Deploy the Next.js dashboard on a verified Cloudflare runtime and add a private service binding to `otyapoint-api` and `otya-auth`.
 - [ ] Implement secure same-origin login/session and server-side API proxy routes.
 - [ ] Replace dashboard Supabase/Prisma business-data paths only after the replacement is end-to-end verified and existing records are reconciled.
