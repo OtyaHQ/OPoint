@@ -788,7 +788,7 @@ export default {
           transactionCreation: "DISABLED_UNTIL_PROVIDER_ADAPTERS_AND_CONTROLS_ARE_VERIFIED",
           providers: [
             { id: "interswitch_marketplace_routing", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
-            { id: "quickteller_business", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
+            { id: "quickteller_business", status: "NOT_CONFIGURED", adapter: "SANDBOX_STATUS_CLIENT_ONLY", paymentInitiation: "NOT_IMPLEMENTED" },
             { id: "airtel_money", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" },
             { id: "mtn_mobile_money", status: "NOT_READY", adapter: "NOT_IMPLEMENTED" }
           ],
