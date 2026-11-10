@@ -7,6 +7,8 @@ workers_dev = false
 keep_vars = false
 
 [vars]
+# Stable tenant ID inherited from the original schema. It is an internal key,
+# not a public product or legal-entity name; do not change without a data migration.
 OTYAPOINT_COMPANY_ID = "omnipoint-default"
 
 [observability]
