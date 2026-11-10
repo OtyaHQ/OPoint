@@ -1,6 +1,6 @@
 # OtyaPoint Cloudflare-only dashboard and Otya Auth migration runbook
 
-Last reviewed: 2026-10-30
+Last reviewed: 2026-11-10
 
 ## Goal
 
@@ -9,12 +9,13 @@ Finish the existing OtyaPoint application as one connected system: GitHub source
 ## Verified starting point
 
 - The Cloudflare API entry point is `cloudflare-api/src/index.ts`; its Wrangler configuration is `wrangler.toml`.
-- The Worker verifies a bearer token by calling `GET https://auth/auth/verify` through the `AUTH` service binding. It requires `{ ok: true, user_id: <non-empty string> }`, then resolves the identity against `omni_staff_memberships.identity_subject`.
-- `GET /api/me`, `GET /api/products`, `GET /api/summary`, `POST /api/products`, `POST /api/stock-adjustments`, and `POST /api/sales` are implemented in the Worker. Sales remain cash-only; non-cash methods are disabled.
-- Regression coverage for missing tokens, failed identity verification, Auth service failure, inactive staff, unknown roles, and successful identity-to-staff mapping was merged in PR #82.
-- The dashboard login action in `app/login/actions.ts` still calls `createSupabaseServerClient()`. Other active Supabase SSR, Supabase admin, Prisma, middleware, staff invitation, and data-access paths remain. The dashboard is not yet fully connected to the Cloudflare API.
-- PR #85 removed the legacy `app/api/bridge/products/route.ts` local HS256-token flow and made the route fail closed with a non-cacheable HTTP 503 until dashboard sessions use Otya Auth and the verified identity is mapped to an active OtyaPoint staff membership. The bridge is not a production integration.
-- A direct read-only Cloudflare account inventory on 2026-10-30 listed only `otya-auth`, `otya-core`, and `otya-next`; querying the deployment endpoint for `otyapoint-api` returned 404 (Worker does not exist). Therefore the OtyaPoint API Worker is **not deployed in the inspected account**. No custom Worker route is configured in the checked-in Wrangler config. Do not infer live availability from local code or passing CI.
+- The API's current target trust boundary is Otya Auth for identity and local OtyaPoint D1 staff memberships for company/branch authorization. The Worker must resolve the authenticated Otya user against an active local membership; the browser must never supply its own role or company scope.
+- The Cloudflare account now has a published `otyapoint-api` Worker deployment. It is intentionally private: `workers_dev = false`, and no public route or custom domain is attached. A deployed private Worker is not a public customer service and does not prove the dashboard is connected.
+- Production `otyapoint-db` records migrations `0001–0009`. The 2026-11-10 inspection verified the 13 expected business tables and the current sale-idempotency, owner bootstrap, staff invitation, append-only history, and cash/float integrity objects. All 13 business tables were empty at that inspection; there was no owner membership, product, staff membership, sale, or agency transaction to migrate or display.
+- The Worker source includes authenticated inventory and stock routes, cash-only idempotent retail sale posting, ledger/audit foundations, a one-time secret-gated first-owner bootstrap, owner-controlled staff invitations, and read-only agency summary routes. The agency-provider write route remains disabled.
+- Quickteller Business is a separate sandbox adapter. A SOVEREIGN-only sandbox OAuth diagnostic is implemented, but requires an active, provisioned owner and has not been executed by an owner. It does not initiate payments or expose tokens. InterSwitch Marketplace Routing, Airtel Money, and MTN Mobile Money remain separate integrations; none is approved for live money movement.
+- The dashboard is **not yet fully connected** to the private API. Its active legacy Prisma/PostgreSQL and Supabase authentication/data paths remain. The former local-HS256 inventory bridge was deliberately made fail-closed; it is not an approved production integration. The dashboard needs a server-side Otya Auth session bridge and a same-origin backend-for-frontend before business routes can be enabled for daily use.
+- Keep all existing Supabase/Prisma data, compatibility code, remote databases, historical backups, and restore-verification databases intact until exports are reconciled, a single-writer cutover is tested, and rollback is independently verified. Do not infer that an empty table or an unused code path is safe to delete.
 
 ## Target trust boundaries
 
