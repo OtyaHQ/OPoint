@@ -135,4 +135,39 @@ test("authentication errors never expose the client secret or provider response 
   );
 });
 
+
+test("status enquiry accepts the documented lower-case response shape", async () => {
+  const client = new QuicktellerBusinessSandboxClient({
+    ...credentials,
+    fetchImpl: async url => String(url).startsWith(QUICKTELLER_SANDBOX_TOKEN_URL)
+      ? Response.json({ access_token: "sandbox-token", token_type: "bearer", expires_in: 3600 })
+      : Response.json({ responseCode: "00", amount: "1500.00" })
+  });
+
+  const result = await client.getTransactionStatus("QTB-UG-001", 1500);
+  assert.deepEqual(result, {
+    status: "CONFIRMED_SUCCESS", responseCode: "00", amountMatched: true
+  });
+});
+
+test("provider HTTP errors remain errors and never become successful payment states", async () => {
+  const client = new QuicktellerBusinessSandboxClient({
+    ...credentials,
+    fetchImpl: async url => String(url).startsWith(QUICKTELLER_SANDBOX_TOKEN_URL)
+      ? Response.json({ access_token: "sandbox-token", token_type: "bearer", expires_in: 3600 })
+      : new Response("provider-private-detail", { status: 404 })
+  });
+
+  await assert.rejects(
+    () => client.getTransactionStatus("QTB-UG-404", 1500),
+    error => {
+      assert.ok(error instanceof QuicktellerBusinessError);
+      assert.equal(error.kind, "http");
+      assert.equal(error.httpStatus, 404);
+      assert.equal(error.message.includes("provider-private-detail"), false);
+      return true;
+    }
+  );
+});
+
 test.after(() => rmSync(tempDir, { recursive: true, force: true }));
