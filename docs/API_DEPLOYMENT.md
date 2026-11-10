@@ -4,7 +4,11 @@ The production D1 database is prepared through migration `0009_agency_cash_float
 
 ## Release workflow
 
-Use `.github/workflows/deploy-api.yml` from the protected `main` branch. It runs the Worker, local runtime, security-boundary, agency, dashboard build, lint and Wrangler dry-run checks before deployment. The deployment job requires the exact input `DEPLOY` and the `production` GitHub Environment.
+The repository now includes `.github/workflows/deploy-api.yml`. It is a **manual-only** GitHub Actions workflow. Start it from the protected `main` branch in **Actions → Deploy OtyaPoint private API**. The validation job runs the D1 schema checks, API authorization and agency tests, Quickteller tests, local-runtime checks, TypeScript, lint, dashboard build and a Wrangler dry run. The deploy job runs only when the workflow input is explicitly set to `DEPLOY`.
+
+The deploy job targets the `production` GitHub Environment. Configure that environment with required reviewers (at least one owner-controlled reviewer), deployment branch restriction to `main`, and no unnecessary bypass permissions. A workflow input is not a substitute for environment protection. The job fails closed when its account variable or API-token secret is missing.
+
+The workflow deploys only the private Worker from the checked-in `wrangler.toml`. It does not apply D1 migrations, create DNS/custom routes, enable the `workers.dev` subdomain, enable payment-provider writes, or publish the dashboard. Do not run it from an unreviewed branch.
 
 The workflow deploys `otyapoint-api` using the root `wrangler.toml`. That config keeps `workers_dev = false`, exposes no public route, and binds the OtyaPoint D1 database, the shared `otya-auth` service, the one-time owner/invitation secrets, and the four Quickteller Secrets Store entries scoped only to this Worker. It does not apply remote migrations, alter DNS, enable a public endpoint, or enable payment-provider writes. The Quickteller bindings support an owner-only sandbox OAuth diagnostic; they do not enable checkout or money movement.
 
@@ -16,6 +20,10 @@ Configure these in **OtyaPoint → Settings → Secrets and variables → Action
 - Secret `CLOUDFLARE_API_TOKEN`, narrowly scoped to this Cloudflare account with Workers Scripts Write and the minimum D1 read permission required to resolve the configured D1 binding.
 
 Both secret values are stored centrally in Cloudflare Secrets Store and are bound to the exact Workers that need them. Otya Auth and OtyaPoint read the service token through a purpose-specific binding; OtyaPoint reads the one-time bootstrap secret through its own binding. The values are write-only in the Secrets Store API and are never copied into GitHub, source code, Wrangler variables or chat. The deployment API token must have Account Secrets Store Edit permission so Wrangler can resolve/deploy these bindings.
+
+## Verified live Worker baseline (2026-11-10)
+
+Cloudflare account inspection confirmed an existing published `otyapoint-api` deployment, four Quickteller Secrets Store bindings, the D1 binding and the private Otya Auth service binding. The Worker has `workers_dev = false`, its `workers.dev` subdomain is disabled, and no custom route was attached at inspection time. A published private Worker is not an externally reachable dashboard or public API.
 
 ## After the Worker deploys
 

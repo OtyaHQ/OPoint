@@ -1,0 +1,164 @@
+name: Deploy OtyaPoint private API
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_deploy:
+        description: Select DEPLOY only when authorizing a production private Worker deployment.
+        required: true
+        type: choice
+        default: NO
+        options:
+          - NO
+          - DEPLOY
+
+permissions:
+  contents: read
+
+concurrency:
+  group: otyapoint-api-production
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate OtyaPoint before production release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out protected main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Validate migration naming and order
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          files = sorted(Path("cloudflare-api/migrations").glob("*.sql"))
+          assert files, "No Cloudflare D1 migrations found"
+          versions = []
+          for path in files:
+              match = re.fullmatch(r"(\\d{4})_[a-z0-9_]+\\.sql", path.name)
+              assert match, f"Invalid migration filename: {path.name}"
+              versions.append(int(match.group(1)))
+          assert versions == list(range(1, len(versions) + 1)), f"Migration versions must be sequential: {versions}"
+          print("Validated migrations:", ", ".join(path.name for path in files))
+          PY
+
+      - name: Test D1 SQLite migration compatibility
+        run: python3 migration/d1/test_schema.py
+
+      - name: Test OtyaPoint core schema and stock invariants
+        run: python3 cloudflare-api/tests/test_core_schema.py
+
+      - name: Test agency cash and float book invariants
+        run: python3 cloudflare-api/tests/test_agency_cash_float_book.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.4'
+          package-manager-cache: false
+
+      - name: Install project dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Test complete D1 health readiness
+        run: node --test cloudflare-api/tests/health-readiness.test.mjs
+
+      - name: Validate legacy dashboard Prisma schema
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/omnipoint_ci
+        run: npm run db:validate
+
+      - name: Test sale fingerprint and idempotency
+        run: |
+          npm run test:sale-fingerprint
+          npm run test:sale-route-idempotency
+
+      - name: Test Otya Auth and staff authorization boundary
+        run: npm run test:auth-boundary
+
+      - name: Test agency transaction visibility and readiness
+        run: npm run test:agency-list
+
+      - name: Test legacy bridge fails closed
+        run: npm run test:legacy-products-bridge
+
+      - name: Test Quickteller sandbox adapter and owner diagnostic
+        run: npm run test:quickteller
+
+      - name: Install pinned isolated D1 test runtime
+        run: npm install --no-save --no-package-lock miniflare@4.20260730.0
+
+      - name: Test Worker routes against isolated D1
+        run: node --test cloudflare-api/tests/sale-route-d1-runtime.test.mjs
+
+      - name: Type-check Cloudflare Worker
+        run: npm run check:worker
+
+      - name: Validate local-only Wrangler configuration
+        run: npm run dev:local:check
+
+      - name: Test synthetic local Auth verifier
+        run: npm run test:local-auth
+
+      - name: Verify isolated local multi-Worker runtime
+        run: npm run test:local-runtime
+
+      - name: Wrangler production configuration dry run
+        run: npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.toml
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test D1 backup safeguards
+        run: node --test scripts/export-d1-backup.test.mjs
+
+      - name: Build dashboard and backend package
+        run: npm run build
+
+  deploy:
+    name: Deploy private otyapoint-api Worker
+    needs: validate
+    if: github.ref == 'refs/heads/main' && inputs.confirm_deploy == 'DEPLOY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Check out the exact validated main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.4'
+          package-manager-cache: false
+
+      - name: Verify protected deployment credentials exist
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || {
+            echo "::error::Set the CLOUDFLARE_ACCOUNT_ID variable in the production GitHub Environment."
+            exit 1
+          }
+          test -n "$CLOUDFLARE_API_TOKEN" || {
+            echo "::error::Set the narrowly scoped CLOUDFLARE_API_TOKEN secret in the production GitHub Environment."
+            exit 1
+          }
+
+      - name: Deploy the private Worker (no D1 migrations or public route changes)
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.159.0 deploy --config wrangler.toml
