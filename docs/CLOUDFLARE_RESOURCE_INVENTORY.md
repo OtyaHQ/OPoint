@@ -1,32 +1,30 @@
-# OtyaPoint — Public deployment and operations status
+# OtyaPoint — public deployment and product status
 
 **Last reviewed:** 2026-11-10  
-**Audience:** customers, developers and integration partners  
-**Classification:** public-safe product status only
+**Audience:** customers, developers and integration partners
 
-This repository is public. It must not be used as an inventory of private infrastructure. Exact account/resource IDs, database names, bucket names, backup object paths, object hashes, access policies, private routes, tenant records and internal service bindings belong in the owner's private operations records, not in public product documentation.
+This page is a public product-status summary, not an infrastructure inventory. It intentionally omits account identifiers, database and bucket names, service bindings, private routes, backup locations, recovery hashes, credential metadata and administrative procedures.
 
 ## Current product status
 
-- **Application:** OtyaPoint is the public product name for the shop and business-operations experience.
-- **Backend source:** the Cloudflare API implementation and versioned D1 migration files are maintained in this repository.
-- **Deployment:** the private `otyapoint-api` Worker has a published Cloudflare deployment. It is not customer-facing: `workers_dev` is disabled and no public route or custom domain is attached. The Worker deployment does not certify dashboard connectivity. Source code and a successful build do not establish a live deployment.
-- **Data migration:** production D1 migrations `0001–0009` are applied. At the 2026-11-10 inspection, all 13 OtyaPoint business tables were empty. The existing dashboard still has a legacy authentication/data path; it must remain intact until the replacement session boundary, data export, reconciliation and restore process are verified.
-- **Retail:** the source contains authenticated catalogue, stock and cash-only retail sale foundations. The private API Worker exists, but the dashboard is not yet fully connected to it; no owner bootstrap, products, staff memberships or sales were present in the inspected business tables.
-- **Agency providers:** InterSwitch Marketplace Routing, Quickteller Business, Airtel Money and MTN Mobile Money remain separate integrations and are not ready for real-money execution. The four Quickteller Business credentials are bound only to the private Worker. A SOVEREIGN-only sandbox OAuth diagnostic is implemented in source; it requires an active owner membership and has not yet been run by an owner. The route obtains a token only and cannot initiate payments. Transaction creation stays disabled until each provider contract, credentials, callbacks, idempotency, reconciliation and financial controls are independently approved.
-- **Email:** Otya uses its shared transactional email service. Source-level service-binding routes must not be described as operational until the paired service credentials and live deployment are verified.
+- **Product:** OtyaPoint is the retail and business-operations experience in the Otya family.
+- **Backend:** server-side foundations exist, but a restricted backend deployment does not mean the public dashboard is connected.
+- **Dashboard:** end-to-end authentication and business-data connectivity are not yet certified for daily operations.
+- **Business data:** the replacement business system has not yet been provisioned with the first owner, products, staff or sales.
+- **Retail:** the source includes inventory, stock and cash-sale foundations. Customer-facing use remains gated on the verified account and staff-session flow.
+- **Agency:** InterSwitch Marketplace Routing, Quickteller Business, Airtel Money and MTN Mobile Money are separate provider integrations. Their presence in source code does not imply that they are approved or live.
+- **Money movement:** live provider transactions, payouts and bill-payment writes remain disabled pending partner approval, callback verification, idempotency, reconciliation and financial-control tests.
 
-## Public integration guidance
+## Integration principles
 
-- Product data remains within the owning product's authorization boundary.
-- Authenticate and authorize every request on the server; a shared identity alone does not grant access to shop records.
-- Keep privileged service credentials server-side and use narrow service scopes.
-- Use idempotency keys for writes and immutable records for financial/audit history.
-- Treat provider timeouts as pending or unknown until reconciled with trusted provider evidence.
-- Never publish customer data, transaction references, private logs, backup files or operational credentials.
+- Use Otya account identity with OtyaPoint-specific server-side authorization.
+- Keep retail cash, agency cash, float, commissions and settlement records distinct.
+- Never accept client-side role claims as authority.
+- Never show a transaction as successful without trusted provider confirmation.
+- Keep private business records, credentials, recovery material and operational telemetry out of public examples.
 
-## Operator-only records
+## Important note
 
-The detailed infrastructure inventory, resource identifiers, backup manifests, data row counts, access configuration and recovery evidence are intentionally excluded from this public repository. They must be maintained in a private owner-controlled operations system with restricted access and a verified backup/restore process.
+A successful build, a restricted backend deployment or a schema migration is engineering evidence—not proof that a customer-facing product or financial integration is operational.
 
-This public status page does not authorize production deployment, remote database migration, DNS or secret changes, resource deletion, provider activation or financial operations.
+For public product and developer material, use the OtyaHub documentation surface. Private infrastructure and recovery information belongs in controlled Otya operations records.
