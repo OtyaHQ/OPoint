@@ -38,3 +38,15 @@ Deploy only to this Worker using Wrangler and this config after the CI check:
     npx wrangler deploy --config wrangler.opoint-staging.toml
 
 Do not use the legacy wrangler.toml for this new backend. It still points to the legacy Worker and database and is retained only as a compatibility reference until migration and cutover are reviewed.
+
+## Deployment verification
+
+- Staging API root: https://opoint-api-staging.petersmartlink.workers.dev
+- Health endpoint: https://opoint-api-staging.petersmartlink.workers.dev/health
+- Isolated staging database: opoint-staging-db
+- Identity binding: Otya ID service binding; company membership is resolved within Opoint.
+- Financial execution: disabled.
+
+The live staging smoke workflow passed, including database/schema readiness, the disabled financial capability contract and rejection of unauthenticated access: https://github.com/OtyaHQ/OPoint/actions/runs/43074333179
+
+The reproducible schema-only bootstrap is backend/schema/bootstrap.sql. Its validation is backend/test/verify_schema.py. It was exported from staging without application rows or Cloudflare-managed system tables. Apply only to a new empty Opoint D1 database; existing environments require forward-only migrations.
