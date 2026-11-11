@@ -22,6 +22,10 @@ OtyaPoint is a product name, not a statement that every listed capability is cur
 - Backups and private business files must remain private.
 - Production deployments, migrations and payment activation require review, recovery evidence and explicit release approval.
 
+## Domain portability
+
+The OtyaPoint API is a private Worker and must not depend on the current public website hostname. Product IDs, tenant IDs, D1 records, staff IDs and service bindings remain stable when public domains change. See [Domain and service identity](docs/DOMAIN_AND_SERVICE_IDENTITY.md) before introducing a URL or hostname dependency.
+
 ## Current public readiness
 
 - Backend foundations and automated checks are maintained in this repository.
