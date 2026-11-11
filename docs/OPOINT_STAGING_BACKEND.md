@@ -50,3 +50,16 @@ Do not use the legacy wrangler.toml for this new backend. It still points to the
 The live staging smoke workflow passed, including database/schema readiness, the disabled financial capability contract and rejection of unauthenticated access: https://github.com/OtyaHQ/OPoint/actions/runs/43074333179
 
 The reproducible schema-only bootstrap is backend/schema/bootstrap.sql. Its validation is backend/test/verify_schema.py. It was exported from staging without application rows or Cloudflare-managed system tables. Apply only to a new empty Opoint D1 database; existing environments require forward-only migrations.
+
+## Operational read API surface
+
+After company membership is verified, the Worker exposes branch-scoped read APIs for:
+- Customers, suppliers and product categories.
+- Stock by inventory location.
+- Sales, cash accounts and cash sessions.
+- Purchases, expenses and reconciliation sessions.
+- Ledger entries, payment intents, agency operations and biller catalogue.
+
+Access is role-scoped. Customer phone/email are masked for normal counter roles, tax identifiers are restricted to owner/admin/accounting/auditor roles, and product cost is hidden from counter/agent roles. These routes are read-only.
+
+Opoint Assistant is disabled at the backend capability layer until its isolated agent, read-tool allowlist, tenant-isolation tests, budget and approval gates are implemented. Sales posting, journal posting, cash movement and all provider execution remain disabled.
