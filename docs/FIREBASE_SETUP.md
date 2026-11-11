@@ -1,6 +1,6 @@
 ## 0. Provisioning status — 11 November 2026
 
-The dedicated Opoint Firebase project and Android app have been created. The uploaded `google-services.json` was inspected and its identity values match the intended Opoint application:
+The Opoint Android Firebase App ID was supplied and is recorded below. The Firebase project ID and project number have not yet been independently verified from Firebase Console or a current `google-services.json`; do not infer the project ID from the App ID or deploy server-side Firebase credentials until verified:
 
 | Field | Confirmed value |
 |---|---|
@@ -14,7 +14,7 @@ The current `google-services.json` has not been independently verified in this r
 
 # Opoint Firebase setup (manual console checklist)
 
-Firebase project creation and app registration must be completed in the Firebase Console by an authorised Otya administrator. **Opoint and Omy Play use separate Firebase projects and separate Android application IDs.** Opoint is `opoint-otya-prod` / `com.otya.opoint`; Omy Play is `omyplay-otya-prod` / `com.otya.omyplay`. Do not register either app in the other product's Firebase project.
+Firebase project creation and app registration must be completed in the Firebase Console by an authorised Otya administrator. **Opoint and Omy Play use separate Firebase projects and separate Android application IDs.** Opoint's Android App ID is recorded below; its project ID still needs verification. Omy Play's dedicated project is `omyplay-otya-prod`; its package-ID migration is under review in a separate PR. Do not register either app in the other product's Firebase project.
 
 ## 1. Product identity and package names
 
@@ -23,7 +23,7 @@ Firebase project creation and app registration must be completed in the Firebase
 | Opoint | `com.otya.opoint` | New dedicated Opoint project |
 | Omy Play | `com.otya.omyplay` | `omyplay-otya-prod` |
 
-Omy Play's new Android product identity has been aligned to `com.otya.omyplay` on its rebuild branch. The Firebase project was separately created for that package. This is a fresh product migration and must be validated before a signed release; do not reuse the retired `com.otya.omyplay` Firebase identity.
+Omy Play has a candidate package migration to `com.otya.omyplay` on a separate branch. A compatibility branch preserves the existing `com.otyaplayer.app` package pending Play Console/release-history verification. Do not use the Firebase app registration for one package with an APK built for the other.
 
 Opoint is a new Android app and should use `com.otya.opoint`, provided the identifier is not already registered in Google Play or another relevant distribution channel. Confirm it before registering. Once an app is published, changing the application ID makes it a different app rather than an update.
 
@@ -31,7 +31,7 @@ Opoint is a new Android app and should use `com.otya.opoint`, provided the ident
 
 1. Open https://console.firebase.google.com/
 2. Create a new project named **Opoint**.
-3. Use `opoint-otya-prod` as the preferred project ID if available. Project IDs are globally unique and cannot be changed after creation.
+3. If the project does not yet exist, `opoint-otya-prod` may be requested if available. If it already exists, record its actual project ID; Firebase project IDs are globally unique and cannot be changed after creation.
 4. Keep this project separate from Omy Play's `otya-player` Firebase project.
 5. Enable Google Analytics only if its data collection purpose and consent/privacy notices are configured for Opoint.
 
