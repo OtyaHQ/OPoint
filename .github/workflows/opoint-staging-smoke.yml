@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
           body="$(curl --retry 5 --retry-delay 1 --retry-all-errors --max-time 30 -fsS "https://opoint-api-staging.petersmartlink.workers.dev/v1/capabilities")"
           echo "$body"
-          node -e 'const x=JSON.parse(process.argv[1]); if(x.paymentsEnabled!==false || x.providerExecutionEnabled!==false && x.providerExecutionEnabled!==undefined) process.exit(1)' "$body"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.paymentsEnabled!==false || x.providerExecutionEnabled!==false || x.aiAssistantEnabled!==false || x.salesPostingEnabled!==false || x.journalPostingEnabled!==false || x.cashMovementEnabled!==false) process.exit(1)' "$body"
       - name: Confirm protected routes require identity
         run: |
           set -euo pipefail
