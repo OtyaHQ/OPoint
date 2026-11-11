@@ -291,6 +291,119 @@ async function handle(request, env) {
     return json({ data: { products: { total: products?.total || 0, active: products?.active || 0 }, sales: { total: sales?.total || 0, completedAmountUGX: sales?.completed_amount || 0 } }, requestId }, 200, requestId);
   }
 
+  if (request.method === "GET" && url.pathname === "/v1/customers") {
+    const search = clean(url.searchParams.get("q"), 80);
+    const like = "%" + search.replace(/[%_\\]/g, "") + "%";
+    const rows = await env.DB.prepare(
+      "SELECT id,customer_ref,display_name,phone_e164,email,tax_identifier,status,created_at,updated_at FROM customers WHERE company_id=?1 AND status!='ARCHIVED' AND (?2='%%' OR display_name LIKE ?2 OR customer_ref LIKE ?2 OR phone_e164 LIKE ?2) ORDER BY display_name LIMIT 100"
+    ).bind(companyId, search ? like : "%%").all();
+    const data = (rows.results || []).map(row => ({
+      ...row,
+      taxIdentifier: ["OWNER","ADMIN","ACCOUNTANT","AUDITOR"].includes(membership.role_key) ? row.tax_identifier : null,
+    }));
+    return json({ data, requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/suppliers") {
+    if (!["OWNER","ADMIN","MANAGER","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    const search = clean(url.searchParams.get("q"), 80);
+    const like = "%" + search.replace(/[%_\\]/g, "") + "%";
+    const rows = await env.DB.prepare(
+      "SELECT id,supplier_ref,display_name,phone_e164,email,status,created_at,updated_at FROM suppliers WHERE company_id=?1 AND status!='ARCHIVED' AND (?2='%%' OR display_name LIKE ?2 OR supplier_ref LIKE ?2 OR phone_e164 LIKE ?2) ORDER BY display_name LIMIT 100"
+    ).bind(companyId, search ? like : "%%").all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/categories") {
+    const rows = await env.DB.prepare(
+      "SELECT id,name,parent_id,created_at FROM product_categories WHERE company_id=?1 ORDER BY name LIMIT 200"
+    ).bind(companyId).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/stock") {
+    const rows = await env.DB.prepare(
+      "SELECT p.id AS product_id,p.sku,p.name,p.unit_of_measure,p.reorder_level,p.status AS product_status,l.id AS location_id,l.code AS location_code,l.name AS location_name,COALESCE(SUM(sm.quantity_delta),0) AS quantity_on_hand FROM products p JOIN inventory_locations l ON l.company_id=p.company_id LEFT JOIN stock_movements sm ON sm.company_id=p.company_id AND sm.product_id=p.id AND sm.location_id=l.id WHERE p.company_id=?1 AND (?2 IS NULL OR l.branch_id=?2) GROUP BY p.id,l.id ORDER BY p.name,l.name LIMIT 500"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/sales") {
+    const rows = await env.DB.prepare(
+      "SELECT s.id,s.receipt_number,s.status,s.subtotal_amount,s.discount_amount,s.tax_amount,s.total_amount,s.cost_amount,s.created_at,s.completed_at,c.display_name AS customer_name FROM sales s LEFT JOIN customers c ON c.company_id=s.company_id AND c.id=s.customer_id WHERE s.company_id=?1 AND (?2 IS NULL OR s.branch_id=?2) ORDER BY s.created_at DESC LIMIT 100"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/cash/accounts") {
+    const rows = await env.DB.prepare(
+      "SELECT a.id,a.branch_id,b.name AS branch_name,a.account_type,a.provider_code,a.account_code,a.display_name,a.currency,a.status FROM cash_accounts a JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND (?2 IS NULL OR a.branch_id=?2) ORDER BY b.name,a.display_name"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/cash/sessions") {
+    const rows = await env.DB.prepare(
+      "SELECT s.id,s.branch_id,b.name AS branch_name,s.cash_account_id,a.display_name AS cash_account_name,s.opened_by,s.closed_by,s.opening_amount,s.expected_closing_amount,s.counted_closing_amount,s.difference_amount,s.status,s.opened_at,s.closed_at FROM cash_sessions s JOIN cash_accounts a ON a.company_id=s.company_id AND a.id=s.cash_account_id JOIN branches b ON b.company_id=s.company_id AND b.id=s.branch_id WHERE s.company_id=?1 AND (?2 IS NULL OR s.branch_id=?2) ORDER BY s.opened_at DESC LIMIT 100"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/purchases") {
+    if (!["OWNER","ADMIN","MANAGER","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    const rows = await env.DB.prepare(
+      "SELECT p.id,p.branch_id,p.order_number,p.status,p.currency,p.subtotal_amount,p.tax_amount,p.total_amount,p.created_at,s.display_name AS supplier_name FROM purchase_orders p JOIN suppliers s ON s.company_id=p.company_id AND s.id=p.supplier_id WHERE p.company_id=?1 AND (?2 IS NULL OR p.branch_id=?2) ORDER BY p.created_at DESC LIMIT 100"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/expenses") {
+    if (!["OWNER","ADMIN","MANAGER","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    const rows = await env.DB.prepare(
+      "SELECT id,branch_id,expense_reference,category_code,description,amount,currency,status,recorded_by,approved_by,created_at FROM business_expenses WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/reconciliation") {
+    if (!["OWNER","ADMIN","MANAGER","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    const rows = await env.DB.prepare(
+      "SELECT r.id,r.branch_id,r.reconciliation_type,r.provider_code,r.business_date,r.expected_amount,r.counted_amount,r.difference_amount,r.status,r.notes,r.prepared_by,r.approved_by,r.created_at,r.updated_at,(SELECT COUNT(*) FROM reconciliation_items i WHERE i.company_id=r.company_id AND i.reconciliation_session_id=r.id) AS item_count FROM reconciliation_sessions r WHERE r.company_id=?1 AND (?2 IS NULL OR r.branch_id=?2) ORDER BY r.business_date DESC,r.created_at DESC LIMIT 100"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/ledger/entries") {
+    if (!["OWNER","ADMIN","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    const rows = await env.DB.prepare(
+      "SELECT e.id,e.entry_number,e.source_type,e.source_id,e.status,e.currency,e.description,e.created_by,e.posted_by,e.created_at,e.posted_at,COALESCE(SUM(l.debit_amount),0) AS debit_total,COALESCE(SUM(l.credit_amount),0) AS credit_total FROM journal_entries e LEFT JOIN journal_lines l ON l.company_id=e.company_id AND l.journal_entry_id=e.id WHERE e.company_id=?1 GROUP BY e.id ORDER BY e.created_at DESC LIMIT 100"
+    ).bind(companyId).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/payment-intents") {
+    if (!["OWNER","ADMIN","ACCOUNTANT","AUDITOR","AGENT"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    const rows = await env.DB.prepare(
+      "SELECT id,branch_id,source_type,source_id,operation_type,provider_code,provider_reference,external_reference,status,amount,fee_amount,commission_amount,currency,failure_code,created_at,updated_at,resolved_at FROM payment_intents WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/agency/operations") {
+    if (!["OWNER","ADMIN","MANAGER","AGENT","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    const rows = await env.DB.prepare(
+      "SELECT id,branch_id,provider_code,operation_type,status,amount,fee_amount,commission_amount,reference,created_by,created_at,completed_at FROM agency_operations WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
+    ).bind(companyId, membership.branch_id || null).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/billers") {
+    const rows = await env.DB.prepare(
+      "SELECT id,provider_code,biller_code,biller_name,category,status,updated_at FROM biller_catalog WHERE status='ACTIVE' ORDER BY category,biller_name LIMIT 200"
+    ).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
   if (request.method === "GET" && url.pathname === "/v1/integrations") {
     const result = await env.DB.prepare(
       "SELECT provider_code,environment,status,last_health_check_at,last_error_code,updated_at FROM integration_status WHERE company_id=?1 ORDER BY provider_code,environment"
