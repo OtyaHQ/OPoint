@@ -4,15 +4,13 @@ The dedicated Opoint Firebase project and Android app have been created. The upl
 
 | Field | Confirmed value |
 |---|---|
-| Firebase project ID | `opoint-otya-prod` |
-| Firebase project number / sender ID | `364659191146` |
+| Firebase project ID | **Not yet verified** |
+| Firebase project number / sender ID | **Not yet verified** (the App ID contains a numeric project identifier, but confirm it in Firebase Console) |
 | Firebase Android App ID | `1:364659191146:android:159ab2c76deafd5628c913` |
 | Android application ID | `com.otya.opoint` |
 | OAuth client entries in this config | None |
 
-The configuration file contains a Firebase client API key. Firebase documents these Firebase-provisioned client keys as public project/app identifiers, not server credentials. Keep the key limited to Firebase services, preserve its Firebase API restrictions, and never reuse it for unrelated Google Cloud APIs. The Admin service-account private key is separate and must never be placed in the Android app or a public repository.
-
-The full `google-services.json` is intentionally not committed to this public repository. Use a controlled private build configuration or CI secret/file for Android builds.
+The current `google-services.json` has not been independently verified in this repository session. Do not claim it is configured or use it for a release until its `project_id`, `project_number`, `mobilesdk_app_id` and `package_name` are checked against the Firebase Console. Never commit service-account credentials or private keys.
 
 # Opoint Firebase setup (manual console checklist)
 
