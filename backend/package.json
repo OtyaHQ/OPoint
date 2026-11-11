@@ -4,7 +4,10 @@
   "type": "module",
   "scripts": {
     "check": "node --check src/index.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "verify:schema": "python3 test/verify_schema.py"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  }
 }
