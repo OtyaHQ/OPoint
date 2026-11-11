@@ -115,7 +115,7 @@ async function deliverStaffInvitation(
   const inviteServiceToken = await resolveSecretStoreValue(env.OTYAPOINT_INVITE_SERVICE_TOKEN);
   if (inviteServiceToken.length < 32) return false;
   try {
-    const response = await env.AUTH.fetch(new Request("https://auth/internal/notifications/omnipoint/staff-invitation", {
+    const response = await env.AUTH.fetch(new Request("https://auth/internal/notifications/otyapoint/staff-invitation", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -275,7 +275,7 @@ export default {
     }
 
     // Invitation acceptance is an authenticated identity operation, not a staff
-    // operation: the invited user does not yet have an OmniPoint membership.
+    // operation: the invited user does not yet have an OtyaPoint membership.
     if (request.method === "POST" && url.pathname === "/api/staff/invitations/accept") {
       const identity = await verifyOtyaIdentity(request.headers.get("authorization") || "", env);
       if (!identity) return json({ error: "identity_verification_failed" }, 401);
