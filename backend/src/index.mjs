@@ -128,7 +128,7 @@ async function audit(env, request, companyId, actorId, action, entityType, entit
 async function createCompany(request, env, identity, body) {
   const displayName = normalizeCompanyName(body.displayName);
   const legalName = clean(body.legalName, 180) || null;
-  const branchName = clean(body.branchName || "Main branch", 100);
+  const branchName = clean(body.branchName || "Main branch", 100) || "Main branch";
   const idempotencyKey = clean(request.headers.get("idempotency-key"), 128);
   if (displayName.length < 2) return json({ error: "company_name_required" }, 400);
   if (!/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) return json({ error: "idempotency_key_required" }, 400);
@@ -146,7 +146,6 @@ async function createCompany(request, env, identity, body) {
   const branchId = crypto.randomUUID();
   const ownerMembershipId = crypto.randomUUID();
   const inventoryId = crypto.randomUUID();
-  const cashLedgerId = crypto.randomUUID();
   const cashAccountId = crypto.randomUUID();
   const slug = normalizeSlug(displayName) + "-" + companyId.slice(0, 6);
   const ownerName = clean(body.ownerName, 120) || identity.email?.split("@")[0] || "Owner";
@@ -162,6 +161,7 @@ async function createCompany(request, env, identity, body) {
     ["5100", "Sales discounts", "EXPENSE", "DEBIT"],
   ];
   const ledgerIds = accounts.map(() => crypto.randomUUID());
+  const cashLedgerId = ledgerIds[0];
   const responseData = {
     company: { id: companyId, slug, displayName, legalName, status: "SETUP", currency: "UGX", countryCode: "UG" },
     branch: { id: branchId, code: "MAIN", name: branchName },
