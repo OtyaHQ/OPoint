@@ -1,0 +1,34 @@
+name: Opoint staging smoke
+on:
+  push:
+    branches: [opoint-rebuild-foundation]
+    paths:
+      - ".github/workflows/opoint-staging-smoke.yml"
+      - "backend/**"
+      - "wrangler.opoint-staging.toml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check public staging health
+        run: |
+          set -euo pipefail
+          base="https://opoint-api-staging.petersmartlink.workers.dev"
+          health="$(curl --retry 3 --retry-delay 2 --retry-all-errors --max-time 25 -fsS "$base/health")"
+          echo "$health"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.status!=="ready" || x.schemaReady!==true) process.exit(1)' "$health"
+      - name: Confirm payment execution remains disabled
+        run: |
+          set -euo pipefail
+          body="$(curl --max-time 20 -fsS "https://opoint-api-staging.petersmartlink.workers.dev/v1/capabilities")"
+          echo "$body"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.paymentsEnabled!==false || x.providerExecutionEnabled!==false && x.providerExecutionEnabled!==undefined) process.exit(1)' "$body"
+      - name: Confirm protected routes require identity
+        run: |
+          set -euo pipefail
+          status="$(curl --max-time 20 -sS -o /tmp/protected.json -w '%{http_code}' "https://opoint-api-staging.petersmartlink.workers.dev/v1/me")"
+          cat /tmp/protected.json
+          test "$status" = "401"
