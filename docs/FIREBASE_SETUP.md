@@ -1,23 +1,37 @@
 # Opoint Firebase setup (manual console checklist)
 
-Firebase project creation and app registration must be completed in the Firebase Console by an authorised Otya administrator. Do not use Omy Play's existing `otya-player` Firebase project.
+Firebase project creation and app registration must be completed in the Firebase Console by an authorised Otya administrator. **Opoint and Omy Play must use separate Firebase projects and separate Android application IDs.** Do not register Opoint inside Omy Play's existing `otya-player` project.
 
-## 1. Create the project
+## 1. Product identity and package names
+
+| Product | Android application ID | Firebase project |
+|---|---|---|
+| Opoint | `com.otya.opoint` | New dedicated Opoint project |
+| Omy Play | `com.otyaplayer.app` | Existing Omy Play project `otya-player` |
+
+Omy Play's current Android Gradle configuration declares both `namespace` and `applicationId` as `com.otyaplayer.app`. Preserve that identifier for compatibility with existing installs and future app updates.
+
+Opoint is a new Android app and should use `com.otya.opoint`, provided the identifier is not already registered in Google Play or another relevant distribution channel. Confirm it before registering. Once an app is published, changing the application ID makes it a different app rather than an update.
+
+## 2. Create the Opoint project
 
 1. Open https://console.firebase.google.com/
 2. Create a new project named **Opoint**.
-3. Use a distinct project ID if the preferred ID is available, e.g. `opoint-otya-prod`. Project IDs are globally unique; confirm availability in the console.
-4. Keep this project separate from Omy Play and from any development project.
+3. Use `opoint-otya-prod` as the preferred project ID if available. Project IDs are globally unique and cannot be changed after creation.
+4. Keep this project separate from Omy Play's `otya-player` Firebase project.
 5. Enable Google Analytics only if its data collection purpose and consent/privacy notices are configured for Opoint.
 
-## 2. Register the Android app
+## 3. Register the Opoint Android app
 
-1. Register a new Android app in the Opoint Firebase project.
-2. Use the Android application ID chosen for Opoint, recommended: `com.otya.opoint`. Confirm it before the first public release because changing the package later requires a new app identity.
-3. Download `google-services.json` for the Android build if required by the selected FlutterFire setup. Keep it out of public repositories when using a private configuration workflow.
-4. Configure FlutterFire for the correct project and add only the public Firebase client options to the Android build. Firebase client API keys/app IDs are not server secrets, but they must still be restricted and monitored.
+1. In the new Opoint Firebase project, add an Android app.
+2. Enter this exact application ID: `com.otya.opoint`.
+3. Enter an internal nickname such as `Opoint Android`.
+4. Download `google-services.json` for the Opoint app. It is a client configuration file with identifiers, not a server service-account private key.
+5. Keep the file out of public repositories and apply the team's private build-configuration process.
 
-## 3. Enable mobile services
+Do not register `com.otyaplayer.app` in this Opoint project. That app belongs to Omy Play.
+
+## 4. Enable mobile services
 
 Enable:
 - Firebase Cloud Messaging;
@@ -28,25 +42,26 @@ Enable:
 
 Do not enable Firestore or Firebase Storage for the initial Opoint financial backend. Cloudflare D1 remains the financial source of truth; Cloudflare R2 stores business documents and receipts.
 
-## 4. App Check
+## 5. App Check
 
-1. Register the Android app with App Check.
+1. Register the Opoint Android app with App Check.
 2. Select Play Integrity for release builds.
 3. Add the development/debug provider only for controlled developer builds.
 4. Add the production signing certificate SHA-256 fingerprint once the release signing key is established.
 5. Start in monitor mode. Review real-device attestation signals before enabling enforcement.
 6. App Check supplements authentication and authorisation; it does not replace Otya ID, role checks or transaction controls.
 
-## 5. Server-side FCM credentials
+## 6. Server-side FCM credentials
 
-Opoint's Cloudflare Worker needs Firebase Admin SDK credentials to send FCM messages:
-1. In the Firebase project, create/use a dedicated service account with only the roles required for FCM.
-2. Generate/download a private key only if Workload Identity Federation is not being used.
-3. Store the JSON private key in the Opoint-scoped Cloudflare Secrets Store. Never put it in GitHub, the Flutter app, public configuration, logs or chat.
+Opoint's Cloudflare Worker needs Firebase Admin credentials to send FCM messages:
+
+1. Create or select a dedicated service account in the Opoint Google Cloud project with only the roles required for FCM.
+2. Prefer a workload-identity-based approach where supported. If a service-account key is needed, generate it only for the Opoint project.
+3. Store the credential in the Opoint-scoped Cloudflare Secrets Store. Never put it in GitHub, the Flutter app, public configuration, logs or chat.
 4. Do not reuse Omy Play's service-account credentials.
-5. Restrict who can access and rotate this secret.
+5. Restrict access and rotate credentials under a documented process.
 
-## 6. Notification design
+## 7. Notification design
 
 - Persist notification intent, target identity/device, event type and delivery state in Opoint D1.
 - Use an outbox and Queue consumer to send FCM.
@@ -55,19 +70,19 @@ Opoint's Cloudflare Worker needs Firebase Admin SDK credentials to send FCM mess
 - The Android app must fetch current transaction status from Opoint after receiving a notification.
 - Never put PINs, full customer references, balances or sensitive payment details in push payloads.
 
-## 7. Values to record (not secrets)
+## 8. Values to record (not secrets)
 
 After setup, record these values in a private deployment inventory:
 - Firebase project ID;
 - Firebase project number / sender ID;
-- Android app ID;
-- Android package name;
+- Firebase Android App ID;
+- Android package name (`com.otya.opoint`);
 - registered SHA-256 certificate fingerprint;
 - App Check enforcement mode.
 
 Do not paste a service-account JSON key or private key into ChatGPT. Enter it directly into Cloudflare Secrets Store.
 
-## 8. Validation before enabling production notifications
+## 9. Validation before enabling production notifications
 
 - Install a signed Opoint build on a real Android device.
 - Confirm App Check attestation is received by the backend.
