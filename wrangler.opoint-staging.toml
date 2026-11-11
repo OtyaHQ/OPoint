@@ -9,6 +9,7 @@ ENVIRONMENT = "staging"
 PRODUCT_CODE = "OPOINT"
 PAYMENT_EXECUTION_ENABLED = "false"
 PROVIDER_EXECUTION_ENABLED = "false"
+AI_ENABLED = "false"
 
 [observability]
 enabled = true
