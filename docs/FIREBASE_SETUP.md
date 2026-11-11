@@ -1,3 +1,19 @@
+## 0. Provisioning status — 11 November 2026
+
+The dedicated Opoint Firebase project and Android app have been created. The uploaded `google-services.json` was inspected and its identity values match the intended Opoint application:
+
+| Field | Confirmed value |
+|---|---|
+| Firebase project ID | `opoint-otya-prod` |
+| Firebase project number / sender ID | `364659191146` |
+| Firebase Android App ID | `1:364659191146:android:159ab2c76deafd5628c913` |
+| Android application ID | `com.otya.opoint` |
+| OAuth client entries in this config | None |
+
+The configuration file contains a Firebase client API key. Firebase documents these Firebase-provisioned client keys as public project/app identifiers, not server credentials. Keep the key limited to Firebase services, preserve its Firebase API restrictions, and never reuse it for unrelated Google Cloud APIs. The Admin service-account private key is separate and must never be placed in the Android app or a public repository.
+
+The full `google-services.json` is intentionally not committed to this public repository. Use a controlled private build configuration or CI secret/file for Android builds.
+
 # Opoint Firebase setup (manual console checklist)
 
 Firebase project creation and app registration must be completed in the Firebase Console by an authorised Otya administrator. **Opoint and Omy Play must use separate Firebase projects and separate Android application IDs.** Do not register Opoint inside Omy Play's existing `otya-player` project.
