@@ -1,0 +1,27 @@
+name: Opoint backend CI
+on:
+  pull_request:
+    paths:
+      - "backend/**"
+      - "wrangler.opoint-staging.toml"
+      - ".github/workflows/opoint-backend-ci.yml"
+  push:
+    branches: [main, opoint-rebuild-foundation]
+    paths:
+      - "backend/**"
+      - "wrangler.opoint-staging.toml"
+      - ".github/workflows/opoint-backend-ci.yml"
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: npm --prefix backend run check
+      - name: Contract tests
+        run: npm --prefix backend test
