@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker, { isUGXAmount, normalizeCompanyName, normalizeSlug, parseProductInput, REQUIRED_TABLES, REQUIRED_GUARDS } from "../src/index.mjs";
+import worker, { isUGXAmount, normalizeCompanyName, normalizeSlug, maskPhone, maskEmail, parseProductInput, REQUIRED_TABLES, REQUIRED_GUARDS } from "../src/index.mjs";
 
 test("company name and slug normalization are bounded and stable", () => {
   assert.equal(normalizeCompanyName("  Otya   Retail  "), "Otya Retail");
@@ -36,4 +36,17 @@ test("protected endpoints reject missing bearer tokens before data access", asyn
   const response = await worker.fetch(new Request("https://opoint-staging.invalid/v1/me"), env);
   assert.equal(response.status, 401);
   assert.equal(touched, false);
+});
+
+test("customer PII masking preserves only safe contact hints", () => {
+  assert.equal(maskPhone("+256 700 123456"), "••••••3456");
+  assert.equal(maskEmail("peter@example.com"), "p***@example.com");
+  assert.equal(maskPhone(null), null);
+  assert.equal(maskEmail("invalid"), null);
+});
+
+test("readiness checks include the operational tables exposed by the API", () => {
+  for (const table of ["customers", "suppliers", "stock_movements", "cash_sessions", "purchase_orders", "business_expenses", "reconciliation_sessions", "agency_operations"]) {
+    assert.ok(REQUIRED_TABLES.includes(table), table);
+  }
 });
