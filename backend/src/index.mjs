@@ -1,8 +1,11 @@
 const REQUIRED_TABLES = [
   "companies", "branches", "staff_memberships", "company_creation_requests",
-  "inventory_locations", "ledger_accounts", "cash_accounts", "products",
-  "sales", "journal_entries", "journal_lines", "payment_intents",
-  "opoint_schema_migrations", "audit_events", "integration_status",
+  "inventory_locations", "ledger_accounts", "cash_accounts", "products", "product_categories",
+  "customers", "suppliers", "stock_movements", "sales", "sale_lines", "sale_payments",
+  "cash_sessions", "purchase_orders", "purchase_order_lines", "business_expenses",
+  "reconciliation_sessions", "reconciliation_items", "journal_entries", "journal_lines",
+  "payment_intents", "payment_attempts", "payment_reversals", "agency_operations",
+  "biller_catalog", "opoint_schema_migrations", "audit_events", "integration_status",
 ];
 const REQUIRED_GUARDS = [
   "trg_journal_post_balance_guard",
@@ -236,6 +239,10 @@ async function handle(request, env) {
     return json({
       product: "Opoint",
       paymentsEnabled: false,
+      providerExecutionEnabled: false,
+      salesPostingEnabled: false,
+      journalPostingEnabled: false,
+      cashMovementEnabled: false,
       agencyOperationsEnabled: false,
       billPaymentsEnabled: false,
       airtimeAndDataEnabled: false,
