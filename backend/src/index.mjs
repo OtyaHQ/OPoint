@@ -46,6 +46,19 @@ export function isUGXAmount(value) {
   return Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000_000_000;
 }
 
+export function maskPhone(value) {
+  if (typeof value !== "string" || !value) return null;
+  const digits = value.replace(/\\D/g, "");
+  if (digits.length <= 4) return "****";
+  return "••••••" + digits.slice(-4);
+}
+
+export function maskEmail(value) {
+  if (typeof value !== "string" || !value.includes("@")) return null;
+  const [local, domain] = value.split("@");
+  return (local.slice(0, 1) || "*") + "***@" + domain;
+}
+
 export function parseProductInput(body) {
   const sku = clean(body?.sku, 40).toUpperCase();
   const name = clean(body?.name, 160);
@@ -259,7 +272,9 @@ async function handle(request, env) {
     const result = await env.DB.prepare(
       "SELECT id,sku,barcode,name,description,unit_of_measure,cost_amount,selling_amount,currency,track_stock,reorder_level,status,created_at,updated_at FROM products WHERE company_id = ?1 AND (?2 = '%%' OR name LIKE ?2 OR sku LIKE ?2 OR barcode LIKE ?2) ORDER BY name LIMIT 100"
     ).bind(companyId, search ? like : "%%").all();
-    return json({ data: result.results || [], requestId }, 200, requestId);
+    const canSeeCost = ["OWNER","ADMIN","MANAGER","ACCOUNTANT","AUDITOR"].includes(membership.role_key);
+    const data = (result.results || []).map(row => ({ ...row, cost_amount: canSeeCost ? row.cost_amount : null }));
+    return json({ data, requestId }, 200, requestId);
   }
 
   if (request.method === "POST" && url.pathname === "/v1/products") {
@@ -297,9 +312,12 @@ async function handle(request, env) {
     const rows = await env.DB.prepare(
       "SELECT id,customer_ref,display_name,phone_e164,email,tax_identifier,status,created_at,updated_at FROM customers WHERE company_id=?1 AND status!='ARCHIVED' AND (?2='%%' OR display_name LIKE ?2 OR customer_ref LIKE ?2 OR phone_e164 LIKE ?2) ORDER BY display_name LIMIT 100"
     ).bind(companyId, search ? like : "%%").all();
-    const data = (rows.results || []).map(row => ({
+    const canSeePersonalData = ["OWNER","ADMIN","ACCOUNTANT","AUDITOR"].includes(membership.role_key);
+    const data = (rows.results || []).map(({ phone_e164, email, tax_identifier, ...row }) => ({
       ...row,
-      taxIdentifier: ["OWNER","ADMIN","ACCOUNTANT","AUDITOR"].includes(membership.role_key) ? row.tax_identifier : null,
+      phone: canSeePersonalData ? phone_e164 : maskPhone(phone_e164),
+      email: canSeePersonalData ? email : maskEmail(email),
+      taxIdentifier: canSeePersonalData ? tax_identifier : null,
     }));
     return json({ data, requestId }, 200, requestId);
   }
