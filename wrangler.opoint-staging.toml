@@ -1,0 +1,32 @@
+name = "opoint-api-staging"
+main = "backend/src/index.mjs"
+compatibility_date = "2026-11-11"
+workers_dev = true
+keep_vars = false
+
+[vars]
+ENVIRONMENT = "staging"
+PRODUCT_CODE = "OPOINT"
+PAYMENT_EXECUTION_ENABLED = "false"
+PROVIDER_EXECUTION_ENABLED = "false"
+
+[observability]
+enabled = true
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.05
+
+[[d1_databases]]
+binding = "DB"
+database_name = "opoint-staging-db"
+database_id = "ec080a51-cfc9-4375-8b3c-64667744b466"
+
+[[services]]
+binding = "OTYA_ID"
+service = "otya-auth"
