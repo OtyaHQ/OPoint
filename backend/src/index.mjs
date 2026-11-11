@@ -51,7 +51,7 @@ export function isUGXAmount(value) {
 
 export function maskPhone(value) {
   if (typeof value !== "string" || !value) return null;
-  const digits = value.replace(/\\D/g, "");
+  const digits = value.replace(/[^0-9]/g, "");
   if (digits.length <= 4) return "****";
   return "••••••" + digits.slice(-4);
 }
