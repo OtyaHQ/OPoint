@@ -1,10 +1,10 @@
-# Opoint
+# OPoint
 
 **Business operations, retail and financial services — by Otya.**
 
-Opoint is the business product in the Otya ecosystem. It brings retail operations, inventory, cash management, mobile-money agency workflows, bill payments, staff operations and financial reporting into one secure application.
+OPoint is the business product in the Otya ecosystem. It brings retail operations, inventory, cash management, mobile-money agency workflows, bill payments, staff operations and financial reporting into one secure application.
 
-Opoint is a product of **Otya Holdings Limited**. Otya is the ecosystem brand; Opoint is the business application.
+OPoint is a product within the Otya ecosystem. Otya Holdings Limited is the intended parent entity; do not present it as incorporated until registration is complete. Otya is the ecosystem brand; OPoint is the business application.
 
 ## Product principles
 
@@ -35,19 +35,19 @@ Provider integrations are independent and must not be conflated: Quickteller Bus
 | Capability | Primary owner |
 |---|---|
 | API and business rules | Cloudflare Workers |
-| Financial and business records | Opoint Cloudflare D1 |
-| Private documents and receipts | Opoint Cloudflare R2 |
+| Financial and business records | OPoint Cloudflare D1 |
+| Private documents and receipts | OPoint Cloudflare R2 |
 | Background event delivery | Cloudflare Queues |
 | Authenticated live sessions | Cloudflare Durable Objects / WebSockets |
-| Push delivery and mobile integrity | Opoint's dedicated Firebase project |
-| Transactional email | Resend through Otya ID / approved Opoint services |
+| Push delivery and mobile integrity | OPoint's dedicated Firebase project |
+| Transactional email | Resend through Otya ID / approved OPoint services |
 | Source control and release gates | OtyaHQ GitHub organization |
 
-Firebase is a supporting mobile platform, not the financial ledger. Firestore and Firebase Storage are not required for the initial Opoint financial backend.
+Firebase is a supporting mobile platform, not the financial ledger. Firestore and Firebase Storage are not required for the initial OPoint financial backend.
 
 ## Identity and security
 
-Otya ID provides shared account identity and OTP. Opoint owns company membership, branch scope, role permissions and financial authorisation. Telegram may be used as an OTP delivery channel where configured, but Telegram Login is not an authentication method.
+Otya ID provides shared account identity and OTP. OPoint owns company membership, branch scope, role permissions and financial authorisation. Telegram may be used as an OTP delivery channel where configured, but Telegram Login is not an authentication method.
 
 Never commit API tokens, service-account keys, provider credentials, signing keys, PINs or production data. Keep secrets in Cloudflare Secrets Store. Do not expose raw provider payloads or sensitive customer references in logs.
 
@@ -59,7 +59,7 @@ Never commit API tokens, service-account keys, provider credentials, signing key
 - Require an idempotency key for every money-moving request and provider event.
 - Verify webhook signatures before processing and de-duplicate by provider event ID.
 - A timeout is not a failure. Keep the state pending/unknown and query the provider before retrying.
-- A notification is never proof of payment completion. The app fetches the authoritative state from Opoint.
+- A notification is never proof of payment completion. The app fetches the authoritative state from OPoint.
 - Apply company and branch scope on the server on every tenant-owned query.
 - Keep sandbox and production credentials, URLs, queues and provider configurations separate.
 
