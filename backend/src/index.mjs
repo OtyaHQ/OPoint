@@ -240,6 +240,7 @@ async function handle(request, env) {
       product: "Opoint",
       paymentsEnabled: false,
       providerExecutionEnabled: false,
+      aiAssistantEnabled: false,
       salesPostingEnabled: false,
       journalPostingEnabled: false,
       cashMovementEnabled: false,
