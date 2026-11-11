@@ -3,7 +3,7 @@
 
 const MAX_UGX = 1_000_000_000_000;
 const cleanText = (value, max = 160) => typeof value === "string"
-  ? value.replace(/[\\u0000-\\u001f\\u007f]/g, " ").trim().slice(0, max)
+  ? value.replace(/[\x00-\x1F\x7F]/g, " ").trim().slice(0, max)
   : "";
 
 export function validateJournalLines(lines) {
