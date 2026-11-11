@@ -1,4 +1,4 @@
-name: Opoint staging smoke
+name: Opoint staging smoke (workers.dev)
 on:
   push:
     branches: [opoint-rebuild-foundation]
