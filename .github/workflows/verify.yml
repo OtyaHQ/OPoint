@@ -61,6 +61,8 @@ jobs:
         run: node --test cloudflare-api/tests/health-readiness.test.mjs
       - name: Test transaction message parsing without provider confirmation
         run: node --test cloudflare-api/tests/transaction-message-parser.test.mjs
+      - name: Test Otya Auth staff session lifecycle
+        run: node --test cloudflare-api/tests/session.test.mjs
 
       - name: Validate remaining legacy dashboard Prisma schema
         env:
