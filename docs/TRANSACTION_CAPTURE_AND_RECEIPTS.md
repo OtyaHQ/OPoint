@@ -10,10 +10,10 @@ Reduce repeated employee typing while keeping the provider as the payment execut
 A staff member opens a provider SMS, selects Share, and sends that selected message to Otya Staff. The app parses only the selected text and asks the worker to confirm the proposed outlet/account. The generic parser does not retain the raw message.
 
 ### Provider receipt image
-Staff use the app's camera or gallery picker to upload a provider receipt. A document parser/OCR worker extracts candidate data. The app presents the amount and reference for confirmation. Original images are kept privately only according to the business-record retention policy.
+Staff use the app's camera or gallery picker to upload a provider receipt. The current backend stores the file in private R2 and records its outlet, uploader, type, content type and size in D1. Its processing status remains `UPLOADED_NEEDS_EXTRACTION` until OCR/vision extraction is implemented. The app must then present the amount and reference for confirmation. Original images are kept privately only according to the business-record retention policy.
 
 ### Provider statements and exports
-Managers upload an official CSV, spreadsheet or PDF statement from the provider portal. Import jobs validate the format, deduplicate references and match records to the correct outlet account. Statement rows can create verification events after review.
+Managers upload an official CSV, spreadsheet or PDF statement from the provider portal. The current upload endpoint stores it privately and records metadata. A future import job will validate the format, deduplicate references and match rows to the correct outlet account. Statement rows may create verification events only after review.
 
 ### Provider reporting/read-only feed
 If a provider offers an approved read-only balance/statement interface or reporting feed, connect it separately. Do not use credentials for transaction initiation. A provider dashboard can remain the source, with controlled statement import into Otya.
@@ -59,3 +59,11 @@ A supplemental company record for a provider transaction. Includes provider, out
 ## Receipt delivery
 
 The system should render a printer-friendly HTML receipt and a PDF copy stored in private R2. Staff can print to a supported receipt printer or share a customer copy. No provider PIN or private customer message history appears on the receipt.
+
+
+## Current build status
+
+- Implemented in the feature branch: upload supported private evidence formats (JPEG, PNG, PDF, CSV, plain text and XLSX) into the existing R2 bucket; enforce outlet access; return the file only through an authenticated outlet-scoped route; enforce a 15 MiB limit.
+- Implemented in the feature branch: selected-text parser and second-person review flow. Raw SMS is not stored by the generic parser.
+- Not yet implemented: OCR/vision extraction for receipt images, provider-specific message templates based on redacted samples, automatic CSV/PDF statement parsing, PDF receipt rendering and automatic printing.
+- Not deployed: the R2 binding and D1 migration must pass CI and a reviewed production deployment. Do not upload customer evidence until the approved private storage and retention policy is active.
