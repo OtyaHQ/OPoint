@@ -906,6 +906,200 @@ async function listEnterpriseEmployees(env: EnterpriseEnv, staff: StaffContext, 
   return json({ data: rows.results, requestId });
 }
 
+
+async function createProviderOperatorProfile(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const accountId = txt(body.providerOutletAccountId, 64);
+  const employeeId = txt(body.employeeId, 64);
+  if (!accountId || !employeeId) return json({ error: "provider_account_and_employee_required" }, 400);
+  const scope = await env.DB.prepare(
+    "SELECT a.id,a.outlet_id,a.status,r.id AS relationship_id,r.agreement_status,e.id AS employee_id,e.employment_status FROM omni_provider_outlet_accounts a JOIN omni_provider_relationships r ON r.id=a.provider_relationship_id AND r.company_id=a.company_id JOIN omni_enterprise_employees e ON e.id=?1 AND e.company_id=a.company_id WHERE a.id=?2 AND a.company_id=?3 LIMIT 1"
+  ).bind(employeeId, accountId, staff.company_id).first<{
+    id:string;outlet_id:string;status:string;relationship_id:string;agreement_status:string;employee_id:string;employment_status:string;
+  }>();
+  if (!scope) return json({ error: "provider_account_or_employee_not_found" }, 404);
+  if (scope.status !== "ACTIVE" || scope.agreement_status !== "APPROVED" || scope.employment_status !== "ACTIVE") {
+    return json({ error: "active_provider_account_agreement_and_employee_required" }, 409);
+  }
+  const assignment = await env.DB.prepare(
+    "SELECT id FROM omni_employee_outlet_assignments WHERE company_id=?1 AND employee_id=?2 AND outlet_id=?3 AND status='ACTIVE' AND starts_at<=CURRENT_TIMESTAMP AND (ends_at IS NULL OR ends_at>CURRENT_TIMESTAMP) LIMIT 1"
+  ).bind(staff.company_id, employeeId, scope.outlet_id).first<{id:string}>();
+  if (!assignment) return json({ error: "employee_must_be_assigned_to_provider_outlet" }, 409);
+  const id = uuid();
+  await env.DB.prepare(
+    "INSERT INTO omni_provider_operator_profiles (id,company_id,provider_relationship_id,provider_outlet_account_id,employee_id,provider_operator_id,provider_username,approval_status,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,'PENDING',?8)"
+  ).bind(id, staff.company_id, scope.relationship_id, accountId, employeeId, txt(body.providerOperatorId, 120) || null, txt(body.providerUsername, 120) || null, staff.id).run();
+  await audit(env.DB, staff, requestId, "CREATE_PROVIDER_OPERATOR_PROFILE", "PROVIDER_OPERATOR_PROFILE", id, { accountId, employeeId, approvalStatus: "PENDING" }, "Provider-specific teller identity mapping created pending provider approval");
+  return json({ data: { id, providerOutletAccountId: accountId, employeeId, approvalStatus: "PENDING" }, requestId }, 201);
+}
+
+async function updateProviderOperatorProfile(request: Request, env: EnterpriseEnv, staff: StaffContext, operatorProfileId: string, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const profile = await env.DB.prepare(
+    "SELECT p.id,p.approval_status,p.provider_operator_id,p.provider_outlet_account_id,a.status AS account_status,r.agreement_status FROM omni_provider_operator_profiles p JOIN omni_provider_outlet_accounts a ON a.id=p.provider_outlet_account_id AND a.company_id=p.company_id JOIN omni_provider_relationships r ON r.id=p.provider_relationship_id AND r.company_id=p.company_id WHERE p.id=?1 AND p.company_id=?2 LIMIT 1"
+  ).bind(operatorProfileId, staff.company_id).first<{
+    id:string;approval_status:string;provider_operator_id:string|null;provider_outlet_account_id:string;account_status:string;agreement_status:string;
+  }>();
+  if (!profile) return json({ error: "operator_profile_not_found" }, 404);
+  const status = txt(body.approvalStatus, 20);
+  const approvalReference = txt(body.providerApprovalReference, 120);
+  const reason = txt(body.reason, 300);
+  if (!["TRAINING","APPROVED","SUSPENDED","REVOKED"].includes(status) || !reason) return json({ error: "valid_status_and_reason_required" }, 400);
+  if (status === "APPROVED" && (profile.account_status !== "ACTIVE" || profile.agreement_status !== "APPROVED" || !approvalReference)) {
+    return json({ error: "active_approved_provider_account_and_provider_approval_reference_required" }, 409);
+  }
+  const providerOperatorId = txt(body.providerOperatorId, 120) || profile.provider_operator_id;
+  if (status === "APPROVED" && !providerOperatorId) return json({ error: "provider_operator_id_required" }, 422);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE omni_provider_operator_profiles SET approval_status=?1,provider_operator_id=?2,approved_reference=COALESCE(?3,approved_reference),approved_at=CASE WHEN ?1='APPROVED' THEN CURRENT_TIMESTAMP ELSE approved_at END,revoked_at=CASE WHEN ?1='REVOKED' THEN CURRENT_TIMESTAMP ELSE revoked_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?4 AND company_id=?5")
+      .bind(status, providerOperatorId, approvalReference || null, operatorProfileId, staff.company_id),
+    env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'UPDATE_PROVIDER_OPERATOR_PROFILE','PROVIDER_OPERATOR_PROFILE',?3,?4,?5,?6,?7,?8)")
+      .bind(uuid(), staff.id, operatorProfileId, reason, JSON.stringify({ approvalStatus: profile.approval_status }), JSON.stringify({ approvalStatus: status, providerOperatorId, approvalReference }), requestId, staff.company_id)
+  ]);
+  return json({ data: { id: operatorProfileId, approvalStatus: status, providerOperatorId, approvalReference: approvalReference || null }, requestId });
+}
+
+async function assignCompanySim(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const simId = txt(body.simCardId, 64);
+  const outletId = txt(body.outletId, 64);
+  const employeeId = txt(body.employeeId, 64) || null;
+  const providerAccountId = txt(body.providerOutletAccountId, 64) || null;
+  if (!simId || !outletId) return json({ error: "sim_card_and_outlet_required" }, 400);
+  const sim = await env.DB.prepare("SELECT id,carrier,use_type,company_registration_status,status FROM omni_company_sim_cards WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(simId, staff.company_id).first<{id:string;carrier:string;use_type:string;company_registration_status:string;status:string}>();
+  if (!sim || sim.status !== "IN_STOCK") return json({ error: "sim_not_available" }, 409);
+  const outlet = await env.DB.prepare("SELECT id,status FROM omni_enterprise_outlets WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(outletId, staff.company_id).first<{id:string;status:string}>();
+  if (!outlet || outlet.status !== "ACTIVE") return json({ error: "active_outlet_required" }, 409);
+  if (sim.use_type === "AGENCY_OPERATION" && sim.company_registration_status !== "REGISTERED") {
+    return json({ error: "company_registered_sim_required_for_agency_operation" }, 409);
+  }
+  if (employeeId) {
+    const assignment = await env.DB.prepare("SELECT id FROM omni_employee_outlet_assignments WHERE company_id=?1 AND employee_id=?2 AND outlet_id=?3 AND status='ACTIVE' LIMIT 1")
+      .bind(staff.company_id, employeeId, outletId).first<{id:string}>();
+    if (!assignment) return json({ error: "employee_not_assigned_to_outlet" }, 409);
+  }
+  if (providerAccountId) {
+    const account = await env.DB.prepare("SELECT a.id,r.provider FROM omni_provider_outlet_accounts a JOIN omni_provider_relationships r ON r.id=a.provider_relationship_id AND r.company_id=a.company_id WHERE a.id=?1 AND a.company_id=?2 AND a.outlet_id=?3 AND a.status='ACTIVE' LIMIT 1")
+      .bind(providerAccountId, staff.company_id, outletId).first<{id:string;provider:string}>();
+    if (!account) return json({ error: "provider_account_not_active_at_outlet" }, 409);
+    if ((account.provider === "AIRTEL_MONEY" && sim.carrier !== "AIRTEL") || (account.provider === "MTN_MOMO" && sim.carrier !== "MTN")) {
+      return json({ error: "sim_carrier_does_not_match_provider_account" }, 409);
+    }
+  }
+  const id = uuid();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO omni_sim_assignments (id,company_id,sim_card_id,employee_id,outlet_id,provider_outlet_account_id,starts_at,issued_by,status) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'ACTIVE')")
+      .bind(id, staff.company_id, simId, employeeId, outletId, providerAccountId, new Date().toISOString(), staff.id),
+    env.DB.prepare("UPDATE omni_company_sim_cards SET status='ASSIGNED',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND company_id=?2")
+      .bind(simId, staff.company_id)
+  ]);
+  await audit(env.DB, staff, requestId, "ASSIGN_COMPANY_SIM", "SIM_ASSIGNMENT", id, { simId, employeeId, outletId, providerAccountId }, "Company SIM assigned to an outlet/employee");
+  return json({ data: { id, simCardId: simId, employeeId, outletId, status: "ACTIVE" }, requestId }, 201);
+}
+
+async function assignCompanyDevice(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const deviceId = txt(body.deviceId, 64);
+  const outletId = txt(body.outletId, 64);
+  const employeeId = txt(body.employeeId, 64) || null;
+  if (!deviceId || !outletId) return json({ error: "device_and_outlet_required" }, 400);
+  const device = await env.DB.prepare("SELECT id,status FROM omni_company_devices WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(deviceId, staff.company_id).first<{id:string;status:string}>();
+  if (!device || device.status !== "IN_STOCK") return json({ error: "device_not_available" }, 409);
+  const outlet = await env.DB.prepare("SELECT id,status FROM omni_enterprise_outlets WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(outletId, staff.company_id).first<{id:string;status:string}>();
+  if (!outlet || outlet.status !== "ACTIVE") return json({ error: "active_outlet_required" }, 409);
+  if (employeeId) {
+    const assignment = await env.DB.prepare("SELECT id FROM omni_employee_outlet_assignments WHERE company_id=?1 AND employee_id=?2 AND outlet_id=?3 AND status='ACTIVE' LIMIT 1")
+      .bind(staff.company_id, employeeId, outletId).first<{id:string}>();
+    if (!assignment) return json({ error: "employee_not_assigned_to_outlet" }, 409);
+  }
+  const id = uuid();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO omni_device_assignments (id,company_id,device_id,employee_id,outlet_id,issued_at,issued_by,status) VALUES (?1,?2,?3,?4,?5,?6,?7,'ACTIVE')")
+      .bind(id, staff.company_id, deviceId, employeeId, outletId, new Date().toISOString(), staff.id),
+    env.DB.prepare("UPDATE omni_company_devices SET status='ASSIGNED',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND company_id=?2")
+      .bind(deviceId, staff.company_id)
+  ]);
+  await audit(env.DB, staff, requestId, "ASSIGN_COMPANY_DEVICE", "DEVICE_ASSIGNMENT", id, { deviceId, employeeId, outletId }, "Company device assigned to an outlet/employee");
+  return json({ data: { id, deviceId, employeeId, outletId, status: "ACTIVE" }, requestId }, 201);
+}
+
+async function returnCompanyAsset(request: Request, env: EnterpriseEnv, staff: StaffContext, assetType: "SIM" | "DEVICE", assignmentId: string, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const condition = txt(body.returnCondition, 120);
+  const reason = txt(body.reason, 300);
+  if (!condition || !reason) return json({ error: "return_condition_and_reason_required" }, 400);
+  const isSim = assetType === "SIM";
+  const table = isSim ? "omni_sim_assignments" : "omni_device_assignments";
+  const assetField = isSim ? "sim_card_id" : "device_id";
+  const assetsTable = isSim ? "omni_company_sim_cards" : "omni_company_devices";
+  const assignment = await env.DB.prepare(
+    "SELECT id," + assetField + " AS asset_id,status FROM " + table + " WHERE id=?1 AND company_id=?2 LIMIT 1"
+  ).bind(assignmentId, staff.company_id).first<{id:string;asset_id:string;status:string}>();
+  if (!assignment || assignment.status !== "ACTIVE") return json({ error: "active_asset_assignment_not_found" }, 404);
+  const now = new Date().toISOString();
+  await env.DB.batch([
+    env.DB.prepare("UPDATE " + table + " SET status='RETURNED'," + (isSim ? "ends_at" : "returned_at") + "=?1,returned_to=?2,return_condition=?3 WHERE id=?4 AND company_id=?5")
+      .bind(now, staff.id, condition, assignmentId, staff.company_id),
+    env.DB.prepare("UPDATE " + assetsTable + " SET status='IN_STOCK',updated_at=CURRENT_TIMESTAMP WHERE id=?1 AND company_id=?2")
+      .bind(assignment.asset_id, staff.company_id)
+  ]);
+  await audit(env.DB, staff, requestId, "RETURN_COMPANY_ASSET", assetType, assignment.asset_id, { assignmentId, condition }, reason);
+  return json({ data: { assignmentId, assetId: assignment.asset_id, status: "RETURNED", returnedAt: now, returnCondition: condition }, requestId });
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "").replace(/[&<>"']/g, char => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  })[char] || char);
+}
+
+function printReceiptHtml(receiptNumber: string, content: Record<string, unknown>): string {
+  const company = (content.company && typeof content.company === "object" ? content.company : {}) as Record<string, unknown>;
+  const outlet = (content.outlet && typeof content.outlet === "object" ? content.outlet : {}) as Record<string, unknown>;
+  const items = Array.isArray(content.items) ? content.items as Record<string, unknown>[] : [];
+  const agency = content.receiptType === "AGENCY_SERVICE_ACKNOWLEDGEMENT";
+  const amount = Number(content.amountUgx ?? content.totalUgx ?? 0);
+  const lines = agency
+    ? [["Provider", content.provider], ["Reference", content.providerReference], ["Service", content.transactionType], ["Status source", content.sourceStatus], ["Record review", content.verificationLevel]].map(([key,value]) => "<tr><th>" + escapeHtml(key) + "</th><td>" + escapeHtml(value) + "</td></tr>").join("")
+    : items.map(item => "<tr><td>" + escapeHtml(item.name) + "</td><td>" + escapeHtml(item.sku) + "</td><td>" + escapeHtml(item.quantity) + "</td><td>" + escapeHtml(item.unitPriceUgx) + "</td><td>" + escapeHtml(item.lineTotalUgx) + "</td></tr>").join("");
+  const retailHead = "<tr><th>Item</th><th>SKU</th><th>Qty</th><th>Unit price (UGX)</th><th>Total (UGX)</th></tr>";
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + escapeHtml(receiptNumber) + "</title><style>" +
+    "@page{size:auto;margin:10mm}body{font-family:Arial,sans-serif;color:#111;margin:0;padding:20px;max-width:760px;margin:auto}.muted{color:#555;font-size:12px}.top{display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #111;padding-bottom:14px}h1{font-size:20px;margin:0 0 6px}.number{font-size:13px;font-weight:bold}table{width:100%;border-collapse:collapse;margin-top:18px;font-size:12px}th,td{padding:8px 6px;border-bottom:1px solid #ddd;text-align:left}th{background:#f4f4f4}.total{font-size:18px;font-weight:bold;text-align:right;margin-top:18px}.notice{margin-top:20px;padding:10px;border:1px solid #bbb;font-size:12px}.actions{margin:14px 0}@media print{.actions{display:none}body{padding:0}}" +
+    "</style></head><body><div class=\"top\"><div><h1>" + escapeHtml(company.legalName || company.tradingName || "Company receipt") + "</h1><div class=\"muted\">" + escapeHtml(company.tradingName || "") + "</div><div class=\"muted\">" + escapeHtml(outlet.name || "") + " · " + escapeHtml(outlet.address || "") + "</div><div class=\"muted\">TIN: " + escapeHtml(company.tin || "Not configured") + "</div></div><div class=\"number\">RECEIPT<br>" + escapeHtml(receiptNumber) + "<br><span class=\"muted\">" + escapeHtml(content.issuedAt || "") + "</span></div></div>" +
+    "<table>" + (agency ? lines : retailHead + lines) + "</table>" +
+    "<div class=\"total\">Total: UGX " + escapeHtml(amount.toLocaleString("en-UG")) + "</div>" +
+    "<div class=\"notice\">" + escapeHtml(content.disclaimer || "") + "</div>" +
+    "<div class=\"actions\"><button onclick=\"window.print()\">Print / Save as PDF</button></div></body></html>";
+}
+
+async function printReceipt(request: Request, env: EnterpriseEnv, staff: StaffContext, receiptId: string) {
+  const receipt = await env.DB.prepare(
+    "SELECT id,outlet_id,receipt_number,content_snapshot_json FROM omni_receipt_documents WHERE id=?1 AND company_id=?2 LIMIT 1"
+  ).bind(receiptId, staff.company_id).first<{id:string;outlet_id:string;receipt_number:string;content_snapshot_json:string}>();
+  if (!receipt) return json({ error: "receipt_not_found" }, 404);
+  if (!(await hasOutletAccess(env.DB, staff, receipt.outlet_id))) return json({ error: "outlet_access_denied" }, 403);
+  let content: Record<string, unknown>;
+  try { content = JSON.parse(receipt.content_snapshot_json) as Record<string, unknown>; }
+  catch { return json({ error: "receipt_snapshot_invalid" }, 500); }
+  return new Response(printReceiptHtml(receipt.receipt_number, content), {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "private, no-store",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+    }
+  });
+}
+
 async function getReceipt(request: Request, env: EnterpriseEnv, staff: StaffContext, receiptId: string, requestId: string) {
   const receipt = await env.DB.prepare(
     "SELECT id,outlet_id,receipt_number,receipt_type,source_type,source_id,provider,provider_reference,verification_label,receipt_status,currency,total_ugx,content_snapshot_json,customer_disclaimer,issued_by,issued_at FROM omni_receipt_documents WHERE id=?1 AND company_id=?2 LIMIT 1"
@@ -938,6 +1132,15 @@ export async function handleEnterpriseIntake(
   if (request.method === "POST" && url.pathname === "/api/v1/employee-outlet-assignments") return assignEmployeeToOutlet(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/company-sims") return registerCompanySim(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/company-devices") return registerCompanyDevice(request, env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/provider-operator-profiles") return createProviderOperatorProfile(request, env, staff, requestId);
+  const operatorProfileMatch = url.pathname.match(/^\/api\/v1\/provider-operator-profiles\/([^/]+)$/);
+  if (request.method === "PATCH" && operatorProfileMatch) return updateProviderOperatorProfile(request, env, staff, txt(operatorProfileMatch[1], 64), requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/sim-assignments") return assignCompanySim(request, env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/device-assignments") return assignCompanyDevice(request, env, staff, requestId);
+  const simReturnMatch = url.pathname.match(/^\/api\/v1\/sim-assignments\/([^/]+)\/return$/);
+  if (request.method === "POST" && simReturnMatch) return returnCompanyAsset(request, env, staff, "SIM", txt(simReturnMatch[1],64), requestId);
+  const deviceReturnMatch = url.pathname.match(/^\/api\/v1\/device-assignments\/([^/]+)\/return$/);
+  if (request.method === "POST" && deviceReturnMatch) return returnCompanyAsset(request, env, staff, "DEVICE", txt(deviceReturnMatch[1],64), requestId);
   const outletStatusMatch = url.pathname.match(/^\/api\/v1\/outlets\/([^/]+)\/status$/);
   if (request.method === "PATCH" && outletStatusMatch) return updateOutletStatus(request, env, staff, txt(outletStatusMatch[1], 64), requestId);
   if (request.method === "GET" && url.pathname === "/api/v1/company-profile") return getCompanyProfile(env, staff, requestId);
@@ -968,6 +1171,8 @@ export async function handleEnterpriseIntake(
   if (request.method === "POST" && url.pathname === "/api/v1/transaction-evidence/text") return submitTextEvidence(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/agency-receipts") return createAgencyReceipt(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/retail-receipts") return createRetailReceipt(request, env, staff, requestId);
+  const printReceiptMatch = url.pathname.match(/^\/api\/v1\/receipts\/([^/]+)\/print$/);
+  if (request.method === "GET" && printReceiptMatch) return printReceipt(request, env, staff, txt(printReceiptMatch[1], 64));
   const receiptMatch = url.pathname.match(/^\/api\/v1\/receipts\/([^/]+)$/);
   if (request.method === "GET" && receiptMatch) return getReceipt(request, env, staff, txt(receiptMatch[1], 64), requestId);
   if (request.method === "GET" && url.pathname === "/api/v1/transaction-evidence") return listTextEvidence(request, env, staff);
