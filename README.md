@@ -1,6 +1,6 @@
-# OtyaPoint
+# OPoint
 
-**OtyaPoint** is the shop and business-operations product in the Otya ecosystem. It is designed to bring retail, inventory, staff operations, cash controls and future mobile-money agency workflows into one clear experience.
+**OPoint** is the shop and business-operations product in the Otya ecosystem. It is designed to bring retail, inventory, staff operations, cash controls and future mobile-money agency workflows into one clear experience.
 
 ## Product scope
 
@@ -10,11 +10,11 @@
 - Commission, transaction history and reconciliation foundations.
 - Clear operational reporting and audited corrections.
 
-OtyaPoint is a product name, not a statement that every listed capability is currently available. The customer-facing dashboard is not yet certified against the replacement backend. Do not use this repository as proof that a customer-facing API or live payment integration is active.
+OPoint is a product name, not a statement that every listed capability is currently available. The customer-facing dashboard is not yet certified against the replacement backend. Do not use this repository as proof that a customer-facing API or live payment integration is active.
 
 ## Architecture principles
 
-- Otya account identity is shared across the ecosystem; OtyaPoint controls its own business authorization.
+- Otya account identity is shared across the ecosystem; OPoint controls its own business authorization.
 - Shop and agency records remain isolated from other Otya products.
 - Server-side authorization determines staff identity, role and business scope.
 - Financial changes are idempotent, auditable and reconciled.
@@ -42,4 +42,4 @@ Report security vulnerabilities privately using [SECURITY.md](SECURITY.md).
 
 ---
 
-**OtyaPoint · Otya**
+**OPoint · Otya**
