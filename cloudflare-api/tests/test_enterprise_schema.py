@@ -246,6 +246,91 @@ class OtyaEnterpriseSchemaTests(unittest.TestCase):
         ).fetchone()
         self.assertEqual(row, (750000, "MANUAL_ENTRY", "UNVERIFIED"))
 
+    def test_cross_company_provider_outlet_and_employee_links_are_rejected(self):
+        self.insert_outlet("outlet-1", "OTYA-001", "Mbirizi")
+        self.insert_staff_and_employee()
+        self.db.execute(
+            """INSERT INTO omni_enterprise_outlets
+               (id,company_id,outlet_code,name,physical_address,created_by,status)
+               VALUES ('other-outlet','other-company','OTHER-001','Other Shop','Other address','owner-other','ACTIVE')"""
+        )
+        self.db.execute(
+            """INSERT INTO omni_provider_relationships
+               (id,company_id,provider,provider_product,legal_agent_name,parent_agent_id,agreement_status,created_by)
+               VALUES ('parent-a','company-otya','AIRTEL_MONEY','AGENCY','Otya Holdings Limited','AIR-PARENT-A','APPROVED','staff-owner')"""
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "PROVIDER_RELATIONSHIP_OUTLET_COMPANY_MISMATCH"):
+            self.db.execute(
+                """INSERT INTO omni_provider_outlet_accounts
+                   (id,company_id,provider_relationship_id,outlet_id,account_label,account_type,status,created_by)
+                   VALUES ('bad-account','company-otya','parent-a','other-outlet','Bad scope','AGENT_FLOAT','PENDING','staff-owner')"""
+            )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "EMPLOYEE_OUTLET_COMPANY_MISMATCH"):
+            self.db.execute(
+                """INSERT INTO omni_employee_outlet_assignments
+                   (id,company_id,employee_id,outlet_id,assignment_role,starts_at,created_by)
+                   VALUES ('bad-assignment','company-otya','employee-1','other-outlet','TELLER',
+                           '2026-01-01T00:00:00Z','staff-owner')"""
+            )
+
+    def test_outlet_stock_movements_update_only_the_selected_outlet_balance(self):
+        self.insert_outlet("outlet-1", "OTYA-001", "Mbirizi")
+        self.insert_outlet("outlet-2", "OTYA-002", "Masaka")
+        self.insert_staff_and_employee()
+        self.db.execute(
+            """INSERT INTO omni_products
+               (id,company_id,sku,name,cost_price,selling_price,quantity_on_hand)
+               VALUES ('phone-1','company-otya','SKU-001','Android phone',250000,300000,0)"""
+        )
+        self.db.execute(
+            """INSERT INTO omni_outlet_stock_movements
+               (id,company_id,outlet_id,product_id,movement_type,quantity_delta,quantity_after,reason,actor_id)
+               VALUES ('stock-open-1','company-otya','outlet-1','phone-1','OPENING',10,10,'Opening count','staff-teller')"""
+        )
+        self.db.execute(
+            """INSERT INTO omni_outlet_stock_movements
+               (id,company_id,outlet_id,product_id,movement_type,quantity_delta,quantity_after,reason,actor_id)
+               VALUES ('stock-sale-1','company-otya','outlet-1','phone-1','SALE',-3,7,'Sale movement','staff-teller')"""
+        )
+        balance = self.db.execute(
+            "SELECT quantity_on_hand FROM omni_outlet_stock_balances WHERE company_id='company-otya' AND outlet_id='outlet-1' AND product_id='phone-1'"
+        ).fetchone()[0]
+        self.assertEqual(balance, 7)
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) FROM omni_outlet_stock_balances WHERE outlet_id='outlet-2'").fetchone()[0],
+            0,
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "OUTLET_STOCK_MOVEMENT_MISMATCH"):
+            self.db.execute(
+                """INSERT INTO omni_outlet_stock_movements
+                   (id,company_id,outlet_id,product_id,movement_type,quantity_delta,quantity_after,reason,actor_id)
+                   VALUES ('stock-forged','company-otya','outlet-1','phone-1','SALE',-1,99,'Forged count','staff-teller')"""
+            )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "OUTLET_STOCK_MOVEMENTS_APPEND_ONLY"):
+            self.db.execute("UPDATE omni_outlet_stock_movements SET reason='tampered' WHERE id='stock-sale-1'")
+
+    def test_provider_confirmed_balance_requires_authorised_feed_source(self):
+        self.insert_outlet("outlet-1", "OTYA-001", "Mbirizi")
+        self.insert_staff_and_employee()
+        self.db.execute(
+            """INSERT INTO omni_provider_relationships
+               (id,company_id,provider,provider_product,legal_agent_name,parent_agent_id,agreement_status,created_by)
+               VALUES ('air-parent','company-otya','AIRTEL_MONEY','AGENCY','Otya Holdings Limited','AIR-PARENT-01','APPROVED','staff-owner')"""
+        )
+        self.db.execute(
+            """INSERT INTO omni_provider_outlet_accounts
+               (id,company_id,provider_relationship_id,outlet_id,provider_outlet_id,account_label,account_type,status,created_by)
+               VALUES ('air-account','company-otya','air-parent','outlet-1','AIR-OUTLET-1','Airtel Float','AGENT_FLOAT','ACTIVE','staff-owner')"""
+        )
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "PROVIDER_BALANCE_CONFIRMATION_SOURCE_REQUIRED"):
+            self.db.execute(
+                """INSERT INTO omni_provider_balance_observations
+                   (id,company_id,provider,provider_outlet_account_id,outlet_id,reported_balance_ugx,
+                    source_type,verification_level,observed_at,recorded_by)
+                   VALUES ('forged-live-balance','company-otya','AIRTEL_MONEY','air-account','outlet-1',
+                           999999,'MANUAL_ENTRY','READ_ONLY_PROVIDER_CONFIRMED','2026-11-12T12:00:00Z','staff-teller')"""
+            )
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
