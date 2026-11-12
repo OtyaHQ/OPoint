@@ -219,7 +219,7 @@ async function downloadEvidenceFile(request: Request, env: EnterpriseEnv, staff:
   if (row.outlet_id && !(await hasOutletAccess(env.DB, staff, row.outlet_id))) return json({ error: "outlet_access_denied" }, 403);
   const object = await env.PRIVATE_FILES.get(row.storage_object_key);
   if (!object) return json({ error: "evidence_object_missing" }, 404);
-  const safeName = (row.original_filename || ("evidence-" + row.id)).replace(/["\\r\\n]/g, "_").slice(0, 100);
+  const safeName = (row.original_filename || ("evidence-" + row.id)).replace(/["\r\n]/g, "_").slice(0, 100);
   return new Response(object.body, {
     headers: {
       "content-type": row.content_type,
