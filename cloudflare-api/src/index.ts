@@ -1,5 +1,6 @@
 import { QuicktellerBusinessSandboxClient, QuicktellerBusinessError } from "./providers/quickteller-business-sandbox";
 import { saleRequestFingerprint } from "./sale-fingerprint.mjs";
+import { handleEnterpriseIntake } from "./enterprise-intake";
 
 interface D1Result<T> { results: T[] }
 interface D1Statement {
@@ -353,6 +354,9 @@ export default {
 
     const staff = await authenticate(request, env);
     if (isResponse(staff)) return staff;
+
+    const enterpriseResponse = await handleEnterpriseIntake(request, env, staff, rid, canManage(staff));
+    if (enterpriseResponse) return enterpriseResponse;
 
     try {
       // Provider credential checks are restricted to the one-time-provisioned owner.
