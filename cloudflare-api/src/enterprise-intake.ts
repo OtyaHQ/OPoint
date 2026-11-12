@@ -13,7 +13,15 @@ interface D1Database {
   prepare(query: string): D1Statement;
   batch<T = unknown>(statements: D1Statement[]): Promise<T[]>;
 }
-interface EnterpriseEnv { DB: D1Database }
+interface R2Bucket {
+  put(key: string, value: ArrayBuffer | ArrayBufferView, options?: {
+    httpMetadata?: { contentType?: string; contentDisposition?: string };
+    customMetadata?: Record<string, string>;
+  }): Promise<unknown>;
+  get(key: string): Promise<{ body: ReadableStream<Uint8Array>; httpMetadata?: { contentType?: string; contentDisposition?: string }; size: number } | null>;
+  delete(key: string): Promise<void>;
+}
+interface EnterpriseEnv { DB: D1Database; PRIVATE_FILES?: R2Bucket }
 
 const PROVIDERS = ["AIRTEL_MONEY", "MTN_MOMO", "INTERSWITCH_QUICKTELLER"] as const;
 const ACCOUNT_TYPES = ["AGENT_FLOAT", "TELLER_FLOAT", "MERCHANT_TILL", "SETTLEMENT", "COMMISSION", "OTHER"] as const;
@@ -62,6 +70,166 @@ async function audit(db: D1Database, staff: StaffContext, requestId: string, act
   await db.prepare(
     "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"
   ).bind(uuid(), staff.id, action, entityType, entityId, reason, JSON.stringify(after), requestId, staff.company_id).run();
+}
+
+
+const MAX_EVIDENCE_BYTES = 15 * 1024 * 1024;
+const evidenceContentTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "application/pdf",
+  "text/csv",
+  "text/plain",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+]);
+const evidenceTypes = new Set([
+  "PROVIDER_RECEIPT",
+  "PROVIDER_STATEMENT",
+  "SMS_SCREENSHOT",
+  "SHARED_MESSAGE_EXPORT",
+  "RETAIL_RECEIPT",
+  "SUPPLIER_INVOICE",
+  "STAFF_DOCUMENT",
+  "OTHER"
+]);
+
+function safeFileName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const leaf = value.replace(/\\/g, "/").split("/").pop() || "";
+  const safe = leaf.replace(/[^A-Za-z0-9._ -]/g, "_").replace(/\s+/g, " ").trim().slice(0, 100);
+  return safe || null;
+}
+
+function fileExtension(contentType: string): string {
+  const map: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "application/pdf": "pdf",
+    "text/csv": "csv",
+    "text/plain": "txt",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx"
+  };
+  return map[contentType] || "bin";
+}
+
+async function readFileBodyLimited(request: Request, maxBytes: number): Promise<Uint8Array | Response> {
+  if (!request.body) return json({ error: "file_body_required" }, 400);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return json({ error: "file_too_large", maxBytes }, 413);
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return json({ error: "file_upload_interrupted" }, 400);
+  }
+  if (total === 0) return json({ error: "empty_file" }, 400);
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
+async function uploadEvidenceFile(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (!env.PRIVATE_FILES) return json({ error: "private_file_storage_unavailable" }, 503);
+  const url = new URL(request.url);
+  const outletId = txt(request.headers.get("x-otya-outlet-id"), 64);
+  const evidenceType = txt(request.headers.get("x-otya-evidence-type"), 40);
+  const fileName = safeFileName(request.headers.get("x-file-name"));
+  const contentType = (request.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  if (!outletId || !evidenceTypes.has(evidenceType) || !evidenceContentTypes.has(contentType)) {
+    return json({ error: "outlet_evidence_type_and_supported_content_type_required" }, 400);
+  }
+  const declaredLength = Number(request.headers.get("content-length") || "0");
+  if (declaredLength > MAX_EVIDENCE_BYTES) return json({ error: "file_too_large", maxBytes: MAX_EVIDENCE_BYTES }, 413);
+  if (!(await hasOutletAccess(env.DB, staff, outletId))) return json({ error: "outlet_access_denied" }, 403);
+  const outlet = await env.DB.prepare(
+    "SELECT id,status FROM omni_enterprise_outlets WHERE id=?1 AND company_id=?2 LIMIT 1"
+  ).bind(outletId, staff.company_id).first<{ id: string; status: string }>();
+  if (!outlet || outlet.status !== "ACTIVE") return json({ error: "active_outlet_required" }, 409);
+
+  const bytes = await readFileBodyLimited(request, MAX_EVIDENCE_BYTES);
+  if (bytes instanceof Response) return bytes;
+  if (declaredLength && declaredLength !== bytes.byteLength) return json({ error: "content_length_mismatch" }, 400);
+
+  const id = uuid();
+  const key = staff.company_id + "/evidence/" + outletId + "/" + id + "." + fileExtension(contentType);
+  const retentionClass = ["STAFF_DOCUMENT"].includes(evidenceType) ? "PERSONNEL_CONFIDENTIAL" :
+    ["PROVIDER_STATEMENT", "PROVIDER_RECEIPT", "RETAIL_RECEIPT", "SUPPLIER_INVOICE"].includes(evidenceType) ? "FINANCIAL_CONFIDENTIAL" : "BUSINESS_RECORD";
+  try {
+    await env.PRIVATE_FILES.put(key, bytes, {
+      httpMetadata: { contentType, contentDisposition: "attachment" },
+      customMetadata: {
+        companyId: staff.company_id,
+        outletId,
+        evidenceId: id,
+        evidenceType
+      }
+    });
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO omni_evidence_files (id,company_id,outlet_id,uploaded_by,storage_object_key,original_filename,content_type,size_bytes,evidence_type,retention_class) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)"
+        ).bind(id, staff.company_id, outletId, staff.id, key, fileName, contentType, bytes.byteLength, evidenceType, retentionClass),
+        env.DB.prepare(
+          "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'UPLOAD_EVIDENCE_FILE','EVIDENCE_FILE',?3,'Uploaded a private company evidence file',?4,?5,?6)"
+        ).bind(uuid(), staff.id, id, JSON.stringify({ outletId, evidenceType, contentType, sizeBytes: bytes.byteLength }), requestId, staff.company_id)
+      ]);
+    } catch (error) {
+      await env.PRIVATE_FILES.delete(key).catch(() => {});
+      throw error;
+    }
+  } catch {
+    return json({ error: "evidence_storage_failed" }, 503);
+  }
+  return json({
+    data: {
+      evidenceFileId: id,
+      outletId,
+      evidenceType,
+      contentType,
+      sizeBytes: bytes.byteLength,
+      processingStatus: "UPLOADED_NEEDS_EXTRACTION",
+      private: true
+    },
+    requestId
+  }, 201);
+}
+
+async function downloadEvidenceFile(request: Request, env: EnterpriseEnv, staff: StaffContext, evidenceId: string) {
+  if (!env.PRIVATE_FILES) return json({ error: "private_file_storage_unavailable" }, 503);
+  const row = await env.DB.prepare(
+    "SELECT id,outlet_id,storage_object_key,original_filename,content_type,size_bytes FROM omni_evidence_files WHERE id=?1 AND company_id=?2 AND deleted_at IS NULL LIMIT 1"
+  ).bind(evidenceId, staff.company_id).first<{
+    id: string; outlet_id: string | null; storage_object_key: string; original_filename: string | null;
+    content_type: string; size_bytes: number;
+  }>();
+  if (!row) return json({ error: "evidence_file_not_found" }, 404);
+  if (row.outlet_id && !(await hasOutletAccess(env.DB, staff, row.outlet_id))) return json({ error: "outlet_access_denied" }, 403);
+  const object = await env.PRIVATE_FILES.get(row.storage_object_key);
+  if (!object) return json({ error: "evidence_object_missing" }, 404);
+  const safeName = (row.original_filename || ("evidence-" + row.id)).replace(/["\\r\\n]/g, "_").slice(0, 100);
+  return new Response(object.body, {
+    headers: {
+      "content-type": row.content_type,
+      "content-length": String(row.size_bytes),
+      "content-disposition": "attachment; filename=\"" + safeName + "\"",
+      "cache-control": "private, no-store",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer"
+    }
+  });
 }
 
 async function createOutlet(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
@@ -572,6 +740,9 @@ export async function handleEnterpriseIntake(
       : await env.DB.prepare("SELECT a.id,a.provider_relationship_id,a.outlet_id,r.provider,r.provider_product,a.provider_outlet_id,a.provider_account_reference,a.account_label,a.account_type,a.account_scope,a.status,a.currency FROM omni_provider_outlet_accounts a JOIN omni_provider_relationships r ON r.id=a.provider_relationship_id JOIN omni_employee_outlet_assignments x ON x.outlet_id=a.outlet_id JOIN omni_enterprise_employees e ON e.id=x.employee_id WHERE a.company_id=?1 AND e.staff_membership_id=?2 AND e.company_id=?1 AND e.employment_status='ACTIVE' AND x.status='ACTIVE' GROUP BY a.id ORDER BY r.provider,a.outlet_id,a.account_label").bind(staff.company_id, staff.id).all();
     return json({ data: result.results, requestId });
   }
+  if (request.method === "POST" && url.pathname === "/api/v1/evidence-files") return uploadEvidenceFile(request, env, staff, requestId);
+  const evidenceFileMatch = url.pathname.match(/^\/api\/v1\/evidence-files\/([^/]+)$/);
+  if (request.method === "GET" && evidenceFileMatch) return downloadEvidenceFile(request, env, staff, txt(evidenceFileMatch[1], 64));
   if (request.method === "POST" && url.pathname === "/api/v1/transaction-evidence/text") return submitTextEvidence(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/agency-receipts") return createAgencyReceipt(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/retail-receipts") return createRetailReceipt(request, env, staff, requestId);
