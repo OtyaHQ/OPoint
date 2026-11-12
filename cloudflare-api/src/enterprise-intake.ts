@@ -315,6 +315,227 @@ async function reviewTextEvidence(request: Request, env: EnterpriseEnv, staff: S
   return json({ data: { evidenceId, transactionRecordId: transactionId, status: "APPROVED_FOR_RECORDING", verificationLevel: level, providerConfirmed: false }, requestId }, 201);
 }
 
+
+async function updateOutletStatus(request: Request, env: EnterpriseEnv, staff: StaffContext, outletId: string, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const status = txt(body.status, 20);
+  const reason = txt(body.reason, 300);
+  if (!["ACTIVE", "SUSPENDED", "CLOSED"].includes(status) || !reason) return json({ error: "valid_status_and_reason_required" }, 400);
+  const outlet = await env.DB.prepare("SELECT id,status FROM omni_enterprise_outlets WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(outletId, staff.company_id).first<{ id: string; status: string }>();
+  if (!outlet) return json({ error: "outlet_not_found" }, 404);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE omni_enterprise_outlets SET status=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND company_id=?3")
+      .bind(status, outletId, staff.company_id),
+    env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'UPDATE_OUTLET_STATUS','OUTLET',?3,?4,?5,?6,?7,?8)")
+      .bind(uuid(), staff.id, outletId, reason, JSON.stringify({ status: outlet.status }), JSON.stringify({ status }), requestId, staff.company_id)
+  ]);
+  return json({ data: { id: outletId, status }, requestId });
+}
+
+async function updateProviderRelationship(request: Request, env: EnterpriseEnv, staff: StaffContext, relationshipId: string, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const relationship = await env.DB.prepare(
+    "SELECT id,provider,agreement_status,agreement_reference FROM omni_provider_relationships WHERE id=?1 AND company_id=?2 LIMIT 1"
+  ).bind(relationshipId, staff.company_id).first<{ id: string; provider: string; agreement_status: string; agreement_reference: string | null }>();
+  if (!relationship) return json({ error: "provider_relationship_not_found" }, 404);
+  const status = txt(body.agreementStatus, 24);
+  const reason = txt(body.reason, 300);
+  const approvalReference = txt(body.providerApprovalReference, 120);
+  const allowed = ["SUBMITTED", "UNDER_REVIEW", "APPROVED", "SUSPENDED", "TERMINATED"];
+  if (!allowed.includes(status) || !reason) return json({ error: "valid_agreement_status_and_reason_required" }, 400);
+  if (status === "APPROVED" && !approvalReference) {
+    return json({ error: "provider_approval_reference_required", detail: "Record the provider-issued agreement/approval reference before marking an arrangement approved." }, 422);
+  }
+  const agreementReference = approvalReference || txt(body.agreementReference, 120) || relationship.agreement_reference;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE omni_provider_relationships SET agreement_status=?1,agreement_reference=?2,common_display_agent_id=COALESCE(?3,common_display_agent_id),parent_agent_id=COALESCE(?4,parent_agent_id),updated_at=CURRENT_TIMESTAMP WHERE id=?5 AND company_id=?6")
+      .bind(status, agreementReference, txt(body.commonDisplayAgentId, 120) || null, txt(body.parentAgentId, 120) || null, relationshipId, staff.company_id),
+    env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'UPDATE_PROVIDER_RELATIONSHIP','PROVIDER_RELATIONSHIP',?3,?4,?5,?6,?7,?8)")
+      .bind(uuid(), staff.id, relationshipId, reason, JSON.stringify({ agreementStatus: relationship.agreement_status, agreementReference: relationship.agreement_reference }), JSON.stringify({ agreementStatus: status, agreementReference }), requestId, staff.company_id)
+  ]);
+  return json({ data: { id: relationshipId, provider: relationship.provider, agreementStatus: status, agreementReference }, requestId });
+}
+
+async function updateProviderOutletAccount(request: Request, env: EnterpriseEnv, staff: StaffContext, accountId: string, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const account = await env.DB.prepare(
+    "SELECT a.id,a.status,a.provider_outlet_id,a.provider_account_reference,a.account_type,r.agreement_status FROM omni_provider_outlet_accounts a JOIN omni_provider_relationships r ON r.id=a.provider_relationship_id AND r.company_id=a.company_id WHERE a.id=?1 AND a.company_id=?2 LIMIT 1"
+  ).bind(accountId, staff.company_id).first<{
+    id: string; status: string; provider_outlet_id: string | null; provider_account_reference: string | null;
+    account_type: string; agreement_status: string;
+  }>();
+  if (!account) return json({ error: "provider_outlet_account_not_found" }, 404);
+  const status = txt(body.status, 20);
+  const reason = txt(body.reason, 300);
+  if (!["ACTIVE", "SUSPENDED", "CLOSED", "PENDING"].includes(status) || !reason) {
+    return json({ error: "valid_status_and_reason_required" }, 400);
+  }
+  const providerOutletId = txt(body.providerOutletId, 120) || account.provider_outlet_id;
+  const providerAccountReference = txt(body.providerAccountReference, 120) || account.provider_account_reference;
+  if (status === "ACTIVE" && account.agreement_status !== "APPROVED") return json({ error: "provider_relationship_not_approved" }, 409);
+  if (status === "ACTIVE" && !providerOutletId && !providerAccountReference) {
+    return json({ error: "provider_issued_outlet_or_account_reference_required" }, 422);
+  }
+  await env.DB.batch([
+    env.DB.prepare("UPDATE omni_provider_outlet_accounts SET status=?1,provider_outlet_id=?2,provider_account_reference=?3,updated_at=CURRENT_TIMESTAMP WHERE id=?4 AND company_id=?5")
+      .bind(status, providerOutletId, providerAccountReference, accountId, staff.company_id),
+    env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'UPDATE_PROVIDER_OUTLET_ACCOUNT','PROVIDER_OUTLET_ACCOUNT',?3,?4,?5,?6,?7,?8)")
+      .bind(uuid(), staff.id, accountId, reason, JSON.stringify({ status: account.status }), JSON.stringify({ status, providerOutletId, providerAccountReference }), requestId, staff.company_id)
+  ]);
+  return json({ data: { id: accountId, status, providerOutletId, providerAccountReference }, requestId });
+}
+
+async function getCompanyProfile(env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const profile = await env.DB.prepare("SELECT company_id,legal_name,trading_name,registration_number,tin,legal_status,incorporation_date,registered_address,principal_business_address,business_email,business_phone,website,country_code,currency,timezone,updated_at FROM omni_enterprise_company_profiles WHERE company_id=?1 LIMIT 1")
+    .bind(staff.company_id).first();
+  return json({ data: profile, requestId });
+}
+
+async function saveCompanyProfile(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const legalStatus = txt(body.legalStatus, 32) || "NOT_REGISTERED";
+  const allowed = ["NOT_REGISTERED", "REGISTRATION_IN_PROGRESS", "REGISTERED", "SUSPENDED"];
+  const legalName = txt(body.legalName, 180) || null;
+  const registrationNumber = txt(body.registrationNumber, 120) || null;
+  const tin = txt(body.tin, 80) || null;
+  if (!allowed.includes(legalStatus)) return json({ error: "invalid_legal_status" }, 400);
+  if (legalStatus === "REGISTERED" && (!legalName || !registrationNumber || !tin)) {
+    return json({ error: "registered_company_name_registration_number_and_tin_required" }, 422);
+  }
+  await env.DB.prepare(
+    "INSERT INTO omni_enterprise_company_profiles (company_id,legal_name,trading_name,registration_number,tin,legal_status,incorporation_date,registered_address,principal_business_address,business_email,business_phone,website,country_code,currency,timezone,updated_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,'UG','UGX','Africa/Kampala',?13) ON CONFLICT(company_id) DO UPDATE SET legal_name=excluded.legal_name,trading_name=excluded.trading_name,registration_number=excluded.registration_number,tin=excluded.tin,legal_status=excluded.legal_status,incorporation_date=excluded.incorporation_date,registered_address=excluded.registered_address,principal_business_address=excluded.principal_business_address,business_email=excluded.business_email,business_phone=excluded.business_phone,website=excluded.website,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP"
+  ).bind(staff.company_id, legalName, txt(body.tradingName, 180) || null, registrationNumber, tin, legalStatus, txt(body.incorporationDate, 20) || null, txt(body.registeredAddress, 300) || null, txt(body.principalBusinessAddress, 300) || null, txt(body.businessEmail, 254) || null, txt(body.businessPhone, 40) || null, txt(body.website, 180) || null, staff.id).run();
+  await audit(env.DB, staff, requestId, "UPDATE_COMPANY_PROFILE", "COMPANY_PROFILE", staff.company_id, { legalName, registrationNumber, tin, legalStatus }, "Company owner updated company identity records");
+  return getCompanyProfile(env, staff, requestId);
+}
+
+async function createAgencyReceipt(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const transactionId = txt(body.transactionRecordId, 64);
+  if (!transactionId) return json({ error: "transaction_record_id_required" }, 400);
+  const row = await env.DB.prepare(
+    "SELECT t.id,t.provider,t.outlet_id,t.provider_reference,t.transaction_type,t.amount_ugx,t.source_status_claim,t.verification_level,t.recorded_by,o.name AS outlet_name,o.physical_address,e.legal_name,e.trading_name,m.display_name FROM omni_provider_transaction_records t JOIN omni_enterprise_outlets o ON o.id=t.outlet_id AND o.company_id=t.company_id LEFT JOIN omni_enterprise_company_profiles e ON e.company_id=t.company_id LEFT JOIN omni_staff_memberships m ON m.id=t.recorded_by WHERE t.id=?1 AND t.company_id=?2 LIMIT 1"
+  ).bind(transactionId, staff.company_id).first<{
+    id: string; provider: string; outlet_id: string; provider_reference: string | null; transaction_type: string;
+    amount_ugx: number; source_status_claim: string; verification_level: string; recorded_by: string;
+    outlet_name: string; physical_address: string; legal_name: string | null; trading_name: string | null; display_name: string | null;
+  }>();
+  if (!row) return json({ error: "transaction_record_not_found" }, 404);
+  if (!(await hasOutletAccess(env.DB, staff, row.outlet_id))) return json({ error: "outlet_access_denied" }, 403);
+  if (row.source_status_claim !== "SUCCESS_REPORTED") return json({ error: "source_does_not_report_success", detail: "A customer acknowledgement is only available for a source that reports success. This does not independently verify provider settlement." }, 409);
+  const existing = await env.DB.prepare(
+    "SELECT id,receipt_number,receipt_type,receipt_status,content_snapshot_json,customer_disclaimer FROM omni_receipt_documents WHERE company_id=?1 AND source_type='PROVIDER_TRANSACTION_RECORD' AND source_id=?2 LIMIT 1"
+  ).bind(staff.company_id, transactionId).first();
+  if (existing) return json({ data: existing, replayed: true, requestId });
+  const id = uuid();
+  const receiptNumber = "OTYA-AG-" + new Date().toISOString().slice(0,10).replace(/-/g,"") + "-" + id.slice(0,8).toUpperCase();
+  const disclaimer = "Otya company service acknowledgement only. It is not a provider-issued receipt and does not replace the official provider confirmation. The provider's official receipt and records remain authoritative.";
+  const snapshot = {
+    receiptNumber,
+    receiptType: "AGENCY_SERVICE_ACKNOWLEDGEMENT",
+    companyName: row.legal_name,
+    tradingName: row.trading_name,
+    outlet: { name: row.outlet_name, address: row.physical_address },
+    provider: row.provider,
+    providerReference: row.provider_reference,
+    transactionType: row.transaction_type,
+    amountUgx: row.amount_ugx,
+    currency: "UGX",
+    sourceStatus: row.source_status_claim,
+    verificationLevel: row.verification_level,
+    recordedBy: row.display_name,
+    issuedAt: new Date().toISOString(),
+    disclaimer
+  };
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO omni_receipt_documents (id,company_id,outlet_id,receipt_number,receipt_type,source_type,source_id,provider,provider_reference,verification_label,receipt_status,currency,total_ugx,content_snapshot_json,customer_disclaimer,issued_by) VALUES (?1,?2,?3,?4,'AGENCY_SERVICE_ACKNOWLEDGEMENT','PROVIDER_TRANSACTION_RECORD',?5,?6,?7,'SOURCE_EVIDENCE_REVIEWED','ISSUED','UGX',?8,?9,?10,?11)"
+    ).bind(id, staff.company_id, row.outlet_id, receiptNumber, transactionId, row.provider, row.provider_reference, row.amount_ugx, JSON.stringify(snapshot), disclaimer, staff.id),
+    env.DB.prepare(
+      "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'ISSUE_AGENCY_ACKNOWLEDGEMENT','RECEIPT',?3,'Issued a supplementary Otya acknowledgement; provider receipt remains authoritative',?4,?5,?6)"
+    ).bind(uuid(), staff.id, id, JSON.stringify({ receiptNumber, transactionRecordId: transactionId, verificationLabel: "SOURCE_EVIDENCE_REVIEWED" }), requestId, staff.company_id)
+  ]);
+  return json({ data: { id, receiptNumber, receiptType: "AGENCY_SERVICE_ACKNOWLEDGEMENT", receiptStatus: "ISSUED", content: snapshot, pdfReady: false }, requestId }, 201);
+}
+
+async function createRetailReceipt(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const saleId = txt(body.saleId, 64);
+  const outletId = txt(body.outletId, 64);
+  if (!saleId || !outletId) return json({ error: "sale_id_and_outlet_id_required" }, 400);
+  if (!(await hasOutletAccess(env.DB, staff, outletId))) return json({ error: "outlet_access_denied" }, 403);
+  const [sale, outlet, company] = await Promise.all([
+    env.DB.prepare("SELECT id,receipt_number,status,subtotal,discount_total,tax_total,total,payment_method,efris_status,efris_invoice_id,actor_id,outlet_id FROM omni_retail_sales WHERE id=?1 AND company_id=?2 LIMIT 1")
+      .bind(saleId, staff.company_id).first<{
+        id: string; receipt_number: string; status: string; subtotal: number; discount_total: number; tax_total: number; total: number;
+        payment_method: string; efris_status: string; efris_invoice_id: string | null; actor_id: string; outlet_id: string | null;
+      }>(),
+    env.DB.prepare("SELECT id,name,physical_address FROM omni_enterprise_outlets WHERE id=?1 AND company_id=?2 AND status='ACTIVE' LIMIT 1")
+      .bind(outletId, staff.company_id).first<{ id: string; name: string; physical_address: string }>(),
+    env.DB.prepare("SELECT legal_name,trading_name,legal_status,registration_number,tin FROM omni_enterprise_company_profiles WHERE company_id=?1 LIMIT 1")
+      .bind(staff.company_id).first<{ legal_name: string | null; trading_name: string | null; legal_status: string; registration_number: string | null; tin: string | null }>()
+  ]);
+  if (!sale || sale.status !== "COMPLETED") return json({ error: "completed_sale_not_found" }, 404);
+  if (!outlet) return json({ error: "active_outlet_not_found" }, 404);
+  if (sale.outlet_id && sale.outlet_id !== outletId) return json({ error: "sale_already_assigned_to_another_outlet" }, 409);
+  const existing = await env.DB.prepare(
+    "SELECT id,receipt_number,receipt_type,receipt_status,content_snapshot_json,customer_disclaimer FROM omni_receipt_documents WHERE company_id=?1 AND source_type='RETAIL_SALE' AND source_id=?2 LIMIT 1"
+  ).bind(staff.company_id, saleId).first();
+  if (existing) return json({ data: existing, replayed: true, requestId });
+  const lines = await env.DB.prepare(
+    "SELECT sku_snapshot,name_snapshot,quantity,unit_price,line_total FROM omni_retail_sale_lines WHERE sale_id=?1 ORDER BY rowid"
+  ).bind(saleId).all<{ sku_snapshot: string; name_snapshot: string; quantity: number; unit_price: number; line_total: number }>();
+  const id = uuid();
+  const receiptType = "RETAIL_SALES_RECEIPT";
+  const disclaimer = sale.efris_status === "SUCCEEDED" && sale.efris_invoice_id
+    ? "Retail receipt. Refer to the EFRIS fiscal invoice number shown for the official fiscal document."
+    : "Retail sales receipt. This document is not an EFRIS fiscal invoice unless a separate official fiscal invoice has been successfully issued.";
+  const snapshot = {
+    receiptNumber: sale.receipt_number,
+    receiptType,
+    company: { legalName: company?.legal_name ?? null, tradingName: company?.trading_name ?? null, registrationNumber: company?.registration_number ?? null, tin: company?.tin ?? null, legalStatus: company?.legal_status ?? "NOT_CONFIGURED" },
+    outlet: { name: outlet.name, address: outlet.physical_address },
+    issuedAt: new Date().toISOString(),
+    items: lines.results.map(line => ({ sku: line.sku_snapshot, name: line.name_snapshot, quantity: line.quantity, unitPriceUgx: line.unit_price, lineTotalUgx: line.line_total })),
+    subtotalUgx: sale.subtotal,
+    discountUgx: sale.discount_total,
+    taxUgx: sale.tax_total,
+    totalUgx: sale.total,
+    currency: "UGX",
+    paymentMethod: sale.payment_method,
+    efris: { status: sale.efris_status, invoiceId: sale.efris_invoice_id },
+    disclaimer
+  };
+  await env.DB.batch([
+    env.DB.prepare("UPDATE omni_retail_sales SET outlet_id=?1 WHERE id=?2 AND company_id=?3 AND outlet_id IS NULL")
+      .bind(outletId, saleId, staff.company_id),
+    env.DB.prepare(
+      "INSERT INTO omni_receipt_documents (id,company_id,outlet_id,receipt_number,receipt_type,source_type,source_id,verification_label,receipt_status,currency,total_ugx,content_snapshot_json,customer_disclaimer,issued_by) VALUES (?1,?2,?3,?4,'RETAIL_SALES_RECEIPT','RETAIL_SALE',?5,'INTERNAL_RECORD_ONLY','ISSUED','UGX',?6,?7,?8,?9)"
+    ).bind(id, staff.company_id, outletId, sale.receipt_number, saleId, sale.total, JSON.stringify(snapshot), disclaimer, staff.id),
+    env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'ISSUE_RETAIL_RECEIPT','RECEIPT',?3,'Issued Otya retail sales receipt from a completed sale',?4,?5,?6)")
+      .bind(uuid(), staff.id, id, JSON.stringify({ receiptNumber: sale.receipt_number, saleId, outletId, receiptType }), requestId, staff.company_id)
+  ]);
+  return json({ data: { id, receiptNumber: sale.receipt_number, receiptType, receiptStatus: "ISSUED", content: snapshot, pdfReady: false }, requestId }, 201);
+}
+
+async function getReceipt(request: Request, env: EnterpriseEnv, staff: StaffContext, receiptId: string, requestId: string) {
+  const receipt = await env.DB.prepare(
+    "SELECT id,outlet_id,receipt_number,receipt_type,source_type,source_id,provider,provider_reference,verification_label,receipt_status,currency,total_ugx,content_snapshot_json,customer_disclaimer,issued_by,issued_at FROM omni_receipt_documents WHERE id=?1 AND company_id=?2 LIMIT 1"
+  ).bind(receiptId, staff.company_id).first<{ id: string; outlet_id: string; content_snapshot_json: string; [key: string]: unknown }>();
+  if (!receipt) return json({ error: "receipt_not_found" }, 404);
+  if (!(await hasOutletAccess(env.DB, staff, receipt.outlet_id))) return json({ error: "outlet_access_denied" }, 403);
+  let content: unknown = null;
+  try { content = JSON.parse(receipt.content_snapshot_json); } catch { return json({ error: "receipt_snapshot_invalid" }, 500); }
+  const { content_snapshot_json: _snapshot, ...metadata } = receipt;
+  return json({ data: { ...metadata, content, pdfReady: false }, requestId });
+}
+
 export async function handleEnterpriseIntake(
   request: Request,
   env: EnterpriseEnv,
@@ -330,8 +551,16 @@ export async function handleEnterpriseIntake(
     return json({ data: result.results, requestId });
   }
   if (request.method === "POST" && url.pathname === "/api/v1/outlets") return createOutlet(request, env, staff, requestId);
+  const outletStatusMatch = url.pathname.match(/^\/api\/v1\/outlets\/([^/]+)\/status$/);
+  if (request.method === "PATCH" && outletStatusMatch) return updateOutletStatus(request, env, staff, txt(outletStatusMatch[1], 64), requestId);
+  if (request.method === "GET" && url.pathname === "/api/v1/company-profile") return getCompanyProfile(env, staff, requestId);
+  if (request.method === "PUT" && url.pathname === "/api/v1/company-profile") return saveCompanyProfile(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/provider-relationships") return createProviderRelationship(request, env, staff, requestId);
+  const relationshipStatusMatch = url.pathname.match(/^\/api\/v1\/provider-relationships\/([^/]+)$/);
+  if (request.method === "PATCH" && relationshipStatusMatch) return updateProviderRelationship(request, env, staff, txt(relationshipStatusMatch[1], 64), requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/provider-outlet-accounts") return createProviderOutletAccount(request, env, staff, requestId);
+  const providerAccountStatusMatch = url.pathname.match(/^\/api\/v1\/provider-outlet-accounts\/([^/]+)$/);
+  if (request.method === "PATCH" && providerAccountStatusMatch) return updateProviderOutletAccount(request, env, staff, txt(providerAccountStatusMatch[1], 64), requestId);
   if (request.method === "GET" && url.pathname === "/api/v1/provider-relationships") {
     if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
     const result = await env.DB.prepare("SELECT id,provider,provider_product,legal_agent_name,parent_agent_id,common_display_agent_id,agreement_reference,agreement_status,reporting_capability,starts_at,ends_at,created_at FROM omni_provider_relationships WHERE company_id=?1 ORDER BY provider,provider_product").bind(staff.company_id).all();
@@ -344,6 +573,10 @@ export async function handleEnterpriseIntake(
     return json({ data: result.results, requestId });
   }
   if (request.method === "POST" && url.pathname === "/api/v1/transaction-evidence/text") return submitTextEvidence(request, env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/agency-receipts") return createAgencyReceipt(request, env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/retail-receipts") return createRetailReceipt(request, env, staff, requestId);
+  const receiptMatch = url.pathname.match(/^\/api\/v1\/receipts\/([^/]+)$/);
+  if (request.method === "GET" && receiptMatch) return getReceipt(request, env, staff, txt(receiptMatch[1], 64), requestId);
   if (request.method === "GET" && url.pathname === "/api/v1/transaction-evidence") return listTextEvidence(request, env, staff);
   const reviewMatch = url.pathname.match(/^\/api\/v1\/transaction-evidence\/([^/]+)\/review$/);
   if (request.method === "POST" && reviewMatch) return reviewTextEvidence(request, env, staff, txt(reviewMatch[1], 64), requestId);
