@@ -226,7 +226,8 @@ CREATE TABLE IF NOT EXISTS provider_outlet_accounts (
   id TEXT PRIMARY KEY,
   company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
   provider_relationship_id TEXT NOT NULL,
-  branch_id TEXT NOT NULL,
+  scope_type TEXT NOT NULL DEFAULT 'OUTLET' CHECK (scope_type IN ('COMPANY','OUTLET')),
+  branch_id TEXT,
   cash_account_id TEXT,
   outlet_account_reference TEXT,
   account_kind TEXT NOT NULL
@@ -241,7 +242,9 @@ CREATE TABLE IF NOT EXISTS provider_outlet_accounts (
   FOREIGN KEY(company_id, branch_id) REFERENCES branches(company_id, id) ON DELETE RESTRICT,
   FOREIGN KEY(company_id, cash_account_id) REFERENCES cash_accounts(company_id, id) ON DELETE RESTRICT,
   UNIQUE(company_id, id),
-  UNIQUE(company_id, provider_relationship_id, branch_id, account_kind, outlet_account_reference)
+  UNIQUE(company_id, provider_relationship_id, branch_id, account_kind, outlet_account_reference),
+  CHECK ((scope_type = 'COMPANY' AND branch_id IS NULL) OR (scope_type = 'OUTLET' AND branch_id IS NOT NULL)),
+  CHECK (status <> 'ACTIVE' OR outlet_account_reference IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_provider_outlet_accounts_branch
   ON provider_outlet_accounts(company_id, branch_id, status, account_kind);
@@ -401,6 +404,31 @@ CREATE INDEX IF NOT EXISTS idx_provider_transaction_records_operator_time
 CREATE INDEX IF NOT EXISTS idx_provider_transaction_records_status
   ON provider_transaction_records(company_id, provider_status, evidence_level, created_at DESC);
 
+-- A transaction record must belong to the exact active outlet account and outlet.
+-- The worker only records an operation already performed in an approved provider app.
+CREATE TRIGGER IF NOT EXISTS provider_transaction_records_guard
+BEFORE INSERT ON provider_transaction_records
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM provider_outlet_accounts a
+     WHERE a.id = NEW.provider_outlet_account_id
+       AND a.company_id = NEW.company_id
+       AND a.branch_id = NEW.branch_id
+       AND a.scope_type = 'OUTLET'
+       AND a.status = 'ACTIVE'
+  ) THEN RAISE(ABORT, 'PROVIDER_OUTLET_ACCOUNT_NOT_ACTIVE_OR_SCOPE_MISMATCH') END;
+  SELECT CASE WHEN NEW.provider_operator_profile_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM provider_operator_profiles op
+     WHERE op.id = NEW.provider_operator_profile_id
+       AND op.company_id = NEW.company_id
+       AND op.provider_outlet_account_id = NEW.provider_outlet_account_id
+       AND op.approval_status = 'APPROVED'
+  ) THEN RAISE(ABORT, 'PROVIDER_OPERATOR_NOT_APPROVED_FOR_ACCOUNT') END;
+  SELECT CASE WHEN NEW.provider_status IN ('SUCCEEDED','FAILED','REVERSED')
+    AND NEW.evidence_level NOT IN ('STATEMENT_MATCHED','PROVIDER_FEED')
+    THEN RAISE(ABORT, 'PROVIDER_STATUS_REQUIRES_PROVIDER_EVIDENCE') END;
+END;
+
 CREATE TABLE IF NOT EXISTS provider_statement_rows (
   id TEXT PRIMARY KEY,
   company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE RESTRICT,
@@ -452,3 +480,10 @@ CREATE INDEX IF NOT EXISTS idx_provider_relationships_company_status
   ON provider_relationships(company_id, onboarding_status, provider_code);
 CREATE INDEX IF NOT EXISTS idx_employee_profiles_status
   ON employee_profiles(company_id, employment_status, employee_number);
+
+CREATE TRIGGER IF NOT EXISTS provider_outlet_account_active_guard
+BEFORE UPDATE OF status ON provider_outlet_accounts
+WHEN NEW.status = 'ACTIVE' AND NEW.outlet_account_reference IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'ACTIVE_PROVIDER_ACCOUNT_REQUIRES_PROVIDER_REFERENCE');
+END;
