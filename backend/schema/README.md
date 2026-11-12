@@ -1,14 +1,33 @@
-# Opoint D1 schema snapshot
+# Otya Enterprise D1 schema
 
-This snapshot is exported from the isolated Opoint staging database on 2026-11-11.
+This database is the authoritative operational store for the company-management and retail/agency-records product. The initial schema snapshot is the pre-Enterprise base. It is not a migration for an existing database.
 
-- Product D1 ID: ec080a51-cfc9-4375-8b3c-64667744b466
-- Application-controlled tables including migration ledger: 44
-- Views: 1
-- Explicit indexes: 19
-- Triggers: 9
-- Migration history: 0001_opoint_core (22c119954d58b7ae6887cf3a215fdeb9caaf1c9bb7b3560e61fef52abd47c224); 0002_operational_hardening (1176f077bb80a3aa3c86c68f0f1647d43cbe6e47a2b254669c5bc1c6dc24f45a); 0003_financial_integrity_guards (10dc15adb79c67a47db28ffa8582cfc8bad973edec07999e47d7d9b15fb45868)
+## Migration order
 
-The SQL contains DDL and migration-history rows only. It excludes Cloudflare's internal _cf_KV table and contains no application records or secrets.
+1. Existing isolated staging bootstrap: backend/schema/bootstrap.sql.
+2. Existing migration history: 0001_opoint_core, 0002_operational_hardening, 0003_financial_integrity_guards.
+3. 0004_enterprise_automation.sql — departments, employee profiles/assignments/permission grants, documents, company assets and SIMs, parent provider relationships, outlet accounts, operator profiles, balance observations, capture records and statement imports.
+4. 0005_message_capture_and_receipts.sql — explicitly shared provider-message evidence, company-issued retail/agency receipts and receipt history.
 
-**Use:** This is a one-time bootstrap for a brand-new empty Opoint database. Do not apply it to the existing staging database. Existing environments must be changed only through new forward-only migration files. Review any bootstrap target and take a backup before execution.
+The numbered files in backend/schema/migrations are forward-only. Never apply bootstrap.sql to a database that already contains application or migration data.
+
+## Important boundaries
+
+- Omy Play has its own database and is not part of this schema.
+- D1 stores company operational records, not provider PINs, passwords, PUKs, authentication secrets or payment credentials.
+- Provider payments are executed in provider-approved systems, not by this product.
+- Provider balance records are observations with a source and timestamp, not a live wallet balance unless supplied by an approved feed.
+- Message capture stores parsed candidate fields and a one-way fingerprint. It does not store the full raw SMS body in D1.
+- Issued receipts preserve a snapshot and evidence/status at issue time. A company receipt is not a provider-generated receipt and does not automatically qualify as an EFRIS fiscal invoice.
+
+## Validation
+
+Run from the repository root:
+
+    npm --prefix backend run verify:schema
+
+The verifier applies the base snapshot and Enterprise migrations to an in-memory SQLite database, checks integrity and foreign keys, and exercises multiple outlets, provider accounts, operator mappings, balance evidence, explicit message capture and receipt issuance.
+
+## Staging and production
+
+The new migrations are code only until explicitly applied to the isolated staging D1 database using the approved Cloudflare release workflow. Do not deploy them to production, change live bindings or retire the legacy database as part of this PR.
