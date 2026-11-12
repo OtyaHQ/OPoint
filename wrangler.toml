@@ -29,6 +29,12 @@ database_name = "otyapoint-db"
 database_id = "65cc4aee-154a-474f-9ed4-aabea0924c98"
 migrations_dir = "cloudflare-api/migrations"
 
+# Private company evidence, provider receipts, statements and corporate documents.
+# Existing R2 bucket; do not enable a public domain on this bucket.
+[[r2_buckets]]
+binding = "PRIVATE_FILES"
+bucket_name = "opoint-private-documents"
+
 # No custom domain, public endpoint, or live payment-provider binding.
 [[services]]
 binding = "AUTH"
