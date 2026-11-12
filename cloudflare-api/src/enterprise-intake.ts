@@ -862,15 +862,39 @@ async function registerCompanySim(request: Request, env: EnterpriseEnv, staff: S
   const id = uuid();
   try {
     await env.DB.prepare(
-      "INSERT INTO omni_company_sim_cards (id,company_id,carrier,msisdn,iccid,company_registration_status,use_type,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
-    ).bind(id, staff.company_id, carrier, msisdn, txt(body.iccid, 40) || null,
-      body.companyRegistered === true ? "REGISTERED" : "PENDING", useType, staff.id).run();
+      "INSERT INTO omni_company_sim_cards (id,company_id,carrier,msisdn,iccid,company_registration_status,use_type,created_by) VALUES (?1,?2,?3,?4,?5,'PENDING',?6,?7)"
+    ).bind(id, staff.company_id, carrier, msisdn.replace(/[\\s-]/g, ""), txt(body.iccid, 40) || null, useType, staff.id).run();
   } catch (error) {
     if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) return json({ error: "sim_or_iccid_already_registered" }, 409);
     throw error;
   }
   await audit(env.DB, staff, requestId, "REGISTER_COMPANY_SIM", "SIM_CARD", id, { carrier, msisdn, useType }, "Company asset registry entry created; telco registration evidence must be separately verified");
-  return json({ data: { id, carrier, msisdn, useType, companyRegistrationStatus: body.companyRegistered === true ? "REGISTERED" : "PENDING" }, requestId }, 201);
+  return json({ data: { id, carrier, msisdn: msisdn.replace(/[\\s-]/g, ""), useType, companyRegistrationStatus: "PENDING" }, requestId }, 201);
+}
+
+
+async function verifyCompanySimRegistration(request: Request, env: EnterpriseEnv, staff: StaffContext, simId: string, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const evidenceFileId = txt(body.evidenceFileId, 64);
+  const reason = txt(body.reason, 300);
+  if (!evidenceFileId || !reason) return json({ error: "registration_evidence_and_reason_required" }, 400);
+  const sim = await env.DB.prepare("SELECT id,company_registration_status FROM omni_company_sim_cards WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(simId, staff.company_id).first<{id:string;company_registration_status:string}>();
+  if (!sim) return json({ error: "sim_not_found" }, 404);
+  const evidence = await env.DB.prepare(
+    "SELECT id,evidence_type,outlet_id FROM omni_evidence_files WHERE id=?1 AND company_id=?2 AND deleted_at IS NULL LIMIT 1"
+  ).bind(evidenceFileId, staff.company_id).first<{id:string;evidence_type:string;outlet_id:string|null}>();
+  if (!evidence || evidence.evidence_type !== "STAFF_DOCUMENT" || evidence.outlet_id !== null) {
+    return json({ error: "company_sim_registration_document_required", detail: "Upload the telecom company SIM registration evidence as a company-level staff document, not a shop transaction attachment." }, 422);
+  }
+  await env.DB.batch([
+    env.DB.prepare("UPDATE omni_company_sim_cards SET company_registration_status='REGISTERED',registration_evidence_id=?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND company_id=?3")
+      .bind(evidenceFileId, simId, staff.company_id),
+    env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'VERIFY_COMPANY_SIM_REGISTRATION','SIM_CARD',?3,?4,?5,?6,?7)")
+      .bind(uuid(), staff.id, simId, reason, JSON.stringify({ companyRegistrationStatus: "REGISTERED", evidenceFileId }), requestId, staff.company_id)
+  ]);
+  return json({ data: { id: simId, companyRegistrationStatus: "REGISTERED", evidenceFileId }, requestId });
 }
 
 async function registerCompanyDevice(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
@@ -1131,6 +1155,8 @@ export async function handleEnterpriseIntake(
   if (request.method === "GET" && url.pathname === "/api/v1/employees") return listEnterpriseEmployees(env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/employee-outlet-assignments") return assignEmployeeToOutlet(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/company-sims") return registerCompanySim(request, env, staff, requestId);
+  const simRegistrationMatch = url.pathname.match(/^\/api\/v1\/company-sims\/([^/]+)\/registration$/);
+  if (request.method === "PATCH" && simRegistrationMatch) return verifyCompanySimRegistration(request, env, staff, txt(simRegistrationMatch[1],64), requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/company-devices") return registerCompanyDevice(request, env, staff, requestId);
   if (request.method === "POST" && url.pathname === "/api/v1/provider-operator-profiles") return createProviderOperatorProfile(request, env, staff, requestId);
   const operatorProfileMatch = url.pathname.match(/^\/api\/v1\/provider-operator-profiles\/([^/]+)$/);
