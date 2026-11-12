@@ -94,6 +94,8 @@ const requiredObjects = [
   "omni_outlet_stock_movement_apply",
   "omni_provider_balance_observations_no_update",
   "omni_provider_balance_observations_no_delete",
+  "omni_outlet_stock_balance_scope_guard",
+  "omni_outlet_stock_balance_identity_immutable",
 ];
 
 function makeEnv({ tables = requiredTables, objects = requiredObjects, fail = false } = {}) {
