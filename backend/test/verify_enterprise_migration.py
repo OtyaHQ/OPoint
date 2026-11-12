@@ -3,8 +3,7 @@ import sqlite3
 
 ROOT = Path(__file__).resolve().parents[1]
 bootstrap = (ROOT / "schema" / "bootstrap.sql").read_text(encoding="utf-8")
-migration_path = ROOT / "schema" / "migrations" / "0004_enterprise_automation.sql"
-migration = migration_path.read_text(encoding="utf-8")
+migration = (ROOT / "schema" / "migrations" / "0004_enterprise_automation.sql").read_text(encoding="utf-8")
 
 db = sqlite3.connect(":memory:")
 db.execute("PRAGMA foreign_keys = ON")
@@ -29,37 +28,26 @@ db.execute(
 )
 db.executemany(
     "INSERT INTO branches(id,company_id,branch_code,name) VALUES (?,?,?,?)",
-    [
-        ("br-1","co-1","MBR-001","Mbirizi"),
-        ("br-2","co-1","MSK-001","Masaka"),
-    ],
+    [("br-1","co-1","MBR-001","Mbirizi"), ("br-2","co-1","MSK-001","Masaka")],
 )
 db.executemany(
     "INSERT INTO staff_memberships(id,company_id,branch_id,identity_subject,display_name,role_key,status) VALUES (?,?,?,?,?,?,?)",
-    [
-        ("st-1","co-1","br-1","subject-1","Teller One","AGENT","ACTIVE"),
-        ("st-2","co-1","br-2","subject-2","Teller Two","AGENT","ACTIVE"),
-    ],
+    [("st-1","co-1","br-1","subject-1","Teller One","AGENT","ACTIVE"),
+     ("st-2","co-1","br-2","subject-2","Teller Two","AGENT","ACTIVE")],
 )
-db.execute(
-    "INSERT INTO departments(id,company_id,department_code,name) VALUES ('dep-1','co-1','OPS','Operations')"
-)
+db.execute("INSERT INTO departments(id,company_id,department_code,name) VALUES ('dep-1','co-1','OPS','Operations')")
 db.execute(
     "INSERT INTO job_positions(id,company_id,department_id,position_code,title) VALUES ('pos-1','co-1','dep-1','TELLER','Agency Teller')"
 )
 db.executemany(
     "INSERT INTO employee_profiles(id,company_id,staff_membership_id,employee_number,employment_status,hire_date) VALUES (?,?,?,?,?,?)",
-    [
-        ("emp-1","co-1","st-1","EMP-001","ACTIVE","2026-01-01"),
-        ("emp-2","co-1","st-2","EMP-002","ACTIVE","2026-02-01"),
-    ],
+    [("emp-1","co-1","st-1","EMP-001","ACTIVE","2026-01-01"),
+     ("emp-2","co-1","st-2","EMP-002","ACTIVE","2026-02-01")],
 )
 db.executemany(
     "INSERT INTO employee_assignments(id,company_id,employee_profile_id,branch_id,department_id,position_id,assignment_type,created_by) VALUES (?,?,?,?,?,?,?,?)",
-    [
-        ("as-1","co-1","emp-1","br-1","dep-1","pos-1","PRIMARY","owner"),
-        ("as-2","co-1","emp-2","br-2","dep-1","pos-1","PRIMARY","owner"),
-    ],
+    [("as-1","co-1","emp-1","br-1","dep-1","pos-1","PRIMARY","owner"),
+     ("as-2","co-1","emp-2","br-2","dep-1","pos-1","PRIMARY","owner")],
 )
 
 db.execute(
@@ -79,7 +67,7 @@ db.execute(
     "INSERT INTO provider_relationships(id,company_id,provider_code,legal_entity_name,corporate_agent_reference,onboarding_status) "
     "VALUES ('pr-airtel','co-1','AIRTEL_MONEY','Otya Holdings Limited','AIR-CORP-001','ACTIVE')"
 )
-# A single provider parent relationship can have separate company-level and outlet-level accounts.
+# One shared company relationship supports company-level settlement and separate outlet accounts.
 db.execute(
     "INSERT INTO provider_outlet_accounts(id,company_id,provider_relationship_id,scope_type,branch_id,outlet_account_reference,account_kind,display_name,status) "
     "VALUES ('pa-commission','co-1','pr-airtel','COMPANY',NULL,'AIR-COMM-001','COMMISSION','Airtel company commission','ACTIVE')"
@@ -87,10 +75,8 @@ db.execute(
 db.executemany(
     "INSERT INTO provider_outlet_accounts(id,company_id,provider_relationship_id,scope_type,branch_id,outlet_account_reference,account_kind,display_name,status) "
     "VALUES (?,?,?,?,?,?,?,?,?)",
-    [
-        ("pa-1","co-1","pr-airtel","OUTLET","br-1","AIR-MBR-001","AGENT_FLOAT","Mbirizi Airtel float","ACTIVE"),
-        ("pa-2","co-1","pr-airtel","OUTLET","br-2","AIR-MSK-001","AGENT_FLOAT","Masaka Airtel float","ACTIVE"),
-    ],
+    [("pa-1","co-1","pr-airtel","OUTLET","br-1","AIR-MBR-001","AGENT_FLOAT","Mbirizi Airtel float","ACTIVE"),
+     ("pa-2","co-1","pr-airtel","OUTLET","br-2","AIR-MSK-001","AGENT_FLOAT","Masaka Airtel float","ACTIVE")],
 )
 try:
     db.execute(
@@ -115,12 +101,12 @@ db.execute(
     "VALUES ('file-1','co-1','private/co-1/receipt-1.jpg','image/jpeg',12345,'sha256-file-1','RESTRICTED','st-1')"
 )
 db.execute(
-    "INSERT INTO capture_records(id,company_id,branch_id,capture_kind,capture_method,stored_file_id,input_fingerprint,extracted_data_json,status,created_by) "
-    "VALUES ('capture-1','co-1','br-1','PROVIDER_RECEIPT','FILE_UPLOAD','file-1','fingerprint-1','{""providerReference"":""REF-001"",""amount"":100000}','NEEDS_REVIEW','st-1')"
+    "INSERT INTO capture_records(id,company_id,branch_id,capture_kind,capture_method,stored_file_id,input_fingerprint,status,created_by) "
+    "VALUES ('capture-1','co-1','br-1','PROVIDER_RECEIPT','FILE_UPLOAD','file-1','fingerprint-1','NEEDS_REVIEW','st-1')"
 )
 db.execute(
-    "INSERT INTO capture_extractions(id,company_id,capture_record_id,extractor_name,output_schema_version,extracted_fields_json,confidence_by_field_json) "
-    "VALUES ('extract-1','co-1','capture-1','reviewed-parser','v1','{""reference"":""REF-001"",""amount"":100000}','{""reference"":98,""amount"":91}')"
+    "INSERT INTO capture_extractions(id,company_id,capture_record_id,extractor_name,output_schema_version,extracted_fields_json) "
+    "VALUES ('extract-1','co-1','capture-1','reviewed-parser','v1','{}')"
 )
 db.execute(
     "INSERT INTO provider_transaction_records(id,company_id,branch_id,provider_outlet_account_id,provider_operator_profile_id,capture_record_id,provider_reference,transaction_kind,amount,provider_status,evidence_level,recorded_by,idempotency_key) "
