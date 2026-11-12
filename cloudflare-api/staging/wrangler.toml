@@ -14,10 +14,10 @@ binding = "DB"
 database_name = "opoint-staging-db"
 database_id = "ec080a51-cfc9-4375-8b3c-64667744b466"
 
-# Temporary dependency; switch to isolated otya-id-staging before external tests.
+# Use the isolated Otya ID staging Worker; never call production identity from staging.
 [[services]]
 binding = "OTYA_ID"
-service = "otya-auth"
+service = "otya-id-staging"
 
 [observability]
 enabled = true
