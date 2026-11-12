@@ -135,7 +135,7 @@ test("refresh returns a new access cookie and keeps the refresh cookie HttpOnly"
   assert.equal(cookies.length, 1);
   assert.match(cookies[0], /__Host-otya_access=refreshed-access-token/);
   assert.match(cookies[0], /HttpOnly/);
-  assert.equal(cookies[0].includes("refresh"), false);
+  assert.equal(cookies[0].startsWith("__Secure-otya_refresh="), false);
 });
 
 test("logout revokes the refresh token and clears both cookies", async () => {
