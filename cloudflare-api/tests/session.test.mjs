@@ -1,6 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleSessionRoutes } from "../src/session.mjs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import ts from "typescript";
+
+const tempDir = mkdtempSync(join(tmpdir(), "otya-session-test-"));
+const source = readFileSync(new URL("../src/session.ts", import.meta.url), "utf8");
+const compiled = ts.transpileModule(source, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
+}).outputText;
+writeFileSync(join(tempDir, "session.mjs"), compiled);
+const { handleSessionRoutes } = await import(pathToFileURL(join(tempDir, "session.mjs")).href);
 
 const staff = {
   id: "staff-1",
@@ -141,3 +153,5 @@ test("logout revokes the refresh token and clears both cookies", async () => {
   assert.equal(cookies.length, 2);
   assert.ok(cookies.every(cookie => /Max-Age=0/.test(cookie)));
 });
+
+test.after(() => rmSync(tempDir, { recursive: true, force: true }));
