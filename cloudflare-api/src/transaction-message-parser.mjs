@@ -34,7 +34,7 @@ function parseTransactionType(text) {
   if (/\b(airtime|recharge|top\s?up)\b/i.test(text)) return "AIRTIME";
   if (/\b(data\s(bundle|purchase)|internet bundle)\b/i.test(text)) return "DATA";
   if (/\b(umeme|yakam|nwsc|water bill|pay ?tv|bill payment|utility)\b/i.test(text)) return "BILL_PAYMENT";
-  if (/\b(withdraw|cash.?out|cash out)\b/i.test(text)) return "CASH_OUT";
+  if (/\b(withdraw(?:al|n|ed|s)?|cash[\s-]?out|you\s+withdrew)\b/i.test(text)) return "CASH_OUT";
   if (/\b(deposit|cash.?in|cash in|received from|you have received)\b/i.test(text)) return "CASH_IN";
   if (/\b(merchant payment|payment received|paid to merchant)\b/i.test(text)) return "MERCHANT_PAYMENT";
   if (/\b(reversal|reversed)\b/i.test(text)) return "REVERSAL";
