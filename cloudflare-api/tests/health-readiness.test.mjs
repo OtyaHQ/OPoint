@@ -9,13 +9,22 @@ import ts from "typescript";
 const workerSource = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(workerSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
-}).outputText.replace('./providers/quickteller-business-sandbox', './quickteller-business-sandbox.mjs');
+}).outputText
+  .replace('./providers/quickteller-business-sandbox', './quickteller-business-sandbox.mjs')
+  .replace('./enterprise-intake', './enterprise-intake.mjs');
 const tempDir = mkdtempSync(join(tmpdir(), "otyapoint-health-readiness-"));
 const providerSource = readFileSync(new URL("../src/providers/quickteller-business-sandbox.ts", import.meta.url), "utf8");
 const compiledProvider = ts.transpileModule(providerSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
 }).outputText;
 writeFileSync(join(tempDir, "quickteller-business-sandbox.mjs"), compiledProvider);
+const enterpriseSource = readFileSync(new URL("../src/enterprise-intake.ts", import.meta.url), "utf8");
+const compiledEnterprise = ts.transpileModule(enterpriseSource, {
+  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
+}).outputText;
+const parserSource = readFileSync(new URL("../src/transaction-message-parser.mjs", import.meta.url), "utf8");
+writeFileSync(join(tempDir, "enterprise-intake.mjs"), compiledEnterprise);
+writeFileSync(join(tempDir, "transaction-message-parser.mjs"), parserSource);
 writeFileSync(join(tempDir, "index.mjs"), compiled);
 copyFileSync(new URL("../src/sale-fingerprint.mjs", import.meta.url), join(tempDir, "sale-fingerprint.mjs"));
 const worker = (await import(pathToFileURL(join(tempDir, "index.mjs")).href)).default;
@@ -25,7 +34,17 @@ const requiredTables = [
   "omni_stock_movements", "omni_agency_transactions", "omni_ledger_entries",
   "omni_reconciliation_sessions", "omni_audit_events", "omni_staff_memberships",
   "omni_staff_invitations", "omni_agency_accounts", "omni_agency_operations",
-  "omni_agency_account_movements",
+  "omni_agency_account_movements", "omni_enterprise_outlets", "omni_enterprise_departments",
+  "omni_enterprise_employees", "omni_employee_outlet_assignments", "omni_permission_catalog",
+  "omni_staff_permission_grants", "omni_provider_relationships", "omni_provider_outlet_accounts",
+  "omni_provider_operator_profiles", "omni_company_sim_cards", "omni_company_devices",
+  "omni_sim_assignments", "omni_device_assignments", "omni_outlet_operating_accounts",
+  "omni_outlet_account_movements", "omni_evidence_files", "omni_evidence_ingestion_items",
+  "omni_provider_transaction_records", "omni_transaction_verification_events",
+  "omni_provider_balance_observations", "omni_outlet_stock_balances", "omni_outlet_stock_movements",
+  "omni_receipt_documents", "omni_approval_requests", "omni_approval_decisions",
+  "omni_attendance_events", "omni_leave_requests", "omni_corporate_documents",
+  "omni_enterprise_company_profiles",
 ];
 
 const requiredObjects = [
@@ -52,6 +71,16 @@ const requiredObjects = [
   "omni_agency_operations_no_delete",
   "omni_agency_account_movements_no_update",
   "omni_agency_account_movements_no_delete",
+  "omni_outlet_account_movement_guard",
+  "omni_outlet_account_movement_apply",
+  "omni_outlet_account_movements_no_update",
+  "omni_outlet_account_movements_no_delete",
+  "omni_provider_transaction_records_no_update",
+  "omni_provider_transaction_records_no_delete",
+  "omni_txn_verification_events_no_update",
+  "omni_txn_verification_events_no_delete",
+  "omni_outlet_stock_movements_no_update",
+  "omni_outlet_stock_movements_no_delete",
 ];
 
 function makeEnv({ tables = requiredTables, objects = requiredObjects, fail = false } = {}) {
