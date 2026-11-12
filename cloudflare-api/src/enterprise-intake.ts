@@ -692,6 +692,220 @@ async function createRetailReceipt(request: Request, env: EnterpriseEnv, staff: 
   return json({ data: { id, receiptNumber: sale.receipt_number, receiptType, receiptStatus: "ISSUED", content: snapshot, pdfReady: false }, requestId }, 201);
 }
 
+
+async function recordProviderBalance(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const accountId = txt(body.providerOutletAccountId, 64);
+  const outletId = txt(body.outletId, 64);
+  const reportedBalance = Number(body.reportedBalanceUgx);
+  const sourceType = txt(body.sourceType, 40);
+  const allowedSources = ["PROVIDER_PORTAL", "PROVIDER_STATEMENT", "PROVIDER_RECEIPT", "USER_SHARED_TEXT", "MANUAL_ENTRY"];
+  if (!accountId || !outletId || !Number.isSafeInteger(reportedBalance) || reportedBalance < 0 || !allowedSources.includes(sourceType)) {
+    return json({ error: "valid_account_outlet_balance_and_source_required" }, 400);
+  }
+  if (!(await hasOutletAccess(env.DB, staff, outletId))) return json({ error: "outlet_access_denied" }, 403);
+  const account = await env.DB.prepare(
+    "SELECT a.id,a.outlet_id,a.status,r.provider,r.agreement_status FROM omni_provider_outlet_accounts a JOIN omni_provider_relationships r ON r.id=a.provider_relationship_id AND r.company_id=a.company_id WHERE a.id=?1 AND a.company_id=?2 AND a.outlet_id=?3 LIMIT 1"
+  ).bind(accountId, staff.company_id, outletId).first<{
+    id: string; outlet_id: string; status: string; provider: string; agreement_status: string;
+  }>();
+  if (!account || account.status !== "ACTIVE" || account.agreement_status !== "APPROVED") {
+    return json({ error: "approved_active_provider_account_required" }, 409);
+  }
+  const observedAtRaw = txt(body.observedAt, 48);
+  const observedAt = observedAtRaw && Number.isFinite(Date.parse(observedAtRaw))
+    ? new Date(observedAtRaw).toISOString()
+    : new Date().toISOString();
+  let evidenceFileId = txt(body.evidenceFileId, 64) || null;
+  let verificationLevel = "UNVERIFIED";
+  if (sourceType === "PROVIDER_STATEMENT" && evidenceFileId && ["SOVEREIGN","MANAGER","MANAGING_DIRECTOR","CHAIRMAN"].includes(staff.role)) {
+    const evidence = await env.DB.prepare(
+      "SELECT id,evidence_type,outlet_id,uploaded_by FROM omni_evidence_files WHERE id=?1 AND company_id=?2 AND deleted_at IS NULL LIMIT 1"
+    ).bind(evidenceFileId, staff.company_id).first<{id:string;evidence_type:string;outlet_id:string|null;uploaded_by:string}>();
+    if (!evidence || evidence.evidence_type !== "PROVIDER_STATEMENT" || (evidence.outlet_id && evidence.outlet_id !== outletId)) {
+      return json({ error: "matching_provider_statement_evidence_required" }, 422);
+    }
+    if (evidence.uploaded_by === staff.id) return json({ error: "maker_checker_separation_required" }, 409);
+    verificationLevel = "STATEMENT_MATCHED";
+  }
+  const id = uuid();
+  await env.DB.batch([
+    env.DB.prepare(
+      "INSERT INTO omni_provider_balance_observations (id,company_id,provider,provider_outlet_account_id,outlet_id,reported_balance_ugx,source_type,verification_level,evidence_file_id,observed_at,recorded_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)"
+    ).bind(id, staff.company_id, account.provider, accountId, outletId, reportedBalance, sourceType, verificationLevel, evidenceFileId, observedAt, staff.id),
+    env.DB.prepare(
+      "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'RECORD_PROVIDER_BALANCE','PROVIDER_BALANCE',?3,'Recorded a provider balance observation; no provider funds were moved',?4,?5,?6)"
+    ).bind(uuid(), staff.id, id, JSON.stringify({ provider: account.provider, outletId, accountId, sourceType, verificationLevel, reportedBalanceUgx: reportedBalance, observedAt }), requestId, staff.company_id)
+  ]);
+  return json({
+    data: { id, provider: account.provider, outletId, providerOutletAccountId: accountId, reportedBalanceUgx: reportedBalance, currency: "UGX", sourceType, verificationLevel, observedAt },
+    requestId
+  }, 201);
+}
+
+async function listProviderBalances(request: Request, env: EnterpriseEnv, staff: StaffContext, summary: boolean) {
+  const url = new URL(request.url);
+  const outletId = txt(url.searchParams.get("outletId"), 64);
+  if (outletId && !(await hasOutletAccess(env.DB, staff, outletId))) return json({ error: "outlet_access_denied" }, 403);
+  const rows = await env.DB.prepare(
+    "SELECT b.id,b.provider,b.provider_outlet_account_id,b.outlet_id,a.account_label,a.account_type,a.provider_outlet_id,a.provider_account_reference,o.outlet_code,o.name AS outlet_name,b.reported_balance_ugx,b.currency,b.source_type,b.verification_level,b.evidence_file_id,b.observed_at,b.recorded_by,b.created_at FROM omni_provider_balance_observations b JOIN omni_provider_outlet_accounts a ON a.id=b.provider_outlet_account_id AND a.company_id=b.company_id JOIN omni_enterprise_outlets o ON o.id=b.outlet_id AND o.company_id=b.company_id WHERE b.company_id=?1 ORDER BY b.observed_at DESC LIMIT 500"
+  ).bind(staff.company_id).all<Record<string, unknown>>();
+  const allowed = [];
+  for (const row of rows.results) {
+    const rowOutlet = String(row.outlet_id);
+    if (outletId && rowOutlet !== outletId) continue;
+    if (staff.role !== "SOVEREIGN" && !(await hasOutletAccess(env.DB, staff, rowOutlet))) continue;
+    allowed.push(row);
+  }
+  const now = Date.now();
+  if (!summary) return json({ data: allowed.slice(0, 200), requestId: txt(request.headers.get("cf-ray"), 80) || null });
+  const seen = new Set<string>();
+  const latest = [];
+  for (const row of allowed) {
+    const key = String(row.provider_outlet_account_id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const observedAt = Date.parse(String(row.observed_at));
+    latest.push({
+      ...row,
+      isStale: !Number.isFinite(observedAt) || now - observedAt > 24 * 60 * 60 * 1000,
+      ageSeconds: Number.isFinite(observedAt) ? Math.max(0, Math.floor((now - observedAt) / 1000)) : null
+    });
+  }
+  const totals = new Map<string, number>();
+  for (const row of latest) {
+    const p = String(row.provider);
+    totals.set(p, (totals.get(p) || 0) + Number(row.reported_balance_ugx));
+  }
+  return json({
+    data: {
+      accounts: latest,
+      providerReportedTotals: Array.from(totals.entries()).map(([provider, amountUgx]) => ({ provider, amountUgx, currency: "UGX" })),
+      balanceNature: "LATEST_RECORDED_PROVIDER_OBSERVATIONS_NOT_LIVE_UNLESS_READ_ONLY_PROVIDER_CONFIRMED",
+      generatedAt: new Date().toISOString()
+    },
+    requestId: txt(request.headers.get("cf-ray"), 80) || null
+  });
+}
+
+async function createEmployee(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const membershipId = txt(body.staffMembershipId, 64);
+  const employeeNumber = txt(body.employeeNumber, 40).toUpperCase();
+  const legalName = txt(body.legalName, 180);
+  if (!membershipId || !/^[A-Z0-9][A-Z0-9_-]{1,39}$/.test(employeeNumber) || !legalName) {
+    return json({ error: "staff_membership_employee_number_and_legal_name_required" }, 400);
+  }
+  const membership = await env.DB.prepare(
+    "SELECT id,company_id,status FROM omni_staff_memberships WHERE id=?1 AND company_id=?2 LIMIT 1"
+  ).bind(membershipId, staff.company_id).first<{id:string;company_id:string;status:string}>();
+  if (!membership || !["ACTIVE","PENDING"].includes(membership.status)) return json({ error: "eligible_staff_membership_required" }, 404);
+  const employeeId = uuid();
+  const employmentType = txt(body.employmentType, 24) || "FULL_TIME";
+  const employmentTypes = ["FULL_TIME","PART_TIME","CASUAL","CONTRACT","DIRECTOR","INTERN"];
+  if (!employmentTypes.includes(employmentType)) return json({ error: "invalid_employment_type" }, 400);
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO omni_enterprise_employees (id,company_id,staff_membership_id,employee_number,legal_name,preferred_name,department_id,job_title,employment_type,employment_status,start_date,work_email,work_phone) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'ONBOARDING',?10,?11,?12)"
+      ).bind(employeeId, staff.company_id, membershipId, employeeNumber, legalName, txt(body.preferredName, 120) || null, txt(body.departmentId, 64) || null, txt(body.jobTitle, 120) || null, employmentType, txt(body.startDate, 20) || null, txt(body.workEmail, 254) || null, txt(body.workPhone, 40) || null),
+      env.DB.prepare(
+        "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'CREATE_EMPLOYEE','EMPLOYEE',?3,'Company owner created an employment record linked to an existing Otya staff membership',?4,?5,?6)"
+      ).bind(uuid(), staff.id, employeeId, JSON.stringify({ employeeNumber, legalName, employmentType, employmentStatus: "ONBOARDING" }), requestId, staff.company_id)
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) return json({ error: "employee_number_or_membership_already_used" }, 409);
+    throw error;
+  }
+  return json({ data: { id: employeeId, employeeNumber, legalName, employmentType, employmentStatus: "ONBOARDING" }, requestId }, 201);
+}
+
+async function assignEmployeeToOutlet(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const employeeId = txt(body.employeeId, 64);
+  const outletId = txt(body.outletId, 64);
+  const assignmentRole = txt(body.assignmentRole, 60);
+  if (!employeeId || !outletId || !assignmentRole) return json({ error: "employee_outlet_and_assignment_role_required" }, 400);
+  const employee = await env.DB.prepare("SELECT id,employment_status FROM omni_enterprise_employees WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(employeeId, staff.company_id).first<{id:string;employment_status:string}>();
+  const outlet = await env.DB.prepare("SELECT id,status FROM omni_enterprise_outlets WHERE id=?1 AND company_id=?2 LIMIT 1")
+    .bind(outletId, staff.company_id).first<{id:string;status:string}>();
+  if (!employee || !outlet) return json({ error: "employee_or_outlet_not_found" }, 404);
+  if (outlet.status !== "ACTIVE" || employee.employment_status === "TERMINATED") return json({ error: "active_outlet_and_non_terminated_employee_required" }, 409);
+  const id = uuid();
+  const startsAtRaw = txt(body.startsAt, 48);
+  const startsAt = startsAtRaw && Number.isFinite(Date.parse(startsAtRaw)) ? new Date(startsAtRaw).toISOString() : new Date().toISOString();
+  try {
+    await env.DB.prepare(
+      "INSERT INTO omni_employee_outlet_assignments (id,company_id,employee_id,outlet_id,assignment_role,is_primary,starts_at,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
+    ).bind(id, staff.company_id, employeeId, outletId, assignmentRole, body.isPrimary === true ? 1 : 0, startsAt, staff.id).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("EMPLOYEE_OUTLET_COMPANY_MISMATCH")) return json({ error: "employee_outlet_company_mismatch" }, 409);
+    throw error;
+  }
+  await audit(env.DB, staff, requestId, "ASSIGN_EMPLOYEE_TO_OUTLET", "EMPLOYEE_OUTLET_ASSIGNMENT", id, { employeeId, outletId, assignmentRole, startsAt }, "Company owner assigned an employee to an outlet");
+  return json({ data: { id, employeeId, outletId, assignmentRole, startsAt, status: "ACTIVE" }, requestId }, 201);
+}
+
+async function registerCompanySim(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const carrier = txt(body.carrier, 20);
+  const msisdn = txt(body.msisdn, 32);
+  const useType = txt(body.useType, 30);
+  if (!["AIRTEL","MTN","OTHER"].includes(carrier) || !/^\+?[0-9]{9,15}$/.test(msisdn.replace(/[\s-]/g,"")) ||
+      !["AGENCY_OPERATION","BUSINESS_VOICE_DATA","DEVICE_CONNECTIVITY","OTHER"].includes(useType)) {
+    return json({ error: "valid_carrier_company_number_and_use_type_required" }, 400);
+  }
+  const id = uuid();
+  try {
+    await env.DB.prepare(
+      "INSERT INTO omni_company_sim_cards (id,company_id,carrier,msisdn,iccid,company_registration_status,use_type,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
+    ).bind(id, staff.company_id, carrier, msisdn, txt(body.iccid, 40) || null,
+      body.companyRegistered === true ? "REGISTERED" : "PENDING", useType, staff.id).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) return json({ error: "sim_or_iccid_already_registered" }, 409);
+    throw error;
+  }
+  await audit(env.DB, staff, requestId, "REGISTER_COMPANY_SIM", "SIM_CARD", id, { carrier, msisdn, useType }, "Company asset registry entry created; telco registration evidence must be separately verified");
+  return json({ data: { id, carrier, msisdn, useType, companyRegistrationStatus: body.companyRegistered === true ? "REGISTERED" : "PENDING" }, requestId }, 201);
+}
+
+async function registerCompanyDevice(request: Request, env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  if (staff.role !== "SOVEREIGN") return json({ error: "forbidden" }, 403);
+  const body = await bodyJson(request); if (isResponse(body)) return body;
+  const assetTag = txt(body.assetTag, 48).toUpperCase();
+  const deviceType = txt(body.deviceType, 32);
+  const ownership = txt(body.ownershipType, 24) || "COMPANY_OWNED";
+  const allowedTypes = ["ANDROID_PHONE","PROVIDER_TERMINAL","TABLET","COMPUTER","PRINTER","SCANNER","ROUTER","OTHER"];
+  if (!/^[A-Z0-9][A-Z0-9_-]{1,47}$/.test(assetTag) || !allowedTypes.includes(deviceType) ||
+      !["COMPANY_OWNED","LEASED","PROVIDER_ISSUED"].includes(ownership)) {
+    return json({ error: "valid_asset_tag_device_type_and_ownership_required" }, 400);
+  }
+  const id = uuid();
+  try {
+    await env.DB.prepare(
+      "INSERT INTO omni_company_devices (id,company_id,asset_tag,device_type,manufacturer,model,serial_number,imei_1,imei_2,ownership_type,status,managed_device,acquired_at,warranty_until,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,'IN_STOCK',?11,?12,?13,?14)"
+    ).bind(id, staff.company_id, assetTag, deviceType, txt(body.manufacturer, 80) || null, txt(body.model, 100) || null,
+      txt(body.serialNumber, 120) || null, txt(body.imei1, 32) || null, txt(body.imei2, 32) || null, ownership,
+      body.managedDevice === true ? 1 : 0, txt(body.acquiredAt, 20) || null, txt(body.warrantyUntil, 20) || null, staff.id).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) return json({ error: "asset_tag_or_imei_already_registered" }, 409);
+    throw error;
+  }
+  await audit(env.DB, staff, requestId, "REGISTER_COMPANY_DEVICE", "DEVICE", id, { assetTag, deviceType, ownership }, "Company device asset record created");
+  return json({ data: { id, assetTag, deviceType, ownership, status: "IN_STOCK" }, requestId }, 201);
+}
+
+async function listEnterpriseEmployees(env: EnterpriseEnv, staff: StaffContext, requestId: string) {
+  const rows = staff.role === "SOVEREIGN"
+    ? await env.DB.prepare("SELECT e.id,e.employee_number,e.legal_name,e.preferred_name,e.department_id,e.job_title,e.employment_type,e.employment_status,e.start_date,e.end_date,e.work_email,e.work_phone,e.created_at,m.display_name,m.email FROM omni_enterprise_employees e JOIN omni_staff_memberships m ON m.id=e.staff_membership_id WHERE e.company_id=?1 ORDER BY e.employee_number").bind(staff.company_id).all()
+    : await env.DB.prepare("SELECT DISTINCT e.id,e.employee_number,e.legal_name,e.preferred_name,e.department_id,e.job_title,e.employment_type,e.employment_status,e.start_date,e.end_date,e.work_email,e.work_phone,e.created_at,m.display_name,m.email FROM omni_enterprise_employees e JOIN omni_staff_memberships m ON m.id=e.staff_membership_id JOIN omni_employee_outlet_assignments a ON a.employee_id=e.id JOIN omni_employee_outlet_assignments own_a ON own_a.outlet_id=a.outlet_id JOIN omni_enterprise_employees own_e ON own_e.id=own_a.employee_id WHERE e.company_id=?1 AND own_e.staff_membership_id=?2 AND own_e.company_id=?1 AND own_e.employment_status='ACTIVE' AND own_a.status='ACTIVE' AND a.status='ACTIVE' AND (e.id=own_e.id OR ?3=1) ORDER BY e.employee_number").bind(staff.company_id, staff.id, ["MANAGER","MANAGING_DIRECTOR","CHAIRMAN"].includes(staff.role) ? 1 : 0).all();
+  return json({ data: rows.results, requestId });
+}
+
 async function getReceipt(request: Request, env: EnterpriseEnv, staff: StaffContext, receiptId: string, requestId: string) {
   const receipt = await env.DB.prepare(
     "SELECT id,outlet_id,receipt_number,receipt_type,source_type,source_id,provider,provider_reference,verification_label,receipt_status,currency,total_ugx,content_snapshot_json,customer_disclaimer,issued_by,issued_at FROM omni_receipt_documents WHERE id=?1 AND company_id=?2 LIMIT 1"
@@ -719,6 +933,11 @@ export async function handleEnterpriseIntake(
     return json({ data: result.results, requestId });
   }
   if (request.method === "POST" && url.pathname === "/api/v1/outlets") return createOutlet(request, env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/employees") return createEmployee(request, env, staff, requestId);
+  if (request.method === "GET" && url.pathname === "/api/v1/employees") return listEnterpriseEmployees(env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/employee-outlet-assignments") return assignEmployeeToOutlet(request, env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/company-sims") return registerCompanySim(request, env, staff, requestId);
+  if (request.method === "POST" && url.pathname === "/api/v1/company-devices") return registerCompanyDevice(request, env, staff, requestId);
   const outletStatusMatch = url.pathname.match(/^\/api\/v1\/outlets\/([^/]+)\/status$/);
   if (request.method === "PATCH" && outletStatusMatch) return updateOutletStatus(request, env, staff, txt(outletStatusMatch[1], 64), requestId);
   if (request.method === "GET" && url.pathname === "/api/v1/company-profile") return getCompanyProfile(env, staff, requestId);
@@ -740,6 +959,9 @@ export async function handleEnterpriseIntake(
       : await env.DB.prepare("SELECT a.id,a.provider_relationship_id,a.outlet_id,r.provider,r.provider_product,a.provider_outlet_id,a.provider_account_reference,a.account_label,a.account_type,a.account_scope,a.status,a.currency FROM omni_provider_outlet_accounts a JOIN omni_provider_relationships r ON r.id=a.provider_relationship_id JOIN omni_employee_outlet_assignments x ON x.outlet_id=a.outlet_id JOIN omni_enterprise_employees e ON e.id=x.employee_id WHERE a.company_id=?1 AND e.staff_membership_id=?2 AND e.company_id=?1 AND e.employment_status='ACTIVE' AND x.status='ACTIVE' GROUP BY a.id ORDER BY r.provider,a.outlet_id,a.account_label").bind(staff.company_id, staff.id).all();
     return json({ data: result.results, requestId });
   }
+  if (request.method === "POST" && url.pathname === "/api/v1/provider-balances") return recordProviderBalance(request, env, staff, requestId);
+  if (request.method === "GET" && url.pathname === "/api/v1/provider-balances") return listProviderBalances(request, env, staff, false);
+  if (request.method === "GET" && url.pathname === "/api/v1/provider-balances/summary") return listProviderBalances(request, env, staff, true);
   if (request.method === "POST" && url.pathname === "/api/v1/evidence-files") return uploadEvidenceFile(request, env, staff, requestId);
   const evidenceFileMatch = url.pathname.match(/^\/api\/v1\/evidence-files\/([^/]+)$/);
   if (request.method === "GET" && evidenceFileMatch) return downloadEvidenceFile(request, env, staff, txt(evidenceFileMatch[1], 64));
