@@ -14,8 +14,17 @@ interface D1Database {
   prepare(query: string): D1Statement;
   batch<T = unknown>(statements: D1Statement[]): Promise<T[]>;
 }
+interface R2Bucket {
+  put(key: string, value: ArrayBuffer | ArrayBufferView, options?: {
+    httpMetadata?: { contentType?: string; contentDisposition?: string };
+    customMetadata?: Record<string, string>;
+  }): Promise<unknown>;
+  get(key: string): Promise<{ body: ReadableStream<Uint8Array>; httpMetadata?: { contentType?: string; contentDisposition?: string }; size: number } | null>;
+  delete(key: string): Promise<void>;
+}
 export interface Env {
   DB: D1Database;
+  PRIVATE_FILES?: R2Bucket;
   AUTH?: { fetch(request: Request): Promise<Response> };
   OTYAPOINT_BOOTSTRAP_SECRET?: string | { get(): Promise<string> };
   OTYAPOINT_INVITE_SERVICE_TOKEN?: string | { get(): Promise<string> };
