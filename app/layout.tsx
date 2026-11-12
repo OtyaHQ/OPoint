@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "OtyaPoint — Business Operations",
-  description: "Retail and fintech agency operations, unified with clear financial separation.",
-  applicationName: "OtyaPoint",
+  title: "OPoint — Business Operations",
+  description: "Retail and mobile-money agency operations with clear financial controls.",
+  applicationName: "OPoint",
 };
 
 export const viewport: Viewport = {
