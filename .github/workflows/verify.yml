@@ -63,6 +63,8 @@ jobs:
         run: node --test cloudflare-api/tests/transaction-message-parser.test.mjs
       - name: Test Otya Auth staff session lifecycle
         run: node --test cloudflare-api/tests/session.test.mjs
+      - name: Test private evidence file uploads
+        run: node --test cloudflare-api/tests/evidence-upload.test.mjs
 
       - name: Validate remaining legacy dashboard Prisma schema
         env:
