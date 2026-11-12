@@ -18,7 +18,7 @@
 
 1. One Cloudflare Worker exposes the Otya Enterprise business API.
 2. D1 stores structured company and operational records.
-3. R2 stores private documents, statement exports, receipt PDFs and uploaded evidence; D1 stores metadata and object keys only.
+3. R2 stores private provider receipt images, statements, corporate documents and uploaded evidence; D1 stores metadata and object keys only. The existing `opoint-private-documents` bucket is bound as `PRIVATE_FILES` and has no public domain configured.
 4. Queues handle slow file parsing, statement import and notification work.
 5. Workflows handle employee onboarding/offboarding, approvals and multi-step reviews.
 6. Otya Auth verifies user identity. OPoint applies business membership, outlet assignments and specific permissions.
@@ -76,3 +76,8 @@ Do not silently read every SMS, notification, contact or private app. Do not use
 - Back up and verify restore before production data migration.
 - Existing company-level agency accounts and movements are legacy records. Do not delete them. New outlet-aware records coexist until a separately reviewed migration maps existing balances and movements.
 - Audit OEnd, OPoint, OHub and legacy O repositories before removal. Omy Play remains untouched.
+
+
+## Current API implementation boundary
+
+The first backend tranche includes same-origin Otya Auth session endpoints with Secure/HttpOnly/SameSite cookies, active company staff membership checks, outlet/provider relationship setup, private R2 file upload/download, explicit selected-message ingestion and second-person evidence review, company profile, and snapshot receipt endpoints. The permission-grant tables exist, but all existing business routes are not yet migrated to permission-key evaluation. The new file upload path marks images/statements as uploaded and awaiting extraction; it does not yet run OCR or statement parsing. Receipt endpoints return structured snapshots; a printable/PDF renderer is still pending. These paths are source-code changes on the feature branch and are not live until the full release gates pass.
