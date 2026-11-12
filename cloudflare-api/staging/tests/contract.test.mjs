@@ -39,12 +39,12 @@ test("OtyaPoint staging deployment is manual and waits for isolated Otya ID", ()
   assert.match(manifest, /name = "opoint-api-staging"/);
   assert.match(manifest, /workers_dev = false/);
   assert.match(manifest, /ENVIRONMENT = "staging"/);
-  assert.match(manifest, /binding = "OTYA_ID"[\\s\\S]*?service = "otya-id-staging"/);
+  assert.ok(manifest.includes('binding = "OTYA_ID"\nservice = "otya-id-staging"'));
   assert.doesNotMatch(manifest, /service = "otya-auth"/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /DEPLOY-STAGING/);
   assert.match(workflow, /CLOUDFLARE_API_TOKEN_STAGING/);
-  assert.match(workflow, /workers\\/scripts\\/otya-id-staging\\/settings/);
-  assert.match(workflow, /wrangler@4\\.159\\.0 deploy --config cloudflare-api\\/staging\\/wrangler\\.toml/);
-  assert.match(workflow, /binding\\.service !== 'otya-id-staging'/);
+  assert.ok(workflow.includes("/workers/scripts/otya-id-staging/settings"));
+  assert.ok(workflow.includes("wrangler@4.159.0 deploy --config cloudflare-api/staging/wrangler.toml"));
+  assert.ok(workflow.includes("binding.service !== \'otya-id-staging\'"));
 });
