@@ -175,7 +175,7 @@ async function submitTextEvidence(request: Request, env: EnterpriseEnv, staff: S
   if (/\b(otp|one[- ]time password|pin|passcode|password|verification code)\b/i.test(messageText)) {
     return json({ error: "sensitive_message_not_accepted", detail: "Share only the transaction confirmation, never an OTP, PIN or password message." }, 422);
   }
-  let parsed;
+  let parsed: ReturnType<typeof parseTransactionMessage>;
   try {
     parsed = parseTransactionMessage(messageText, provider as typeof PROVIDERS[number]);
   } catch {
