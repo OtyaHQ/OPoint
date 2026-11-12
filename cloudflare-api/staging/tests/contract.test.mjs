@@ -21,3 +21,14 @@ test("masks phone and email values", () => {
   assert.equal(maskEmail("peter@example.com"), "p***@example.com");
   assert.equal(maskEmail("not-an-email"), null);
 });
+
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+test("staging identity service never binds to production Auth", () => {
+  const config = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../wrangler.toml"), "utf8");
+  assert.match(config, /binding\s*=\s*"OTYA_ID"[\s\S]*?service\s*=\s*"otya-id-staging"/);
+  assert.doesNotMatch(config, /service\s*=\s*"otya-auth"/);
+  assert.match(config, /ENVIRONMENT\s*=\s*"staging"/);
+});
