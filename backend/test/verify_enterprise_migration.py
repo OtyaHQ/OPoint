@@ -4,11 +4,13 @@ import sqlite3
 ROOT = Path(__file__).resolve().parents[1]
 bootstrap = (ROOT / "schema" / "bootstrap.sql").read_text(encoding="utf-8")
 migration = (ROOT / "schema" / "migrations" / "0004_enterprise_automation.sql").read_text(encoding="utf-8")
+receipts_migration = (ROOT / "schema" / "migrations" / "0005_message_capture_and_receipts.sql").read_text(encoding="utf-8")
 
 db = sqlite3.connect(":memory:")
 db.execute("PRAGMA foreign_keys = ON")
 db.executescript(bootstrap)
 db.executescript(migration)
+db.executescript(receipts_migration)
 
 required = {
     "departments", "job_positions", "employee_profiles", "employee_assignments",
@@ -17,6 +19,7 @@ required = {
     "provider_outlet_accounts", "provider_operator_profiles",
     "provider_balance_observations", "capture_records", "capture_extractions",
     "provider_statement_imports", "provider_transaction_records", "provider_statement_rows",
+    "provider_message_captures", "issued_receipts", "receipt_events",
 }
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 assert required <= tables, sorted(required - tables)
@@ -151,3 +154,51 @@ assert db.execute("SELECT COUNT(*) FROM provider_balance_observations WHERE prov
 assert db.execute("SELECT COUNT(*) FROM provider_transaction_records WHERE evidence_level='PROVIDER_FEED'").fetchone()[0] == 1
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 print("PASS: Otya Enterprise migration supports company/provider parent IDs, separate outlet accounts, teller assignments, company SIMs/assets, balance snapshots, scans and statement imports without payment execution.")
+
+
+# Explicitly shared provider messages are accepted without reading the phone's SMS inbox.
+db.execute(
+    "INSERT INTO provider_message_captures(id,company_id,branch_id,provider_relationship_id,provider_outlet_account_id,source_kind,sender_label,source_app_label,message_received_at,message_fingerprint,parsed_fields_json,parser_key,parser_version,parse_status,received_by) "
+    "VALUES ('msg-1','co-1','br-1','pr-airtel','pa-1','USER_SHARED_MESSAGE','AIRTEL','Messages','2026-11-12T10:00:00Z','msg-fingerprint-1','{\"\"reference\"\":\"\"REF-002\"\",\"\"amount\"\":50000}','airtel-ug','1','NEEDS_REVIEW','st-1')"
+)
+columns = {row[1] for row in db.execute("PRAGMA table_info(provider_message_captures)")}
+assert "raw_message_body" not in columns
+assert "sms_body" not in columns
+
+# Retail receipts are only issued from a completed sale and preserve an immutable snapshot.
+db.execute(
+    "INSERT INTO sales(id,company_id,branch_id,receipt_number,status,currency,subtotal_amount,discount_amount,tax_amount,total_amount,cost_amount,idempotency_key,actor_id) "
+    "VALUES ('sale-1','co-1','br-1','OTYA-MBR-000001','COMPLETED','UGX',250000,0,0,250000,200000,'sale-idem-0001','st-1')"
+)
+db.execute(
+    "INSERT INTO issued_receipts(id,company_id,branch_id,receipt_number,receipt_kind,source_type,source_id,issue_status,currency,total_amount,receipt_snapshot_json,verification_token_hash,idempotency_key,issued_by) "
+    "VALUES ('receipt-sale-1','co-1','br-1','OTYA-MBR-000001','RETAIL_SALE','SALE','sale-1','ISSUED','UGX',250000,'{}','verify-hash-sale-1','receipt-idem-sale-1','st-1')"
+)
+
+# An agency receipt snapshots the actual recorded evidence and status. The receipt is not
+# allowed to invent a stronger verification status than the source transaction record.
+db.execute(
+    "INSERT INTO issued_receipts(id,company_id,branch_id,receipt_number,receipt_kind,source_type,source_id,issue_status,currency,total_amount,provider_status_at_issue,evidence_level_at_issue,receipt_snapshot_json,verification_token_hash,idempotency_key,issued_by) "
+    "VALUES ('receipt-agency-1','co-1','br-1','OTYA-MBR-AG-000001','AGENCY_SERVICE','PROVIDER_TRANSACTION_RECORD','txn-1','ISSUED','UGX',100000,'SUCCEEDED','PROVIDER_FEED','{}','verify-hash-agency-1','receipt-idem-agency-1','st-1')"
+)
+try:
+    db.execute(
+        "INSERT INTO issued_receipts(id,company_id,branch_id,receipt_number,receipt_kind,source_type,source_id,issue_status,currency,total_amount,provider_status_at_issue,evidence_level_at_issue,receipt_snapshot_json,verification_token_hash,idempotency_key,issued_by) "
+        "VALUES ('receipt-agency-bad','co-1','br-1','OTYA-MBR-AG-000002','AGENCY_SERVICE','PROVIDER_TRANSACTION_RECORD','txn-1','ISSUED','UGX',100000,'SUCCEEDED','STAFF_REPORTED','{}','verify-hash-agency-2','receipt-idem-agency-2','st-1')"
+    )
+    raise AssertionError("Receipt cannot claim stronger evidence than its source record")
+except sqlite3.IntegrityError:
+    pass
+
+# Issued receipt records cannot be deleted; voiding must be an auditable state transition
+# performed by a separately authorized application service.
+try:
+    db.execute("DELETE FROM issued_receipts WHERE id='receipt-sale-1'")
+    raise AssertionError("Issued receipt must be retained")
+except sqlite3.IntegrityError:
+    pass
+
+assert db.execute("SELECT COUNT(*) FROM provider_message_captures WHERE source_kind='USER_SHARED_MESSAGE'").fetchone()[0] == 1
+assert db.execute("SELECT COUNT(*) FROM issued_receipts").fetchone()[0] == 2
+assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+assert db.execute("PRAGMA foreign_key_check").fetchall() == []
