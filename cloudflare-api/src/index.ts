@@ -1,6 +1,7 @@
 import { QuicktellerBusinessSandboxClient, QuicktellerBusinessError } from "./providers/quickteller-business-sandbox";
 import { saleRequestFingerprint } from "./sale-fingerprint.mjs";
 import { handleEnterpriseIntake } from "./enterprise-intake";
+import { handleSessionRoutes } from "./session";
 
 interface D1Result<T> { results: T[] }
 interface D1Statement {
@@ -134,14 +135,36 @@ async function deliverStaffInvitation(
   }
 }
 
+function readCookie(request: Request, name: string): string | null {
+  const header = request.headers.get("cookie") || "";
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=");
+    if (index >= 0 && part.slice(0, index).trim() === name) {
+      const value = part.slice(index + 1).trim();
+      return value.length <= 8192 ? value : null;
+    }
+  }
+  return null;
+}
+
 async function authenticate(request: Request, env: Env): Promise<Staff | Response> {
   const header = request.headers.get("authorization") || "";
-  if (!header.startsWith("Bearer ") || header.length > 8192) return json({ error: "unauthorized" }, 401);
+  const cookieToken = readCookie(request, "__Host-otya_access");
+  const accessToken = header.startsWith("Bearer ") ? header.slice(7) : cookieToken;
+  if (!accessToken || accessToken.length > 8192) return json({ error: "unauthorized" }, 401);
+  if (!header.startsWith("Bearer ") && !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) {
+    const origin = request.headers.get("origin");
+    try {
+      if (!origin || new URL(origin).origin !== new URL(request.url).origin) return json({ error: "same_origin_request_required" }, 403);
+    } catch {
+      return json({ error: "same_origin_request_required" }, 403);
+    }
+  }
   if (!env.AUTH) return json({ error: "auth_service_unavailable" }, 503);
   try {
     const verifiedResponse = await env.AUTH.fetch(new Request("https://auth/auth/verify", {
       method: "GET",
-      headers: { Authorization: header, Accept: "application/json" },
+      headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" },
       signal: AbortSignal.timeout(8000)
     }));
     if (!verifiedResponse.ok) return json({ error: "unauthorized" }, 401);
@@ -267,6 +290,9 @@ export default {
       }
     }
     if (request.method === "OPTIONS") return json({ error: "cors_not_enabled" }, 405);
+
+    const sessionResponse = await handleSessionRoutes(request, env, rid);
+    if (sessionResponse) return sessionResponse;
 
     // One-time owner bootstrap. This path is disabled until a high-entropy
     // secret is provisioned directly in the isolated Cloudflare Worker.
