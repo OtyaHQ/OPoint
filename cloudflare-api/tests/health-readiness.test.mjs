@@ -81,6 +81,19 @@ const requiredObjects = [
   "omni_txn_verification_events_no_delete",
   "omni_outlet_stock_movements_no_update",
   "omni_outlet_stock_movements_no_delete",
+  "omni_employee_outlet_assignment_guard",
+  "omni_provider_outlet_account_guard",
+  "omni_provider_operator_profile_guard",
+  "omni_sim_assignment_guard",
+  "omni_device_assignment_guard",
+  "omni_outlet_operating_account_guard",
+  "omni_evidence_ingestion_scope_guard",
+  "omni_provider_transaction_scope_guard",
+  "omni_provider_balance_observation_scope_guard",
+  "omni_outlet_stock_movement_scope_guard",
+  "omni_outlet_stock_movement_apply",
+  "omni_provider_balance_observations_no_update",
+  "omni_provider_balance_observations_no_delete",
 ];
 
 function makeEnv({ tables = requiredTables, objects = requiredObjects, fail = false } = {}) {
