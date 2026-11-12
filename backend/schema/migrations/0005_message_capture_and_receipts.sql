@@ -175,3 +175,79 @@ BEGIN
        AND a.asset_type = 'SIM_CARD'
   ) THEN RAISE(ABORT, 'SIM_DETAILS_REQUIRE_COMPANY_SIM_ASSET') END;
 END;
+
+CREATE TRIGGER IF NOT EXISTS issued_receipts_void_only
+BEFORE UPDATE ON issued_receipts
+WHEN NOT (
+  OLD.issue_status = 'ISSUED'
+  AND NEW.issue_status = 'VOIDED'
+  AND NEW.voided_by IS NOT NULL
+  AND NEW.voided_at IS NOT NULL
+  AND length(trim(NEW.void_reason)) > 0
+  AND NEW.id IS OLD.id
+  AND NEW.company_id IS OLD.company_id
+  AND NEW.branch_id IS OLD.branch_id
+  AND NEW.receipt_number IS OLD.receipt_number
+  AND NEW.receipt_kind IS OLD.receipt_kind
+  AND NEW.source_type IS OLD.source_type
+  AND NEW.source_id IS OLD.source_id
+  AND NEW.currency IS OLD.currency
+  AND NEW.total_amount IS OLD.total_amount
+  AND NEW.provider_status_at_issue IS OLD.provider_status_at_issue
+  AND NEW.evidence_level_at_issue IS OLD.evidence_level_at_issue
+  AND NEW.customer_display_name IS OLD.customer_display_name
+  AND NEW.customer_contact_last4 IS OLD.customer_contact_last4
+  AND NEW.evidence_description IS OLD.evidence_description
+  AND NEW.receipt_snapshot_json IS OLD.receipt_snapshot_json
+  AND NEW.stored_file_id IS OLD.stored_file_id
+  AND NEW.verification_token_hash IS OLD.verification_token_hash
+  AND NEW.idempotency_key IS OLD.idempotency_key
+  AND NEW.issued_by IS OLD.issued_by
+  AND NEW.issued_at IS OLD.issued_at
+)
+BEGIN
+  SELECT RAISE(ABORT, 'RECEIPT_IMMUTABLE_EXCEPT_ONE_WAY_VOID');
+END;
+
+CREATE TRIGGER IF NOT EXISTS issued_receipts_record_issue
+AFTER INSERT ON issued_receipts
+BEGIN
+  INSERT INTO receipt_events(id,company_id,receipt_id,event_type,actor_id,reason)
+  VALUES (lower(hex(randomblob(16))),NEW.company_id,NEW.id,'ISSUED',NEW.issued_by,'Receipt issued');
+END;
+
+CREATE TRIGGER IF NOT EXISTS issued_receipts_record_void
+AFTER UPDATE ON issued_receipts
+WHEN OLD.issue_status = 'ISSUED' AND NEW.issue_status = 'VOIDED'
+BEGIN
+  INSERT INTO receipt_events(id,company_id,receipt_id,event_type,actor_id,reason)
+  VALUES (lower(hex(randomblob(16))),NEW.company_id,NEW.id,'VOIDED',NEW.voided_by,NEW.void_reason);
+END;
+
+CREATE TRIGGER IF NOT EXISTS provider_message_captures_no_delete
+BEFORE DELETE ON provider_message_captures
+BEGIN
+  SELECT RAISE(ABORT, 'PROVIDER_MESSAGE_CAPTURE_RETAINED');
+END;
+
+CREATE TRIGGER IF NOT EXISTS provider_message_captures_review_only
+BEFORE UPDATE ON provider_message_captures
+WHEN NOT (
+  NEW.id IS OLD.id
+  AND NEW.company_id IS OLD.company_id
+  AND NEW.branch_id IS OLD.branch_id
+  AND NEW.provider_relationship_id IS OLD.provider_relationship_id
+  AND NEW.provider_outlet_account_id IS OLD.provider_outlet_account_id
+  AND NEW.source_kind IS OLD.source_kind
+  AND NEW.sender_label IS OLD.sender_label
+  AND NEW.source_app_label IS OLD.source_app_label
+  AND NEW.message_received_at IS OLD.message_received_at
+  AND NEW.message_fingerprint IS OLD.message_fingerprint
+  AND NEW.evidence_file_id IS OLD.evidence_file_id
+  AND NEW.received_by IS OLD.received_by
+  AND NEW.created_at IS OLD.created_at
+  AND NEW.parse_status IN ('CAPTURED','PARSED','NEEDS_REVIEW','ACCEPTED','REJECTED','DUPLICATE')
+)
+BEGIN
+  SELECT RAISE(ABORT, 'PROVIDER_MESSAGE_SOURCE_IMMUTABLE');
+END;
