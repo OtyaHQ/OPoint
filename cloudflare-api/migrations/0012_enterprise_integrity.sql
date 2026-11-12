@@ -261,3 +261,19 @@ BEFORE DELETE ON omni_provider_balance_observations
 BEGIN
   SELECT RAISE(ABORT, 'PROVIDER_BALANCE_OBSERVATIONS_APPEND_ONLY');
 END;
+
+CREATE TRIGGER IF NOT EXISTS omni_outlet_stock_balance_scope_guard
+BEFORE INSERT ON omni_outlet_stock_balances
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_enterprise_outlets o
+    JOIN omni_products p ON p.id=NEW.product_id AND p.company_id=NEW.company_id AND p.is_active=1
+    WHERE o.id=NEW.outlet_id AND o.company_id=NEW.company_id
+  ) THEN RAISE(ABORT, 'OUTLET_STOCK_BALANCE_SCOPE_MISMATCH') END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS omni_outlet_stock_balance_identity_immutable
+BEFORE UPDATE OF company_id,outlet_id,product_id ON omni_outlet_stock_balances
+BEGIN
+  SELECT RAISE(ABORT, 'OUTLET_STOCK_BALANCE_IDENTITY_IMMUTABLE');
+END;
