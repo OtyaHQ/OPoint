@@ -1,0 +1,13 @@
+{
+  "name": "@otya/opoint-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/index.mjs && node --check src/ledger.mjs && node --check src/sales.mjs",
+    "test": "node --test",
+    "verify:schema": "python3 test/verify_schema.py"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
