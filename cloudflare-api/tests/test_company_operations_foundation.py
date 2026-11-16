@@ -60,7 +60,7 @@ class CompanyOperationsFoundationTests(unittest.TestCase):
     def test_one_primary_branch_per_company_and_independent_company_scope(self):
         with self.assertRaises(sqlite3.IntegrityError):
             self.branch("branch-a-duplicate", "company-a", "PRIMARY2", "Second primary", primary=1)
-        self.branch("branch-x2", "company-x", "SECOND", "Other second", primary=1)
+        self.branch("branch-x2", "company-x", "SECOND", "Other second", primary=0)
 
     def test_one_worker_can_have_separate_retail_and_mobile_money_assignments(self):
         self.db.executemany(
