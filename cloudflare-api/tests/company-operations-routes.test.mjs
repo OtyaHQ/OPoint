@@ -43,7 +43,7 @@ async function applyMigrations() {
   for (const name of migrations) {
     const sql = readFileSync(new URL(name, migrationsDir), "utf8")
       .replace(/^[ \t]*--[^\n]*(?:\n|$)/gm, "");
-    await db.exec(sql);
+    await db.exec(sql.replace(/\s*\n\s*/g, " "));
   }
 }
 await applyMigrations();
