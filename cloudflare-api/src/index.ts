@@ -453,6 +453,137 @@ export default {
         });
       }
 
+      if (request.method === "GET" && url.pathname === "/api/branches") {
+        const result = isSovereign(staff)
+          ? await env.DB.prepare(
+              "SELECT id,branch_code,name,district,town_council,location_label,public_phone,status,is_primary,created_at,updated_at FROM omni_branches WHERE company_id=?1 ORDER BY is_primary DESC,name LIMIT 250"
+            ).bind(staff.company_id).all()
+          : await env.DB.prepare(
+              "SELECT b.id,b.branch_code,b.name,b.district,b.town_council,b.location_label,b.public_phone,b.status,b.is_primary,b.created_at,b.updated_at FROM omni_branches b WHERE b.company_id=?1 AND (b.id=?2 OR EXISTS (SELECT 1 FROM omni_staff_work_assignments a WHERE a.company_id=b.company_id AND a.staff_membership_id=?3 AND a.branch_id=b.id AND a.status='ACTIVE' AND (a.expires_at IS NULL OR a.expires_at>CURRENT_TIMESTAMP))) ORDER BY b.is_primary DESC,b.name LIMIT 250"
+            ).bind(staff.company_id, staff.branch_id || "", staff.id).all();
+        return json({ data: result.results, requestId: rid });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/branches") {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const branchCode = safeText(body.branchCode, 20).toUpperCase();
+        const name = safeText(body.name, 120);
+        const district = safeText(body.district, 100) || null;
+        const townCouncil = safeText(body.townCouncil, 100) || null;
+        const locationLabel = safeText(body.locationLabel, 180) || null;
+        const publicPhone = safeText(body.publicPhone, 32) || null;
+        if (!/^[A-Z0-9][A-Z0-9._-]{1,19}$/.test(branchCode) || !name) {
+          return json({ error: "valid_branch_code_and_name_required" }, 400);
+        }
+        if (body.isPrimary !== undefined && typeof body.isPrimary !== "boolean") {
+          return json({ error: "is_primary_must_be_boolean" }, 400);
+        }
+        const existingPrimary = await env.DB.prepare(
+          "SELECT id FROM omni_branches WHERE company_id=?1 AND is_primary=1 AND status='ACTIVE' LIMIT 1"
+        ).bind(staff.company_id).first<{ id: string }>();
+        const isPrimary = body.isPrimary === true || (!existingPrimary && body.isPrimary !== false);
+        if (isPrimary && existingPrimary) return json({ error: "primary_branch_already_exists" }, 409);
+        const id = uuid();
+        const data = { id, branchCode, name, district, townCouncil, locationLabel, publicPhone, status: "ACTIVE", isPrimary };
+        try {
+          await env.DB.batch([
+            env.DB.prepare(
+              "INSERT INTO omni_branches (id,company_id,branch_code,name,district,town_council,location_label,public_phone,status,is_primary) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'ACTIVE',?9)"
+            ).bind(id, staff.company_id, branchCode, name, district, townCouncil, locationLabel, publicPhone, isPrimary ? 1 : 0),
+            env.DB.prepare(
+              "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'CREATE_BRANCH','BRANCH',?3,'Owner created a company branch',?4,?5,?6)"
+            ).bind(uuid(), staff.id, id, JSON.stringify(data), rid, staff.company_id),
+          ]);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+            return json({ error: "branch_code_or_primary_branch_conflict" }, 409);
+          }
+          throw error;
+        }
+        return json({ data, requestId: rid }, 201);
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/staff/work-assignments") {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
+        const branchId = url.searchParams.get("branchId");
+        const clauses = ["a.company_id=?1"];
+        const values: unknown[] = [staff.company_id];
+        if (branchId) {
+          values.push(safeText(branchId, 64));
+          clauses.push("a.branch_id=?" + values.length);
+        }
+        const result = await env.DB.prepare(
+          "SELECT a.id,a.staff_membership_id,a.branch_id,a.work_area,a.duty_role,a.status,a.assigned_by,a.assigned_at,a.expires_at,s.display_name,s.email,s.agent_id,b.branch_code,b.name AS branch_name FROM omni_staff_work_assignments a JOIN omni_staff_memberships s ON s.id=a.staff_membership_id AND s.company_id=a.company_id JOIN omni_branches b ON b.id=a.branch_id AND b.company_id=a.company_id WHERE " + clauses.join(" AND ") + " ORDER BY b.name,s.display_name,a.work_area LIMIT 500"
+        ).bind(...values).all();
+        return json({ data: result.results, requestId: rid });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/staff/work-assignments") {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const staffMembershipId = safeText(body.staffMembershipId, 64);
+        const branchId = safeText(body.branchId, 64);
+        const workArea = safeText(body.workArea, 32).toUpperCase();
+        const dutyRole = safeText(body.dutyRole, 24).toUpperCase();
+        const allowedWorkAreas = ["RETAIL","INVENTORY","MOBILE_MONEY","BILLS_AIRTIME","PURCHASING","FINANCE","WORKFORCE","COMPLIANCE","REPORTS"];
+        const allowedDutyRoles = ["OPERATOR","SUPERVISOR","APPROVER","VIEWER","AUDITOR"];
+        const expiresAt = body.expiresAt == null || body.expiresAt === "" ? null : safeText(body.expiresAt, 40);
+        if (!staffMembershipId || !branchId || !allowedWorkAreas.includes(workArea) || !allowedDutyRoles.includes(dutyRole)) {
+          return json({ error: "valid_staff_branch_work_area_and_duty_role_required" }, 400);
+        }
+        if (expiresAt && (!Number.isFinite(Date.parse(expiresAt)) || new Date(expiresAt).toISOString() !== expiresAt)) {
+          return json({ error: "invalid_assignment_expiry" }, 400);
+        }
+        const id = uuid();
+        const data = { id, staffMembershipId, branchId, workArea, dutyRole, status: "ACTIVE", expiresAt };
+        try {
+          await env.DB.batch([
+            env.DB.prepare(
+              "INSERT INTO omni_staff_work_assignments (id,company_id,staff_membership_id,branch_id,work_area,duty_role,status,assigned_by,expires_at) VALUES (?1,?2,?3,?4,?5,?6,'ACTIVE',?7,?8)"
+            ).bind(id, staff.company_id, staffMembershipId, branchId, workArea, dutyRole, staff.id, expiresAt),
+            env.DB.prepare(
+              "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'CREATE_WORK_ASSIGNMENT','STAFF_WORK_ASSIGNMENT',?3,'Owner assigned branch-scoped work duties',?4,?5,?6)"
+            ).bind(uuid(), staff.id, id, JSON.stringify(data), rid, staff.company_id),
+          ]);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+            return json({ error: "active_work_assignment_already_exists" }, 409);
+          }
+          if (error instanceof Error && /STAFF_MEMBERSHIP_OR_BRANCH_SCOPE_INVALID|BRANCH_NOT_AVAILABLE/.test(error.message)) {
+            return json({ error: "staff_or_branch_not_available_for_assignment" }, 409);
+          }
+          throw error;
+        }
+        return json({ data, requestId: rid }, 201);
+      }
+
+      const workAssignmentAction = url.pathname.match(/^\/api\/staff\/work-assignments\/([^/]+)$/);
+      if (request.method === "PATCH" && workAssignmentAction) {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
+        const assignmentId = safeText(workAssignmentAction[1], 64);
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const status = safeText(body.status, 16).toUpperCase();
+        if (!["ACTIVE","SUSPENDED","REVOKED"].includes(status)) return json({ error: "invalid_work_assignment_status" }, 400);
+        const current = await env.DB.prepare(
+          "SELECT id,staff_membership_id,branch_id,work_area,duty_role,status,expires_at FROM omni_staff_work_assignments WHERE id=?1 AND company_id=?2 LIMIT 1"
+        ).bind(assignmentId, staff.company_id).first<{ id: string; staff_membership_id: string; branch_id: string; work_area: string; duty_role: string; status: string; expires_at: string | null }>();
+        if (!current) return json({ error: "work_assignment_not_found" }, 404);
+        if (current.status === "REVOKED") return json({ error: "revoked_work_assignment_is_final" }, 409);
+        await env.DB.batch([
+          env.DB.prepare(
+            "UPDATE omni_staff_work_assignments SET status=?1 WHERE id=?2 AND company_id=?3"
+          ).bind(status, assignmentId, staff.company_id),
+          env.DB.prepare(
+            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'UPDATE_WORK_ASSIGNMENT','STAFF_WORK_ASSIGNMENT',?3,'Owner changed work assignment status',?4,?5,?6,?7)"
+          ).bind(uuid(), staff.id, assignmentId, JSON.stringify({ status: current.status }), JSON.stringify({ status }), rid, staff.company_id),
+        ]);
+        return json({ data: { id: assignmentId, status }, requestId: rid });
+      }
+
       if (request.method === "GET" && url.pathname === "/api/staff") {
         if (!canManage(staff)) return json({ error: "forbidden" }, 403);
         const status = url.searchParams.get("status");
