@@ -79,7 +79,7 @@ test("owner can create company branches and a second primary branch is rejected"
     method: "POST",
     body: { branchCode: "SECOND", name: "Second Shop", townCouncil: "Mbirizi", isPrimary: false }
   });
-  assert.equal(created.status, 201, await created.text());
+  assert.equal(created.status, 201);
   const createdBody = await created.json();
   assert.equal(createdBody.data.branchCode, "SECOND");
   assert.equal(createdBody.data.isPrimary, false);
