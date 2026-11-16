@@ -512,7 +512,7 @@ export default {
               "SELECT id,branch_code,name,district,town_council,location_label,public_phone,status,is_primary,created_at,updated_at FROM omni_branches WHERE company_id=?1 ORDER BY is_primary DESC,name LIMIT 250"
             ).bind(staff.company_id).all()
           : await env.DB.prepare(
-              "SELECT b.id,b.branch_code,b.name,b.district,b.town_council,b.location_label,b.public_phone,b.status,b.is_primary,b.created_at,b.updated_at FROM omni_branches b WHERE b.company_id=?1 AND (b.id=?2 OR EXISTS (SELECT 1 FROM omni_staff_work_assignments a WHERE a.company_id=b.company_id AND a.staff_membership_id=?3 AND a.branch_id=b.id AND a.status='ACTIVE' AND (a.expires_at IS NULL OR a.expires_at>CURRENT_TIMESTAMP))) ORDER BY b.is_primary DESC,b.name LIMIT 250"
+              "SELECT b.id,b.branch_code,b.name,b.district,b.town_council,b.location_label,b.public_phone,b.status,b.is_primary,b.created_at,b.updated_at FROM omni_branches b WHERE b.company_id=?1 AND (b.id=?2 OR EXISTS (SELECT 1 FROM omni_staff_work_assignments a WHERE a.company_id=b.company_id AND a.staff_membership_id=?3 AND a.branch_id=b.id AND a.status='ACTIVE' AND (a.expires_at IS NULL OR datetime(a.expires_at)>CURRENT_TIMESTAMP))) ORDER BY b.is_primary DESC,b.name LIMIT 250"
             ).bind(staff.company_id, staff.branch_id || "", staff.id).all();
         return json({ data: result.results, requestId: rid });
       }
