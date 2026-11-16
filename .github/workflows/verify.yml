@@ -90,6 +90,8 @@ jobs:
 
       - name: Install pinned Miniflare D1 test runtime
         run: npm install --no-save --no-package-lock miniflare@4.20260730.0
+      - name: Test company branches and work assignments against isolated D1
+        run: node --test cloudflare-api/tests/company-operations-routes.test.mjs
 
       - name: Test sales route against isolated Miniflare D1
         run: node --test cloudflare-api/tests/sale-route-d1-runtime.test.mjs
