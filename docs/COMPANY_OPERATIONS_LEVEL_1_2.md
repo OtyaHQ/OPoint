@@ -26,7 +26,7 @@ Public third-party business verification, external business subscriptions, insti
 The migration introduces:
 
 - omni_branches: company branches and primary-branch metadata.
-- Branch references on existing sales, stock, agency, ledger and reconciliation records. Historical rows remain unassigned (NULL) until an owner-reviewed mapping.
+- Branch references on existing retail sales, stock movements, ledger entries and reconciliation records. Historical rows remain unassigned (NULL) until an owner-reviewed mapping.
 - omni_staff_work_assignments: branch- and work-area-specific permissions. A person can have both RETAIL and MOBILE_MONEY assignments with distinct duty roles. Membership does not itself grant access to every work area.
 - omni_customers and omni_suppliers: company-scoped operational contacts. No NIN, biometric or guarantor data is part of this model.
 - omni_purchase_orders and omni_purchase_order_lines: supplier purchasing records and receiving quantities.
@@ -35,6 +35,7 @@ The migration introduces:
 - omni_provider_connections: explicit provider/capability/environment state and recorded approval references. Quickteller Business and InterSwitch Marketplace Routing remain separate provider identities.
 - omni_staff_attendance and omni_leave_requests: basic workforce operations without medical diagnoses or medical document uploads.
 - omni_branch_stock and append-only omni_branch_stock_movements: branch-level stock foundation. Existing company-wide product quantities are not automatically distributed between branches.
+- The existing agency cash drawer and provider-float book remains company-wide in this increment. Branch-specific agency float accounts need a separately reviewed parent/child table migration because the existing account-code uniqueness rules are company-wide; no artificial branch balances are created.
 
 ## Security and permission rules
 
