@@ -551,3 +551,106 @@ BEGIN
     SELECT 1 FROM omni_branches b WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id
   ) THEN RAISE(ABORT, 'EXPENSE_BRANCH_COMPANY_MISMATCH') END;
 END;
+
+
+-- Re-scope active agency cash drawers and provider floats by branch while
+-- preserving the original company-wide uniqueness for legacy NULL-branch rows.
+DROP INDEX IF EXISTS idx_omni_agency_one_active_cash_drawer;
+DROP INDEX IF EXISTS idx_omni_agency_one_active_provider_float;
+CREATE UNIQUE INDEX idx_omni_agency_one_active_cash_drawer
+  ON omni_agency_accounts(company_id, COALESCE(branch_id, '__COMPANY__'))
+  WHERE account_type = 'CASH_DRAWER' AND status = 'ACTIVE';
+CREATE UNIQUE INDEX idx_omni_agency_one_active_provider_float
+  ON omni_agency_accounts(company_id, COALESCE(branch_id, '__COMPANY__'), provider)
+  WHERE account_type = 'PROVIDER_FLOAT' AND status = 'ACTIVE';
+
+DROP TRIGGER IF EXISTS omni_agency_operations_guard;
+CREATE TRIGGER omni_agency_operations_guard
+BEFORE INSERT ON omni_agency_operations
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_agency_accounts
+     WHERE id = NEW.cash_account_id AND company_id = NEW.company_id
+       AND branch_id IS NEW.branch_id
+       AND account_type = 'CASH_DRAWER' AND provider IS NULL AND status = 'ACTIVE'
+  ) THEN RAISE(ABORT, 'AGENCY_CASH_ACCOUNT_NOT_AVAILABLE') END;
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_agency_accounts
+     WHERE id = NEW.float_account_id AND company_id = NEW.company_id
+       AND branch_id IS NEW.branch_id
+       AND account_type = 'PROVIDER_FLOAT' AND provider = NEW.provider AND status = 'ACTIVE'
+  ) THEN RAISE(ABORT, 'AGENCY_FLOAT_ACCOUNT_NOT_AVAILABLE') END;
+  SELECT CASE WHEN NEW.branch_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM omni_branches b
+     WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id AND b.status = 'ACTIVE'
+  ) THEN RAISE(ABORT, 'AGENCY_BRANCH_NOT_AVAILABLE') END;
+END;
+
+DROP TRIGGER IF EXISTS omni_agency_account_movement_guard;
+CREATE TRIGGER omni_agency_account_movement_guard
+BEFORE INSERT ON omni_agency_account_movements
+BEGIN
+  SELECT CASE
+    WHEN NOT EXISTS (
+      SELECT 1 FROM omni_agency_accounts a
+       WHERE a.id = NEW.account_id
+         AND a.company_id = NEW.company_id
+         AND a.branch_id IS NEW.branch_id
+         AND a.status = 'ACTIVE'
+    ) THEN RAISE(ABORT, 'AGENCY_ACCOUNT_NOT_AVAILABLE')
+  END;
+  SELECT CASE
+    WHEN NEW.balance_after != (
+      SELECT current_balance + CASE WHEN NEW.direction = 'IN' THEN NEW.amount ELSE -NEW.amount END
+        FROM omni_agency_accounts WHERE id = NEW.account_id AND company_id = NEW.company_id
+    ) THEN RAISE(ABORT, 'AGENCY_ACCOUNT_BALANCE_CONFLICT')
+  END;
+  SELECT CASE
+    WHEN NEW.movement_type = 'OPENING_BALANCE'
+     AND (NEW.operation_id IS NOT NULL OR NEW.direction <> 'IN'
+          OR (SELECT current_balance FROM omni_agency_accounts WHERE id = NEW.account_id) <> 0)
+    THEN RAISE(ABORT, 'AGENCY_OPENING_BALANCE_INVALID')
+  END;
+  SELECT CASE
+    WHEN NEW.movement_type <> 'OPENING_BALANCE'
+     AND NOT EXISTS (
+       SELECT 1 FROM omni_agency_operations o
+        WHERE o.id = NEW.operation_id
+          AND o.company_id = NEW.company_id
+          AND o.branch_id IS NEW.branch_id
+          AND o.transaction_type = NEW.movement_type
+          AND (
+            (NEW.account_id = o.cash_account_id AND
+              ((o.transaction_type = 'CASH_IN' AND NEW.direction = 'IN') OR
+               (o.transaction_type = 'CASH_OUT' AND NEW.direction = 'OUT')))
+            OR
+            (NEW.account_id = o.float_account_id AND
+              ((o.transaction_type = 'CASH_IN' AND NEW.direction = 'OUT') OR
+               (o.transaction_type = 'CASH_OUT' AND NEW.direction = 'IN')))
+          )
+     )
+    THEN RAISE(ABORT, 'AGENCY_OPERATION_MOVEMENT_MISMATCH')
+  END;
+END;
+
+-- Ensure sale-generated stock history inherits the sale's selected branch.
+DROP TRIGGER IF EXISTS omni_sale_line_stock_post;
+CREATE TRIGGER omni_sale_line_stock_post
+AFTER INSERT ON omni_retail_sale_lines
+BEGIN
+  UPDATE omni_products
+    SET quantity_on_hand = quantity_on_hand - NEW.quantity,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = NEW.product_id
+      AND company_id = (SELECT company_id FROM omni_retail_sales WHERE id = NEW.sale_id);
+
+  INSERT INTO omni_stock_movements
+    (id, product_id, actor_id, movement_type, quantity_delta, quantity_after,
+     unit_cost, reference_type, reference_id, reason, company_id, branch_id)
+  SELECT lower(hex(randomblob(16))), NEW.product_id, s.actor_id, 'SALE',
+         -NEW.quantity, p.quantity_on_hand, NEW.unit_cost, 'RETAIL_SALE', NEW.sale_id,
+         'Stock deducted for receipt ' || s.receipt_number, s.company_id, s.branch_id
+    FROM omni_retail_sales s
+    JOIN omni_products p ON p.id = NEW.product_id AND p.company_id = s.company_id
+    WHERE s.id = NEW.sale_id;
+END;
