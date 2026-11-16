@@ -26,17 +26,11 @@ CREATE INDEX IF NOT EXISTS idx_omni_branches_company_status
 -- confirms the real branch mapping. Never silently move historical records.
 ALTER TABLE omni_retail_sales ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
 ALTER TABLE omni_stock_movements ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
-ALTER TABLE omni_agency_transactions ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
-ALTER TABLE omni_agency_accounts ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
-ALTER TABLE omni_agency_operations ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
-ALTER TABLE omni_agency_account_movements ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
 ALTER TABLE omni_ledger_entries ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
 ALTER TABLE omni_reconciliation_sessions ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
 
 CREATE INDEX IF NOT EXISTS idx_omni_sales_company_branch_created
   ON omni_retail_sales(company_id, branch_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_omni_agency_company_branch_status
-  ON omni_agency_transactions(company_id, branch_id, provider_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_ledger_company_branch_type_date
   ON omni_ledger_entries(company_id, branch_id, ledger_type, effective_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_reconciliation_company_branch_date
@@ -102,6 +96,22 @@ BEGIN
     SELECT 1 FROM omni_branches b
     WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id
   ) THEN RAISE(ABORT, 'STAFF_BRANCH_COMPANY_MISMATCH') END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS omni_staff_work_assignment_update_guard
+BEFORE UPDATE OF company_id, staff_membership_id, branch_id, work_area, duty_role ON omni_staff_work_assignments
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_staff_memberships s
+    WHERE s.id = NEW.staff_membership_id
+      AND s.company_id = NEW.company_id
+      AND s.status = 'ACTIVE'
+      AND (s.branch_id IS NULL OR s.branch_id = NEW.branch_id)
+  ) THEN RAISE(ABORT, 'STAFF_MEMBERSHIP_OR_BRANCH_SCOPE_INVALID') END;
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_branches b
+    WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id AND b.status = 'ACTIVE'
+  ) THEN RAISE(ABORT, 'BRANCH_NOT_AVAILABLE') END;
 END;
 
 CREATE TABLE IF NOT EXISTS omni_customers (
@@ -462,19 +472,19 @@ BEGIN
     WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id
       AND b.status = 'ACTIVE' AND p.company_id = NEW.company_id AND p.is_active = 1
   ) THEN RAISE(ABORT, 'BRANCH_STOCK_SCOPE_INVALID') END;
-  SELECT CASE WHEN NEW.quantity_after <> (
-    SELECT COALESCE(s.quantity_on_hand, 0) + NEW.quantity_delta
-    FROM omni_branch_stock s
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_branch_stock s
     WHERE s.company_id = NEW.company_id
       AND s.branch_id = NEW.branch_id
       AND s.product_id = NEW.product_id
-  ) AND NOT (
-    NOT EXISTS (
-      SELECT 1 FROM omni_branch_stock s
-      WHERE s.company_id = NEW.company_id
-        AND s.branch_id = NEW.branch_id
-        AND s.product_id = NEW.product_id
-    ) AND NEW.quantity_delta > 0 AND NEW.quantity_after = NEW.quantity_delta
+  ) AND (NEW.quantity_delta <= 0 OR NEW.quantity_after <> NEW.quantity_delta)
+    THEN RAISE(ABORT, 'BRANCH_STOCK_OPENING_INVALID') END;
+  SELECT CASE WHEN EXISTS (
+    SELECT 1 FROM omni_branch_stock s
+    WHERE s.company_id = NEW.company_id
+      AND s.branch_id = NEW.branch_id
+      AND s.product_id = NEW.product_id
+      AND NEW.quantity_after <> s.quantity_on_hand + NEW.quantity_delta
   ) THEN RAISE(ABORT, 'BRANCH_STOCK_BALANCE_CONFLICT') END;
 END;
 
@@ -552,86 +562,6 @@ BEGIN
   ) THEN RAISE(ABORT, 'EXPENSE_BRANCH_COMPANY_MISMATCH') END;
 END;
 
-
--- Re-scope active agency cash drawers and provider floats by branch while
--- preserving the original company-wide uniqueness for legacy NULL-branch rows.
-DROP INDEX IF EXISTS idx_omni_agency_one_active_cash_drawer;
-DROP INDEX IF EXISTS idx_omni_agency_one_active_provider_float;
-CREATE UNIQUE INDEX idx_omni_agency_one_active_cash_drawer
-  ON omni_agency_accounts(company_id, COALESCE(branch_id, '__COMPANY__'))
-  WHERE account_type = 'CASH_DRAWER' AND status = 'ACTIVE';
-CREATE UNIQUE INDEX idx_omni_agency_one_active_provider_float
-  ON omni_agency_accounts(company_id, COALESCE(branch_id, '__COMPANY__'), provider)
-  WHERE account_type = 'PROVIDER_FLOAT' AND status = 'ACTIVE';
-
-DROP TRIGGER IF EXISTS omni_agency_operations_guard;
-CREATE TRIGGER omni_agency_operations_guard
-BEFORE INSERT ON omni_agency_operations
-BEGIN
-  SELECT CASE WHEN NOT EXISTS (
-    SELECT 1 FROM omni_agency_accounts
-     WHERE id = NEW.cash_account_id AND company_id = NEW.company_id
-       AND branch_id IS NEW.branch_id
-       AND account_type = 'CASH_DRAWER' AND provider IS NULL AND status = 'ACTIVE'
-  ) THEN RAISE(ABORT, 'AGENCY_CASH_ACCOUNT_NOT_AVAILABLE') END;
-  SELECT CASE WHEN NOT EXISTS (
-    SELECT 1 FROM omni_agency_accounts
-     WHERE id = NEW.float_account_id AND company_id = NEW.company_id
-       AND branch_id IS NEW.branch_id
-       AND account_type = 'PROVIDER_FLOAT' AND provider = NEW.provider AND status = 'ACTIVE'
-  ) THEN RAISE(ABORT, 'AGENCY_FLOAT_ACCOUNT_NOT_AVAILABLE') END;
-  SELECT CASE WHEN NEW.branch_id IS NOT NULL AND NOT EXISTS (
-    SELECT 1 FROM omni_branches b
-     WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id AND b.status = 'ACTIVE'
-  ) THEN RAISE(ABORT, 'AGENCY_BRANCH_NOT_AVAILABLE') END;
-END;
-
-DROP TRIGGER IF EXISTS omni_agency_account_movement_guard;
-CREATE TRIGGER omni_agency_account_movement_guard
-BEFORE INSERT ON omni_agency_account_movements
-BEGIN
-  SELECT CASE
-    WHEN NOT EXISTS (
-      SELECT 1 FROM omni_agency_accounts a
-       WHERE a.id = NEW.account_id
-         AND a.company_id = NEW.company_id
-         AND a.branch_id IS NEW.branch_id
-         AND a.status = 'ACTIVE'
-    ) THEN RAISE(ABORT, 'AGENCY_ACCOUNT_NOT_AVAILABLE')
-  END;
-  SELECT CASE
-    WHEN NEW.balance_after != (
-      SELECT current_balance + CASE WHEN NEW.direction = 'IN' THEN NEW.amount ELSE -NEW.amount END
-        FROM omni_agency_accounts WHERE id = NEW.account_id AND company_id = NEW.company_id
-    ) THEN RAISE(ABORT, 'AGENCY_ACCOUNT_BALANCE_CONFLICT')
-  END;
-  SELECT CASE
-    WHEN NEW.movement_type = 'OPENING_BALANCE'
-     AND (NEW.operation_id IS NOT NULL OR NEW.direction <> 'IN'
-          OR (SELECT current_balance FROM omni_agency_accounts WHERE id = NEW.account_id) <> 0)
-    THEN RAISE(ABORT, 'AGENCY_OPENING_BALANCE_INVALID')
-  END;
-  SELECT CASE
-    WHEN NEW.movement_type <> 'OPENING_BALANCE'
-     AND NOT EXISTS (
-       SELECT 1 FROM omni_agency_operations o
-        WHERE o.id = NEW.operation_id
-          AND o.company_id = NEW.company_id
-          AND o.branch_id IS NEW.branch_id
-          AND o.transaction_type = NEW.movement_type
-          AND (
-            (NEW.account_id = o.cash_account_id AND
-              ((o.transaction_type = 'CASH_IN' AND NEW.direction = 'IN') OR
-               (o.transaction_type = 'CASH_OUT' AND NEW.direction = 'OUT')))
-            OR
-            (NEW.account_id = o.float_account_id AND
-              ((o.transaction_type = 'CASH_IN' AND NEW.direction = 'OUT') OR
-               (o.transaction_type = 'CASH_OUT' AND NEW.direction = 'IN')))
-          )
-     )
-    THEN RAISE(ABORT, 'AGENCY_OPERATION_MOVEMENT_MISMATCH')
-  END;
-END;
 
 -- Ensure sale-generated stock history inherits the sale's selected branch.
 DROP TRIGGER IF EXISTS omni_sale_line_stock_post;
