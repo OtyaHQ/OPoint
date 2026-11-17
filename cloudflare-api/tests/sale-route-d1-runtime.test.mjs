@@ -44,7 +44,7 @@ async function resetAndMigrate() {
   // This D1 database is created by Miniflare in-memory/local test state, never Wrangler remote mode.
   const migrations = readdirSync(new URL("../migrations/", import.meta.url))
     .filter(name => /^\d{4}_[a-z0-9_]+\.sql$/.test(name)).sort();
-  assert.equal(migrations.at(-1), "0010_company_operations_level_1_2.sql");
+  assert.equal(migrations.at(-1), "0011_branch_agency_accounts.sql");
   for (const name of migrations) {
     const sql = readFileSync(new URL(name, migrationsDir), "utf8")
       .replace(/^[ \t]*--[^\n]*(?:\n|$)/gm, "");
