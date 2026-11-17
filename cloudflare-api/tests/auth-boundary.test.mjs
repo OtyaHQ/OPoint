@@ -46,7 +46,11 @@ function makeEnv({ authResponse, authError, staff = activeStaff } = {}) {
             if (this.sql.includes("FROM omni_staff_memberships")) return staff;
             throw new Error("Unexpected first() query: " + this.sql);
           },
-          async all() { throw new Error("Unexpected all() query: " + this.sql); },
+          async all() {
+            calls.queries.push({ sql: this.sql, values: this.values, kind: "all" });
+            if (this.sql.includes("FROM omni_staff_work_assignments")) return { results: [] };
+            throw new Error("Unexpected all() query: " + this.sql);
+          },
           async run() { throw new Error("Unexpected run() query: " + this.sql); }
         };
         return statement;
@@ -138,12 +142,15 @@ test("maps the verified Otya identity subject to an active staff membership", as
     status: "ACTIVE",
     displayName: "Synthetic Auth Test",
     email: "verified@example.invalid",
-    agentId: "AGENT001"
+    agentId: "AGENT001",
+    workAssignments: []
   });
   assert.equal(calls.auth.length, 1);
-  assert.equal(calls.queries.length, 1);
+  assert.equal(calls.queries.length, 2);
   assert.match(calls.queries[0].sql, /identity_subject = \?1/);
   assert.deepEqual(calls.queries[0].values, ["otya-user-auth-test"]);
+  assert.match(calls.queries[1].sql, /omni_staff_work_assignments/);
+  assert.deepEqual(calls.queries[1].values, ["company-auth-test", "staff-auth-test"]);
 });
 
 test.after(() => {
