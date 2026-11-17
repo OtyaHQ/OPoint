@@ -17,7 +17,7 @@ class CompanyOperationsFoundationTests(unittest.TestCase):
         self.db.execute("PRAGMA foreign_keys = ON")
         migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
         self.assertTrue(migrations, "No D1 migrations were found")
-        self.assertEqual(migrations[-1].name, "0010_company_operations_level_1_2.sql")
+        self.assertEqual(migrations[-1].name, "0011_branch_agency_accounts.sql")
         for migration in migrations:
             self.db.executescript(
                 "BEGIN;\n" + migration.read_text(encoding="utf-8") + "\nCOMMIT;"
@@ -284,13 +284,90 @@ class CompanyOperationsFoundationTests(unittest.TestCase):
                            'agency-key-x','staff-a','company-a','branch-x')"""
             )
 
+    def test_branch_agency_cash_float_book_is_scoped_balanced_and_append_only(self):
+        cash_id, float_id = "cash-branch-a", "float-branch-a"
+        self.db.execute(
+            """INSERT INTO omni_branch_agency_accounts
+               (id,company_id,branch_id,account_type,provider,account_code,display_name,idempotency_key,created_by)
+               VALUES (?, 'company-a', 'branch-a', 'CASH_DRAWER', NULL, 'BRANCH_AGENCY_CASH',
+                       'Main shop cash', 'cash-account-a', 'owner-a')""",
+            (cash_id,),
+        )
+        self.db.execute(
+            """INSERT INTO omni_branch_agency_accounts
+               (id,company_id,branch_id,account_type,provider,account_code,display_name,idempotency_key,created_by)
+               VALUES (?, 'company-a', 'branch-a', 'PROVIDER_FLOAT', 'MTN_MOMO', 'BRANCH_FLOAT_MTN',
+                       'Main shop MTN float', 'mtn-account-a', 'owner-a')""",
+            (float_id,),
+        )
+        self.db.execute(
+            """INSERT INTO omni_branch_agency_account_movements
+               (id,company_id,branch_id,account_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason)
+               VALUES ('cash-open-a','company-a','branch-a',?,'OPENING_BALANCE','IN',100000,100000,
+                       'cash-open-a','owner-a','Owner-recorded opening cash')""",
+            (cash_id,),
+        )
+        self.db.execute(
+            """INSERT INTO omni_branch_agency_account_movements
+               (id,company_id,branch_id,account_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason)
+               VALUES ('float-open-a','company-a','branch-a',?,'OPENING_BALANCE','IN',200000,200000,
+                       'float-open-a','owner-a','Owner-recorded opening float')""",
+            (float_id,),
+        )
+        self.db.execute(
+            """INSERT INTO omni_branch_agency_operations
+               (id,company_id,branch_id,reference,transaction_type,provider,provider_reference,
+                amount,cash_account_id,float_account_id,request_fingerprint,idempotency_key,actor_id)
+               VALUES ('operation-a','company-a','branch-a','AG-001','CASH_IN','MTN_MOMO','MTN-REF-001',
+                       10000,?,?, 'fingerprint-a','operation-a','staff-a')""",
+            (cash_id, float_id),
+        )
+        self.db.execute(
+            """INSERT INTO omni_branch_agency_account_movements
+               (id,company_id,branch_id,account_id,operation_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason)
+               VALUES ('cash-in-a','company-a','branch-a',?,'operation-a','CASH_IN','IN',10000,110000,
+                       'operation-a:cash','staff-a','Operator recorded cash-in')""",
+            (cash_id,),
+        )
+        self.db.execute(
+            """INSERT INTO omni_branch_agency_account_movements
+               (id,company_id,branch_id,account_id,operation_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason)
+               VALUES ('float-out-a','company-a','branch-a',?,'operation-a','CASH_IN','OUT',10000,190000,
+                       'operation-a:float','staff-a','Operator recorded float-out')""",
+            (float_id,),
+        )
+        balances = {
+            row[0]: row[1] for row in self.db.execute(
+                "SELECT id,current_balance FROM omni_branch_agency_accounts WHERE company_id='company-a' AND branch_id='branch-a'"
+            )
+        }
+        self.assertEqual(balances[cash_id], 110000)
+        self.assertEqual(balances[float_id], 190000)
+        record = self.db.execute(
+            "SELECT recording_status FROM omni_branch_agency_operations WHERE id='operation-a'"
+        ).fetchone()[0]
+        self.assertEqual(record, "OPERATOR_RECORDED_UNVERIFIED")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                """INSERT INTO omni_branch_agency_account_movements
+                   (id,company_id,branch_id,account_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason)
+                   VALUES ('cross-branch','company-a','branch-b',?,'OPENING_BALANCE','IN',1,1,
+                           'cross-branch-key','owner-a','Must not cross branch')""",
+                (cash_id,),
+            )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                "UPDATE omni_branch_agency_operations SET amount=1 WHERE id='operation-a'"
+            )
+
     def test_new_tables_exist_after_sequential_migrations(self):
         expected = {
             "omni_branches", "omni_staff_work_assignments", "omni_customers",
             "omni_suppliers", "omni_purchase_orders", "omni_purchase_order_lines",
             "omni_expenses", "omni_business_compliance_items", "omni_provider_connections",
             "omni_staff_attendance", "omni_leave_requests", "omni_branch_stock",
-            "omni_branch_stock_movements",
+            "omni_branch_stock_movements", "omni_branch_agency_accounts",
+            "omni_branch_agency_operations", "omni_branch_agency_account_movements",
         }
         actual = {
             row[0] for row in self.db.execute(
