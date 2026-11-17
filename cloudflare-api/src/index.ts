@@ -283,6 +283,9 @@ export default {
           "omni_reconciliation_sessions", "omni_audit_events", "omni_staff_memberships",
           "omni_staff_invitations", "omni_agency_accounts", "omni_agency_operations",
           "omni_agency_account_movements",
+          "omni_branch_agency_accounts",
+          "omni_branch_agency_operations",
+          "omni_branch_agency_account_movements",
         ];
         const expectedObjects = [
           "idx_omni_sales_company_idempotency",
@@ -350,6 +353,21 @@ export default {
           "omni_ledger_entries_branch_guard",
           "omni_reconciliation_branch_guard",
           "omni_expense_branch_guard",
+          "idx_omni_branch_agency_one_cash",
+          "idx_omni_branch_agency_one_float_provider",
+          "idx_omni_branch_agency_accounts_lookup",
+          "idx_omni_branch_agency_operations_history",
+          "idx_omni_branch_agency_operations_actor",
+          "idx_omni_branch_agency_movements_history",
+          "idx_omni_branch_agency_movements_operation",
+          "omni_branch_agency_account_guard",
+          "omni_branch_agency_movement_guard",
+          "omni_branch_agency_movement_apply",
+          "omni_branch_agency_operation_guard",
+          "omni_branch_agency_operations_no_update",
+          "omni_branch_agency_operations_no_delete",
+          "omni_branch_agency_movements_no_update",
+          "omni_branch_agency_movements_no_delete",
         ];
         const tableNames = new Set(tables.results.map(row => row.name));
         const objectNames = new Set(integrityObjects.results.map(row => row.name));
