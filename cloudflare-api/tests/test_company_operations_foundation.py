@@ -258,6 +258,32 @@ class CompanyOperationsFoundationTests(unittest.TestCase):
         self.assertNotIn("medical_diagnosis", {name.lower() for name in columns})
         self.assertNotIn("medical_document", {name.lower() for name in columns})
 
+    def test_agency_transactions_have_branch_scope_and_integrity_guard(self):
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(omni_agency_transactions)")}
+        self.assertIn("branch_id", columns)
+        objects = {
+            row[0] for row in self.db.execute(
+                "SELECT name FROM sqlite_master WHERE type IN ('index','trigger')"
+            )
+        }
+        self.assertIn("idx_omni_agency_company_branch_created", objects)
+        self.assertIn("omni_agency_transactions_branch_guard", objects)
+        self.db.execute(
+            """INSERT INTO omni_agency_transactions
+               (id,reference,transaction_type,provider,provider_status,amount,commission,
+                idempotency_key,actor_id,company_id,branch_id)
+               VALUES ('agency-a','AG-A','CASH_IN','MANUAL','PENDING',1000,0,
+                       'agency-key-a','staff-a','company-a','branch-a')"""
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute(
+                """INSERT INTO omni_agency_transactions
+                   (id,reference,transaction_type,provider,provider_status,amount,commission,
+                    idempotency_key,actor_id,company_id,branch_id)
+                   VALUES ('agency-x','AG-X','CASH_IN','MANUAL','PENDING',1000,0,
+                           'agency-key-x','staff-a','company-a','branch-x')"""
+            )
+
     def test_new_tables_exist_after_sequential_migrations(self):
         expected = {
             "omni_branches", "omni_staff_work_assignments", "omni_customers",
