@@ -1116,32 +1116,6 @@ export default {
         }, 410);
       }
 
-      if (request.method === "POST" && url.pathname === "/api/stock-adjustments-legacy-disabled") {
-        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
-        const body = await parseBody(request); if (isBodyResponse(body)) return body;
-        const productId = safeText(body.productId, 64);
-        const delta = Number.isSafeInteger(body.quantityDelta) ? Number(body.quantityDelta) : null;
-        const reason = safeText(body.reason, 500);
-        if (!productId || delta === null || delta === 0 || !reason) return json({ error: "invalid_stock_adjustment" }, 400);
-        const product = await env.DB.prepare("SELECT id, sku, name, quantity_on_hand, cost_price, is_active FROM omni_products WHERE id=?1 AND company_id=?2").bind(productId, staff.company_id).first<{ id: string; sku: string; name: string; quantity_on_hand: number; cost_price: number; is_active: number }>();
-        if (!product || product.is_active !== 1) return json({ error: "product_not_available" }, 404);
-        const nextQuantity = Number(product.quantity_on_hand) + delta;
-        if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 0) return json({ error: "insufficient_stock" }, 409);
-        const movementId = uuid();
-        try {
-          await env.DB.batch([
-            env.DB.prepare("INSERT INTO omni_stock_movements (id,product_id,actor_id,movement_type,quantity_delta,quantity_after,unit_cost,reference_type,reference_id,reason,company_id) VALUES (?1,?2,?3,'ADJUSTMENT',?4,?5,?6,'STOCK_ADJUSTMENT',?1,?7,?8)")
-              .bind(movementId, productId, staff.id, delta, nextQuantity, product.cost_price, reason, staff.company_id),
-            env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'ADJUST_STOCK','PRODUCT',?3,?4,?5,?6,?7,?8)")
-              .bind(uuid(), staff.id, productId, reason, JSON.stringify({ quantityOnHand: product.quantity_on_hand }), JSON.stringify({ quantityOnHand: nextQuantity }), rid, staff.company_id)
-          ]);
-        } catch (error) {
-          if (error instanceof Error && (error.message.includes("INSUFFICIENT_STOCK") || error.message.includes("STOCK_MOVEMENT_MISMATCH"))) return json({ error: "stock_conflict_retry" }, 409);
-          throw error;
-        }
-        return json({ data: { productId, quantityOnHand: nextQuantity, movementId }, requestId: rid });
-      }
-
       if (request.method === "POST" && url.pathname === "/api/sales") {
         const body = await parseBody(request);
         if (isBodyResponse(body)) return body;
