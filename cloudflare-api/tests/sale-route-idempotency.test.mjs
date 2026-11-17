@@ -27,7 +27,7 @@ const staff = {
   display_name: "Synthetic Staff", email: "synthetic@example.invalid", agent_id: null
 };
 const savedLines = [{ productId: "product-1", quantity: 1 }];
-const savedFingerprint = await saleRequestFingerprint("CASH", savedLines);
+const savedFingerprint = await saleRequestFingerprint("CASH", savedLines, "branch-1");
 
 function makeEnv(existingSale) {
   const calls = { existingSaleLookups: 0, batchCalls: 0, queries: [] };
@@ -39,13 +39,17 @@ function makeEnv(existingSale) {
         async first() {
           calls.queries.push(this.sql);
           if (this.sql.includes("FROM omni_staff_memberships")) return staff;
+          if (this.sql.includes("FROM omni_branches")) return { id: "branch-1" };
           if (this.sql.includes("FROM omni_retail_sales")) {
             calls.existingSaleLookups++;
             return existingSale;
           }
           throw new Error("Unexpected first() SQL in route test: " + this.sql);
         },
-        async all() { throw new Error("Unexpected all() call in replay test"); },
+        async all() {
+          if (this.sql.includes("FROM omni_branch_stock")) return { results: [{ product_id: "product-1", quantity_on_hand: 5 }] };
+          throw new Error("Unexpected all() call in replay test");
+        },
         async run() { throw new Error("Unexpected run() call in replay test"); }
       };
       return statement;
@@ -148,6 +152,7 @@ test("concurrent identical requests produce one creation and one replay in the h
         bind(...values) { this.values = values; return this; },
         async first() {
           if (this.sql.includes("FROM omni_staff_memberships")) return staff;
+          if (this.sql.includes("FROM omni_branches")) return { id: "branch-1" };
           if (this.sql.includes("FROM omni_retail_sales")) {
             calls.lookupCount++;
             // Let both initial lookups observe absence, forcing the second request down the
@@ -159,6 +164,7 @@ test("concurrent identical requests produce one creation and one replay in the h
         },
         async all() {
           if (this.sql.includes("FROM omni_products")) return { results: [product] };
+          if (this.sql.includes("FROM omni_branch_stock")) return { results: [{ product_id: "product-1", quantity_on_hand: 5 }] };
           throw new Error("Unexpected all() SQL in concurrency test: " + this.sql);
         },
         async run() { throw new Error("Unexpected run() SQL in concurrency test: " + this.sql); }
@@ -172,7 +178,7 @@ test("concurrent identical requests produce one creation and one replay in the h
       const sale = statements[0].values;
       savedSale = {
         id: sale[0], receipt_number: sale[1], total: sale[2], status: "COMPLETED",
-        request_fingerprint: sale[7]
+        request_fingerprint: sale[8]
       };
       return [];
     }
@@ -200,11 +206,13 @@ test("actual sales route maps a stock-trigger failure to 409 without reporting s
         bind(...values) { this.values = values; return this; },
         async first() {
           if (this.sql.includes("FROM omni_staff_memberships")) return staff;
+          if (this.sql.includes("FROM omni_branches")) return { id: "branch-1" };
           if (this.sql.includes("FROM omni_retail_sales")) return null;
           throw new Error("Unexpected first() SQL in stock conflict test: " + this.sql);
         },
         async all() {
           if (this.sql.includes("FROM omni_products")) return { results: [product] };
+          if (this.sql.includes("FROM omni_branch_stock")) return { results: [{ product_id: "product-1", quantity_on_hand: 5 }] };
           throw new Error("Unexpected all() SQL in stock conflict test: " + this.sql);
         },
         async run() { throw new Error("Unexpected run() SQL in stock conflict test: " + this.sql); }
@@ -222,7 +230,7 @@ test("actual sales route maps a stock-trigger failure to 409 without reporting s
   };
   const response = await postSale(env);
   assert.equal(response.status, 409);
-  assert.equal((await response.json()).error, "stock_conflict_or_product_unavailable");
+  assert.equal((await response.json()).error, "branch_stock_conflict_or_product_unavailable");
   assert.equal(calls.batchCalls, 1);
 });
 
