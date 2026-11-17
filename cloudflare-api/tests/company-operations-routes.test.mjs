@@ -203,6 +203,7 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
   const retailSale = await call("/api/sales", {
     token: "worker-token",
     method: "POST",
+    headers: { "idempotency-key": "retail-sale-0001" },
     body: { branchId: "branch-a", paymentMethod: "CASH", items: [{ productId, quantity: 1 }] },
   });
   const result = await retailSale.json();
