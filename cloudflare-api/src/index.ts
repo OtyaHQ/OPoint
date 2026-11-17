@@ -1141,8 +1141,13 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/sales") {
-        if (!roles.includes(staff.role)) return json({ error: "forbidden" }, 403);
-        const body = await parseBody(request); if (isBodyResponse(body)) return body;
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const context = await requireWorkContext(
+          request, env, staff, ["RETAIL"], "OPERATE", safeText(body.branchId, 64)
+        );
+        if (isWorkContextResponse(context)) return context;
+        const branchId = context.branchId;
         const idempotencyKey = safeText(request.headers.get("idempotency-key"), 128);
         const paymentMethod = safeText(body.paymentMethod, 20).toUpperCase();
         const lines = body.items;
@@ -1156,70 +1161,137 @@ export default {
           const productId = safeText(item.productId, 64);
           const quantity = int(item.quantity, 1);
           if (!productId || quantity === null || quantity > 10000 || seen.has(productId)) return json({ error: "invalid_sale_items" }, 400);
-          seen.add(productId); normalized.push({ productId, quantity });
+          seen.add(productId);
+          normalized.push({ productId, quantity });
         }
-        const requestFingerprint = await saleRequestFingerprint(paymentMethod, normalized);
-        const existing = await env.DB.prepare("SELECT id,receipt_number,total,status,request_fingerprint FROM omni_retail_sales WHERE idempotency_key=?1 AND company_id=?2").bind(idempotencyKey, staff.company_id).first<{ id: string; receipt_number: string; total: number; status: string; request_fingerprint: string | null }>();
+
+        const requestFingerprint = await saleRequestFingerprint(paymentMethod, normalized, branchId);
+        const existing = await env.DB.prepare(
+          "SELECT id,receipt_number,total,status,request_fingerprint FROM omni_retail_sales WHERE idempotency_key=?1 AND company_id=?2"
+        ).bind(idempotencyKey, staff.company_id).first<{
+          id: string; receipt_number: string; total: number; status: string; request_fingerprint: string | null
+        }>();
         if (existing) {
-          if (!existing.request_fingerprint || existing.request_fingerprint !== requestFingerprint) return json({ error: "idempotency_key_payload_conflict" }, 409);
-          return json({ data: { id: existing.id, receipt_number: existing.receipt_number, total: existing.total, status: existing.status }, replayed: true, requestId: rid });
+          if (!existing.request_fingerprint || existing.request_fingerprint !== requestFingerprint) {
+            return json({ error: "idempotency_key_payload_conflict" }, 409);
+          }
+          return json({
+            data: { id: existing.id, receipt_number: existing.receipt_number, total: existing.total, status: existing.status, branchId },
+            replayed: true,
+            requestId: rid
+          });
         }
         if (paymentMethod !== "CASH") return json({ error: "payment_method_not_enabled", allowed: ["CASH"] }, 422);
+
         const placeholders = normalized.map((_, i) => "?" + (i + 2)).join(",");
-        const productRows = await env.DB.prepare(
-          "SELECT id,sku,name,cost_price,selling_price,quantity_on_hand,is_active FROM omni_products WHERE company_id=?1 AND id IN (" + placeholders + ")"
-        ).bind(staff.company_id, ...normalized.map(item => item.productId)).all<{ id: string; sku: string; name: string; cost_price: number; selling_price: number; quantity_on_hand: number; is_active: number }>();
+        const branchPlaceholders = normalized.map((_, i) => "?" + (i + 3)).join(",");
+        const [productRows, branchStockRows] = await Promise.all([
+          env.DB.prepare(
+            "SELECT id,sku,name,cost_price,selling_price,quantity_on_hand,is_active FROM omni_products WHERE company_id=?1 AND id IN (" + placeholders + ")"
+          ).bind(staff.company_id, ...normalized.map(item => item.productId)).all<{
+            id: string; sku: string; name: string; cost_price: number; selling_price: number; quantity_on_hand: number; is_active: number
+          }>(),
+          env.DB.prepare(
+            "SELECT product_id,quantity_on_hand FROM omni_branch_stock WHERE company_id=?1 AND branch_id=?2 AND product_id IN (" + branchPlaceholders + ")"
+          ).bind(staff.company_id, branchId, ...normalized.map(item => item.productId)).all<{
+            product_id: string; quantity_on_hand: number
+          }>()
+        ]);
         const productMap = new Map(productRows.results.map(product => [product.id, product]));
+        const branchStockMap = new Map(branchStockRows.results.map(row => [row.product_id, row]));
         if (productMap.size !== normalized.length) return json({ error: "product_not_available" }, 409);
-        let subtotal = 0; let costOfGoods = 0;
+        if (branchStockMap.size !== normalized.length) return json({ error: "branch_stock_not_initialized" }, 409);
+
+        let subtotal = 0;
+        let costOfGoods = 0;
         const saleId = uuid();
         const receiptNumber = "OP-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + uuid().slice(0, 8).toUpperCase();
         const saleLines: Array<{ id: string; productId: string; sku: string; name: string; quantity: number; price: number; cost: number; total: number }> = [];
         for (const item of normalized) {
           const product = productMap.get(item.productId)!;
+          const branchStock = branchStockMap.get(item.productId)!;
           if (product.is_active !== 1) return json({ error: "product_not_available" }, 409);
-          const price = Number(product.selling_price); const cost = Number(product.cost_price);
-          const lineTotal = price * item.quantity; const lineCost = cost * item.quantity;
+          if (Number(branchStock.quantity_on_hand) < item.quantity) return json({ error: "insufficient_branch_stock" }, 409);
+          const price = Number(product.selling_price);
+          const cost = Number(product.cost_price);
+          const lineTotal = price * item.quantity;
+          const lineCost = cost * item.quantity;
           if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(lineCost)) return json({ error: "amount_overflow" }, 400);
-          subtotal += lineTotal; costOfGoods += lineCost;
-          saleLines.push({ id: uuid(), productId: product.id, sku: product.sku, name: product.name, quantity: item.quantity, price, cost, total: lineTotal });
+          subtotal += lineTotal;
+          costOfGoods += lineCost;
+          saleLines.push({
+            id: uuid(), productId: product.id, sku: product.sku, name: product.name,
+            quantity: item.quantity, price, cost, total: lineTotal
+          });
         }
         if (!Number.isSafeInteger(subtotal) || !Number.isSafeInteger(costOfGoods) || subtotal <= 0) return json({ error: "invalid_sale_total" }, 400);
+
         const statements: D1Statement[] = [
-          env.DB.prepare("INSERT INTO omni_retail_sales (id,receipt_number,status,currency,subtotal,discount_total,tax_total,total,cost_of_goods,payment_method,idempotency_key,actor_id,company_id,request_fingerprint) VALUES (?1,?2,'COMPLETED','UGX',?3,0,0,?3,?4,'CASH',?5,?6,?7,?8)")
-            .bind(saleId, receiptNumber, subtotal, costOfGoods, idempotencyKey, staff.id, staff.company_id, requestFingerprint)
+          env.DB.prepare(
+            "INSERT INTO omni_retail_sales (id,receipt_number,status,currency,subtotal,discount_total,tax_total,total,cost_of_goods,payment_method,idempotency_key,actor_id,company_id,branch_id,request_fingerprint) VALUES (?1,?2,'COMPLETED','UGX',?3,0,0,?3,?4,'CASH',?5,?6,?7,?8,?9)"
+          ).bind(saleId, receiptNumber, subtotal, costOfGoods, idempotencyKey, staff.id, staff.company_id, branchId, requestFingerprint)
         ];
         for (const line of saleLines) {
           statements.push(env.DB.prepare(
             "INSERT INTO omni_retail_sale_lines (id,sale_id,product_id,sku_snapshot,name_snapshot,quantity,unit_price,unit_cost,line_total) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)"
           ).bind(line.id, saleId, line.productId, line.sku, line.name, line.quantity, line.price, line.cost, line.total));
         }
+        for (const line of saleLines) {
+          const current = branchStockMap.get(line.productId)!;
+          statements.push(env.DB.prepare(
+            "INSERT INTO omni_branch_stock_movements (id,company_id,branch_id,product_id,movement_type,quantity_delta,quantity_after,idempotency_key,actor_id,reason) VALUES (?1,?2,?3,?4,'SALE',?5,?6,?7,?8,?9)"
+          ).bind(
+            uuid(), staff.company_id, branchId, line.productId, -line.quantity,
+            Number(current.quantity_on_hand) - line.quantity,
+            saleId + ":BRANCH:" + line.productId, staff.id, "Retail sale " + receiptNumber
+          ));
+        }
         statements.push(
-          env.DB.prepare("INSERT INTO omni_ledger_entries (id,ledger_type,account_code,currency,debit,credit,source_type,source_id,idempotency_key,description,company_id) VALUES (?1,'RETAIL','CASH_ON_HAND','UGX',?2,0,'RETAIL_SALE',?3,?4,'Cash received for retail sale',?7),(?5,'RETAIL','SALES_REVENUE','UGX',0,?2,'RETAIL_SALE',?3,?6,'Retail sales revenue',?7)")
-            .bind(uuid(), subtotal, saleId, idempotencyKey + ":cash", uuid(), idempotencyKey + ":revenue", staff.company_id)
+          env.DB.prepare(
+            "INSERT INTO omni_ledger_entries (id,ledger_type,account_code,currency,debit,credit,source_type,source_id,idempotency_key,description,company_id,branch_id) VALUES (?1,'RETAIL','CASH_ON_HAND','UGX',?2,0,'RETAIL_SALE',?3,?4,'Cash received for retail sale',?7,?8),(?5,'RETAIL','SALES_REVENUE','UGX',0,?2,'RETAIL_SALE',?3,?6,'Retail sales revenue',?7,?8)"
+          ).bind(uuid(), subtotal, saleId, idempotencyKey + ":cash", uuid(), idempotencyKey + ":revenue", staff.company_id, branchId)
         );
         if (costOfGoods > 0) statements.push(
-          env.DB.prepare("INSERT INTO omni_ledger_entries (id,ledger_type,account_code,currency,debit,credit,source_type,source_id,idempotency_key,description,company_id) VALUES (?1,'RETAIL','COST_OF_GOODS_SOLD','UGX',?2,0,'RETAIL_SALE',?3,?4,'Cost of goods sold',?7),(?5,'RETAIL','INVENTORY','UGX',0,?2,'RETAIL_SALE',?3,?6,'Inventory relieved at cost',?7)")
-            .bind(uuid(), costOfGoods, saleId, idempotencyKey + ":cogs", uuid(), idempotencyKey + ":inventory", staff.company_id)
+          env.DB.prepare(
+            "INSERT INTO omni_ledger_entries (id,ledger_type,account_code,currency,debit,credit,source_type,source_id,idempotency_key,description,company_id,branch_id) VALUES (?1,'RETAIL','COST_OF_GOODS_SOLD','UGX',?2,0,'RETAIL_SALE',?3,?4,'Cost of goods sold',?7,?8),(?5,'RETAIL','INVENTORY','UGX',0,?2,'RETAIL_SALE',?3,?6,'Inventory relieved at cost',?7,?8)"
+          ).bind(uuid(), costOfGoods, saleId, idempotencyKey + ":cogs", uuid(), idempotencyKey + ":inventory", staff.company_id, branchId)
         );
         statements.push(env.DB.prepare(
-          "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'POST_SALE','RETAIL_SALE',?3,'Cash sale posted',?4,?5,?6)"
-        ).bind(uuid(), staff.id, saleId, JSON.stringify({ receiptNumber, subtotal, costOfGoods, currency: "UGX" }), rid, staff.company_id));
+          "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'POST_SALE','RETAIL_SALE',?3,'Branch-scoped cash sale posted',?4,?5,?6)"
+        ).bind(uuid(), staff.id, saleId, JSON.stringify({ receiptNumber, subtotal, costOfGoods, currency: "UGX", branchId }), rid, staff.company_id));
+
         try {
           await env.DB.batch(statements);
         } catch (error) {
-          if (error instanceof Error && (error.message.includes("INSUFFICIENT_STOCK") || error.message.includes("PRODUCT_NOT_AVAILABLE"))) return json({ error: "stock_conflict_or_product_unavailable" }, 409);
+          if (error instanceof Error && (
+            error.message.includes("INSUFFICIENT_STOCK")
+            || error.message.includes("PRODUCT_NOT_AVAILABLE")
+            || error.message.includes("BRANCH_STOCK")
+          )) return json({ error: "branch_stock_conflict_or_product_unavailable" }, 409);
           if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
-            const replay = await env.DB.prepare("SELECT id,receipt_number,total,status,request_fingerprint FROM omni_retail_sales WHERE idempotency_key=?1 AND company_id=?2").bind(idempotencyKey, staff.company_id).first<{ id: string; receipt_number: string; total: number; status: string; request_fingerprint: string | null }>();
+            const replay = await env.DB.prepare(
+              "SELECT id,receipt_number,total,status,request_fingerprint FROM omni_retail_sales WHERE idempotency_key=?1 AND company_id=?2"
+            ).bind(idempotencyKey, staff.company_id).first<{
+              id: string; receipt_number: string; total: number; status: string; request_fingerprint: string | null
+            }>();
             if (replay) {
-              if (!replay.request_fingerprint || replay.request_fingerprint !== requestFingerprint) return json({ error: "idempotency_key_payload_conflict" }, 409);
-              return json({ data: { id: replay.id, receipt_number: replay.receipt_number, total: replay.total, status: replay.status }, replayed: true, requestId: rid });
+              if (!replay.request_fingerprint || replay.request_fingerprint !== requestFingerprint) {
+                return json({ error: "idempotency_key_payload_conflict" }, 409);
+              }
+              return json({
+                data: { id: replay.id, receipt_number: replay.receipt_number, total: replay.total, status: replay.status, branchId },
+                replayed: true,
+                requestId: rid
+              });
             }
             return json({ error: "duplicate_conflict" }, 409);
           }
           throw error;
         }
-        return json({ data: { id: saleId, receiptNumber, subtotal, total: subtotal, currency: "UGX", status: "COMPLETED" }, requestId: rid }, 201);
+        return json({
+          data: { id: saleId, receiptNumber, subtotal, total: subtotal, currency: "UGX", status: "COMPLETED", branchId },
+          requestId: rid
+        }, 201);
       }
 
       if (request.method === "GET" && url.pathname === "/api/agency-readiness") {
