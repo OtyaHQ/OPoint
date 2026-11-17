@@ -58,6 +58,7 @@ const env = {
       const token = request.headers.get("authorization");
       if (token === "Bearer owner-token") return Response.json({ ok: true, user_id: "identity-owner", email: "owner@example.invalid" });
       if (token === "Bearer worker-token") return Response.json({ ok: true, user_id: "identity-worker", email: "worker@example.invalid" });
+      if (token === "Bearer mobile-token") return Response.json({ ok: true, user_id: "identity-mobile", email: "mobile@example.invalid" });
       return Response.json({ ok: false }, { status: 401 });
     }
   }
@@ -132,6 +133,83 @@ test("one worker can hold distinct Retail and Mobile Money duties at the same br
     body: { staffMembershipId: "worker-a", branchId: "branch-a", workArea: "RETAIL", dutyRole: "APPROVER" }
   });
   assert.equal(duplicate.status, 409);
+});
+
+test("Retail and Mobile Money assignments separate stock, sales and agency views", async () => {
+  const created = await call("/api/products", {
+    method: "POST",
+    body: {
+      sku: "BRANCH-ITEM-01",
+      name: "Branch-scoped test item",
+      category: "Accessories",
+      costPrice: 100,
+      sellingPrice: 200,
+      reorderLevel: 2
+    }
+  });
+  assert.equal(created.status, 201, await created.text());
+  const productId = (await created.json()).data.id;
+
+  const opening = await call("/api/branch-stock/opening", {
+    method: "POST",
+    body: {
+      branchId: "branch-a",
+      productId,
+      quantity: 10,
+      reason: "Owner verified opening count",
+      idempotencyKey: "branch-opening-0001"
+    }
+  });
+  assert.equal(opening.status, 201, await opening.text());
+
+  await run(
+    "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,display_name,email) VALUES ('mobile-only','identity-mobile','company-a','branch-a','ATTENDANT','ACTIVE','Mobile Agent','mobile@example.invalid')"
+  );
+  const mobileAssignment = await call("/api/staff/work-assignments", {
+    method: "POST",
+    body: {
+      staffMembershipId: "mobile-only",
+      branchId: "branch-a",
+      workArea: "MOBILE_MONEY",
+      dutyRole: "OPERATOR"
+    }
+  });
+  assert.equal(mobileAssignment.status, 201, await mobileAssignment.text());
+
+  const retailProducts = await call("/api/products", { token: "worker-token" });
+  assert.equal(retailProducts.status, 200, await retailProducts.text());
+  const visibleProduct = (await retailProducts.json()).data.find(row => row.id === productId);
+  assert.equal(visibleProduct.quantity_on_hand, 10);
+
+  const mobileProducts = await call("/api/products", { token: "mobile-token" });
+  assert.equal(mobileProducts.status, 403);
+  assert.equal((await mobileProducts.json()).error, "work_area_assignment_required");
+
+  const mobileRetailSale = await call("/api/sales", {
+    token: "mobile-token",
+    method: "POST",
+    body: { branchId: "branch-a", paymentMethod: "CASH", items: [{ productId, quantity: 1 }] }
+  });
+  assert.equal(mobileRetailSale.status, 403);
+  assert.equal((await mobileRetailSale.json()).error, "work_area_assignment_required");
+
+  const retailSale = await call("/api/sales", {
+    token: "worker-token",
+    method: "POST",
+    body: { branchId: "branch-a", paymentMethod: "CASH", items: [{ productId, quantity: 1 }] },
+  });
+  assert.equal(retailSale.status, 201, await retailSale.text());
+  const result = await retailSale.json();
+  assert.equal(result.data.branchId, "branch-a");
+
+  const stock = await call("/api/branch-stock", { token: "worker-token" });
+  assert.equal(stock.status, 200, await stock.text());
+  const updated = (await stock.json()).data.find(row => row.product_id === productId);
+  assert.equal(updated.quantity_on_hand, 9);
+
+  const mobileAgency = await call("/api/agency-overview", { token: "mobile-token" });
+  assert.equal(mobileAgency.status, 200, await mobileAgency.text());
+  assert.equal((await mobileAgency.json()).branchId, "branch-a");
 });
 
 test("work assignment cannot cross company or branch membership boundaries", async () => {
