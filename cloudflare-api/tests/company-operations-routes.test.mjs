@@ -71,6 +71,7 @@ async function call(path, options = {}) {
   const body = options.body;
   const headers = { authorization: "Bearer " + token, "cf-ray": "company-ops-" + crypto.randomUUID() };
   if (body !== undefined) headers["content-type"] = "application/json";
+  Object.assign(headers, options.headers || {});
   return worker.fetch(new Request("https://otyapoint.test" + path, {
     method, headers, body: body === undefined ? undefined : JSON.stringify(body)
   }), env);
@@ -298,7 +299,7 @@ test("purchase orders require separate approval before branch stock is received"
 
   const receiptResponse = await call("/api/purchase-orders/" + poBody.data.id + "/receive", {
     method: "POST",
-    headers: undefined,
+    headers: { "idempotency-key": "purchase-receipt-0001" },
     body: { branchId: "branch-a", receipts: [{ productId, quantity: 6 }] }
   });
   const receiptBody = await receiptResponse.json();
