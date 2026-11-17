@@ -28,6 +28,7 @@ ALTER TABLE omni_retail_sales ADD COLUMN branch_id TEXT REFERENCES omni_branches
 ALTER TABLE omni_stock_movements ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
 ALTER TABLE omni_ledger_entries ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
 ALTER TABLE omni_reconciliation_sessions ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
+ALTER TABLE omni_agency_transactions ADD COLUMN branch_id TEXT REFERENCES omni_branches(id);
 
 CREATE INDEX IF NOT EXISTS idx_omni_sales_company_branch_created
   ON omni_retail_sales(company_id, branch_id, created_at DESC);
@@ -35,6 +36,8 @@ CREATE INDEX IF NOT EXISTS idx_omni_ledger_company_branch_type_date
   ON omni_ledger_entries(company_id, branch_id, ledger_type, effective_at DESC);
 CREATE INDEX IF NOT EXISTS idx_omni_reconciliation_company_branch_date
   ON omni_reconciliation_sessions(company_id, branch_id, business_date DESC, ledger_type);
+CREATE INDEX IF NOT EXISTS idx_omni_agency_company_branch_created
+  ON omni_agency_transactions(company_id, branch_id, created_at DESC);
 
 -- Branch assignment is distinct from the person's general company membership.
 -- One employee may have Retail and Mobile Money assignments, with different
@@ -544,6 +547,14 @@ BEGIN
   SELECT CASE WHEN NOT EXISTS (
     SELECT 1 FROM omni_branches b WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id
   ) THEN RAISE(ABORT, 'LEDGER_BRANCH_COMPANY_MISMATCH') END;
+END;
+CREATE TRIGGER IF NOT EXISTS omni_agency_transactions_branch_guard
+BEFORE INSERT ON omni_agency_transactions
+WHEN NEW.branch_id IS NOT NULL
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_branches b WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id
+  ) THEN RAISE(ABORT, 'AGENCY_TRANSACTION_BRANCH_COMPANY_MISMATCH') END;
 END;
 CREATE TRIGGER IF NOT EXISTS omni_reconciliation_branch_guard
 BEFORE INSERT ON omni_reconciliation_sessions
