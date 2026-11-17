@@ -1573,18 +1573,20 @@ export default {
         return json({ data: { id, orderNumber, status: "DRAFT", currency: "UGX", subtotal, total: subtotal, branchId: context.branchId, lines }, requestId: rid }, 201);
       }
 
-      const purchaseOrderAction = url.pathname.match(/^\/api\/purchase-orders\/([^/]+)\/(submit|receive)$/);
+      const purchaseOrderAction = url.pathname.match(/^\/api\/purchase-orders\/([^/]+)\/(submit|approve|receive)$/);
       if (request.method === "POST" && purchaseOrderAction) {
         const orderId = safeText(purchaseOrderAction[1], 64);
         const action = purchaseOrderAction[2];
         const body = await parseBody(request);
         if (isBodyResponse(body)) return body;
-        const context = await requireWorkContext(request, env, staff, ["PURCHASING"], action === "submit" ? "SUPERVISE" : "OPERATE", safeText(body.branchId, 64));
+        const requiredAction: WorkAction = action === "submit" ? "SUPERVISE" : action === "approve" ? "APPROVE" : "OPERATE";
+        const context = await requireWorkContext(request, env, staff, ["PURCHASING"], requiredAction, safeText(body.branchId, 64));
         if (isWorkContextResponse(context)) return context;
         const order = await env.DB.prepare(
-          "SELECT id,order_number,status,branch_id,total FROM omni_purchase_orders WHERE id=?1 AND company_id=?2 AND branch_id=?3 LIMIT 1"
+          "SELECT id,order_number,status,branch_id,total,submitted_by,approved_by FROM omni_purchase_orders WHERE id=?1 AND company_id=?2 AND branch_id=?3 LIMIT 1"
         ).bind(orderId, staff.company_id, context.branchId).first<{
-          id: string; order_number: string; status: string; branch_id: string; total: number
+          id: string; order_number: string; status: string; branch_id: string; total: number;
+          submitted_by: string | null; approved_by: string | null
         }>();
         if (!order) return json({ error: "purchase_order_not_found" }, 404);
 
@@ -1599,10 +1601,26 @@ export default {
               "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'SUBMIT_PURCHASE_ORDER','PURCHASE_ORDER',?3,'Purchase order submitted for fulfilment',?4,?5,?6,?7)"
             ).bind(uuid(), staff.id, orderId, JSON.stringify({ status: order.status }), JSON.stringify({ status: "SUBMITTED" }), rid, staff.company_id)
           ]);
-          return json({ data: { id: orderId, status: "SUBMITTED" }, requestId: rid });
+          return json({ data: { id: orderId, status: "SUBMITTED", approval: "PENDING" }, requestId: rid });
+        }
+
+        if (action === "approve") {
+          if (order.status !== "SUBMITTED" || order.approved_by) return json({ error: "purchase_order_not_approvable" }, 409);
+          if (order.submitted_by === staff.id) return json({ error: "maker_checker_required" }, 403);
+          const approvedAt = new Date().toISOString();
+          await env.DB.batch([
+            env.DB.prepare(
+              "UPDATE omni_purchase_orders SET approved_by=?1,approved_at=?2,updated_at=CURRENT_TIMESTAMP WHERE id=?3 AND company_id=?4 AND branch_id=?5 AND status='SUBMITTED' AND approved_by IS NULL"
+            ).bind(staff.id, approvedAt, orderId, staff.company_id, context.branchId),
+            env.DB.prepare(
+              "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'APPROVE_PURCHASE_ORDER','PURCHASE_ORDER',?3,'Purchase order approved by a separate authorized approver',?4,?5,?6,?7)"
+            ).bind(uuid(), staff.id, orderId, JSON.stringify({ status: order.status, approvedBy: order.approved_by }), JSON.stringify({ status: order.status, approvedBy: staff.id, approvedAt }), rid, staff.company_id)
+          ]);
+          return json({ data: { id: orderId, status: "SUBMITTED", approval: "APPROVED", approvedBy: staff.id, approvedAt }, requestId: rid });
         }
 
         if (order.status !== "SUBMITTED" && order.status !== "PARTIALLY_RECEIVED") return json({ error: "purchase_order_not_receivable" }, 409);
+        if (!order.approved_by) return json({ error: "purchase_order_approval_required" }, 403);
         if (!Array.isArray(body.receipts) || body.receipts.length < 1 || body.receipts.length > 100) {
           return json({ error: "purchase_receipt_lines_required" }, 400);
         }
