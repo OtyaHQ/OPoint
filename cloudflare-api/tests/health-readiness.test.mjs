@@ -76,6 +76,7 @@ const requiredObjects = [
   "omni_staff_membership_branch_guard_insert",
   "omni_staff_membership_branch_guard_update",
   "omni_staff_work_assignment_update_guard",
+  "omni_staff_work_assignment_reactivate_guard",
   "idx_omni_customers_company_name",
   "idx_omni_customers_company_phone",
   "idx_omni_suppliers_company_name",

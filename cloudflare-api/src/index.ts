@@ -244,6 +244,7 @@ export default {
           "omni_staff_membership_branch_guard_insert",
           "omni_staff_membership_branch_guard_update",
           "omni_staff_work_assignment_update_guard",
+          "omni_staff_work_assignment_reactivate_guard",
           "idx_omni_customers_company_name",
           "idx_omni_customers_company_phone",
           "idx_omni_suppliers_company_name",
@@ -626,14 +627,24 @@ export default {
         ).bind(assignmentId, staff.company_id).first<{ id: string; staff_membership_id: string; branch_id: string; work_area: string; duty_role: string; status: string; expires_at: string | null }>();
         if (!current) return json({ error: "work_assignment_not_found" }, 404);
         if (current.status === "REVOKED") return json({ error: "revoked_work_assignment_is_final" }, 409);
-        await env.DB.batch([
-          env.DB.prepare(
-            "UPDATE omni_staff_work_assignments SET status=?1 WHERE id=?2 AND company_id=?3"
-          ).bind(status, assignmentId, staff.company_id),
-          env.DB.prepare(
-            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'UPDATE_WORK_ASSIGNMENT','STAFF_WORK_ASSIGNMENT',?3,'Owner changed work assignment status',?4,?5,?6,?7)"
-          ).bind(uuid(), staff.id, assignmentId, JSON.stringify({ status: current.status }), JSON.stringify({ status }), rid, staff.company_id),
-        ]);
+        try {
+          await env.DB.batch([
+            env.DB.prepare(
+              "UPDATE omni_staff_work_assignments SET status=?1 WHERE id=?2 AND company_id=?3"
+            ).bind(status, assignmentId, staff.company_id),
+            env.DB.prepare(
+              "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'UPDATE_WORK_ASSIGNMENT','STAFF_WORK_ASSIGNMENT',?3,'Owner changed work assignment status',?4,?5,?6,?7)"
+            ).bind(uuid(), staff.id, assignmentId, JSON.stringify({ status: current.status }), JSON.stringify({ status }), rid, staff.company_id),
+          ]);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+            return json({ error: "active_work_assignment_already_exists" }, 409);
+          }
+          if (error instanceof Error && /STAFF_MEMBERSHIP_OR_BRANCH_SCOPE_INVALID|BRANCH_NOT_AVAILABLE/.test(error.message)) {
+            return json({ error: "staff_or_branch_not_available_for_assignment" }, 409);
+          }
+          throw error;
+        }
         return json({ data: { id: assignmentId, status }, requestId: rid });
       }
 
