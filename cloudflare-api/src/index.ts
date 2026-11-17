@@ -58,6 +58,82 @@ const isSovereign = (staff: Staff) => staff.role === "SOVEREIGN";
 const assignableRoles: Role[] = ["ATTENDANT", "MANAGER", "MANAGING_DIRECTOR", "CHAIRMAN"];
 const staffStatuses = ["PENDING", "ACTIVE", "SUSPENDED", "REVOKED"] as const;
 
+type WorkArea =
+  | "RETAIL" | "INVENTORY" | "MOBILE_MONEY" | "BILLS_AIRTIME"
+  | "PURCHASING" | "FINANCE" | "WORKFORCE" | "COMPLIANCE" | "REPORTS";
+type WorkAction = "READ" | "OPERATE" | "SUPERVISE" | "APPROVE";
+type WorkContext = { branchId: string; workArea: WorkArea | "OWNER"; dutyRole: string };
+
+function permitsWorkAction(context: WorkContext, action: WorkAction): boolean {
+  if (context.workArea === "OWNER") return true;
+  if (action === "READ") return true;
+  if (action === "OPERATE") return ["OPERATOR", "SUPERVISOR", "APPROVER"].includes(context.dutyRole);
+  if (action === "SUPERVISE") return ["SUPERVISOR", "APPROVER"].includes(context.dutyRole);
+  return context.dutyRole === "APPROVER";
+}
+
+async function requireWorkContext(
+  request: Request,
+  env: Env,
+  staff: Staff,
+  areas: WorkArea[],
+  action: WorkAction,
+  explicitBranchId?: string | null,
+): Promise<WorkContext | Response> {
+  const url = new URL(request.url);
+  const requestedBranchId = safeText(
+    explicitBranchId || request.headers.get("x-otya-branch-id") || url.searchParams.get("branchId"),
+    64,
+  );
+
+  if (isSovereign(staff)) {
+    const branch = requestedBranchId
+      ? await env.DB.prepare(
+          "SELECT id FROM omni_branches WHERE id=?1 AND company_id=?2 AND status='ACTIVE' LIMIT 1"
+        ).bind(requestedBranchId, staff.company_id).first<{ id: string }>()
+      : await env.DB.prepare(
+          "SELECT id FROM omni_branches WHERE company_id=?1 AND status='ACTIVE' AND is_primary=1 LIMIT 1"
+        ).bind(staff.company_id).first<{ id: string }>();
+    if (!branch) return json({ error: "active_branch_required" }, 409);
+    return { branchId: branch.id, workArea: "OWNER", dutyRole: "APPROVER" };
+  }
+
+  if (areas.length === 0) return json({ error: "work_area_assignment_required" }, 403);
+  const placeholders = areas.map((_, index) => "?" + (index + 3)).join(",");
+  const rows = await env.DB.prepare(
+    "SELECT a.branch_id,a.work_area,a.duty_role FROM omni_staff_work_assignments a JOIN omni_branches b ON b.id=a.branch_id AND b.company_id=a.company_id WHERE a.company_id=?1 AND a.staff_membership_id=?2 AND a.status='ACTIVE' AND (a.expires_at IS NULL OR datetime(a.expires_at)>CURRENT_TIMESTAMP) AND b.status='ACTIVE' AND a.work_area IN (" + placeholders + ") ORDER BY a.branch_id,a.work_area"
+  ).bind(staff.company_id, staff.id, ...areas).all<{ branch_id: string; work_area: WorkArea; duty_role: string }>();
+
+  const scoped = rows.results.filter(row => !staff.branch_id || row.branch_id === staff.branch_id);
+  const candidates = requestedBranchId
+    ? scoped.filter(row => row.branch_id === requestedBranchId)
+    : scoped;
+  if (candidates.length === 0) {
+    return json({
+      error: requestedBranchId ? "branch_work_assignment_required" : "work_area_assignment_required",
+      requiredWorkAreas: areas,
+    }, 403);
+  }
+
+  const branches = [...new Set(candidates.map(row => row.branch_id))];
+  if (!requestedBranchId && branches.length > 1) {
+    return json({ error: "branch_selection_required", branchIds: branches }, 409);
+  }
+
+  const context = candidates.find(row => row.work_area === areas[0]) ?? candidates[0];
+  const result: WorkContext = {
+    branchId: context.branch_id,
+    workArea: context.work_area,
+    dutyRole: context.duty_role,
+  };
+  if (!permitsWorkAction(result, action)) {
+    return json({ error: "work_area_duty_not_permitted", workArea: result.workArea, dutyRole: result.dutyRole }, 403);
+  }
+  return result;
+}
+
+const isWorkContextResponse = (value: WorkContext | Response): value is Response => value instanceof Response;
+
 async function verifyOtyaIdentity(accessToken: string, env: Env): Promise<{ user_id: string; email: string | null } | null> {
   if (!env.AUTH || !accessToken.startsWith("Bearer ") || accessToken.length > 8192) return null;
   try {
