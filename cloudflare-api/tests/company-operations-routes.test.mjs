@@ -217,8 +217,10 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
   assert.equal(updated.quantity_on_hand, 9);
 
   const mobileAgency = await call("/api/agency-overview", { token: "mobile-token" });
-  assert.equal(mobileAgency.status, 200, await mobileAgency.text());
-  assert.equal((await mobileAgency.json()).branchId, "branch-a");
+  const mobileAgencyBody = await mobileAgency.json();
+  assert.equal(mobileAgency.status, 200, JSON.stringify(mobileAgencyBody));
+  assert.equal(mobileAgencyBody.branchId, "branch-a");
+  assert.equal(mobileAgencyBody.workArea, "MOBILE_MONEY");
 });
 
 test("purchase orders require separate approval before branch stock is received", async () => {
