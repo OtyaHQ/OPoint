@@ -100,7 +100,7 @@ async function main() {
   const runnerTemp = process.env.RUNNER_TEMP?.trim() || "/tmp";
   const result = await exportOtyaPointD1({
     accountId: process.env.CLOUDFLARE_ACCOUNT_ID,
-    apiToken: process.env.CLOUDFLARE_API_TOKEN,
+    apiToken: process.env.OTYAPOINT_BACKUP_CLOUDFLARE_API_TOKEN,
     backupDir: runnerTemp,
     runId: process.env.GITHUB_RUN_ID,
     attempt: process.env.GITHUB_RUN_ATTEMPT,
