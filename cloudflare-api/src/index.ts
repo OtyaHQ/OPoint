@@ -1316,6 +1316,158 @@ export default {
         });
       }
 
+      if (request.method === "GET" && url.pathname === "/api/branch-agency/accounts") {
+        const context = await requireWorkContext(request, env, staff, ["MOBILE_MONEY"], "READ");
+        if (isWorkContextResponse(context)) return context;
+        const result = await env.DB.prepare(
+          "SELECT id,branch_id,account_type,provider,account_code,display_name,currency,current_balance,status,created_at,updated_at FROM omni_branch_agency_accounts WHERE company_id=?1 AND branch_id=?2 ORDER BY account_type,provider"
+        ).bind(staff.company_id, context.branchId).all();
+        return json({
+          data: result.results,
+          branchId: context.branchId,
+          balancesAreLocalRecords: true,
+          requestId: rid
+        });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/branch-agency/accounts") {
+        if (!isSovereign(staff)) return json({ error: "owner_only_branch_agency_account_setup" }, 403);
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const branchId = safeText(body.branchId, 64);
+        const accountType = safeText(body.accountType, 20).toUpperCase();
+        const providerValue = safeText(body.provider, 24).toUpperCase();
+        const provider = accountType === "CASH_DRAWER" ? null : providerValue;
+        const openingBalance = int(body.openingBalance, 0);
+        const displayName = safeText(body.displayName, 100);
+        const idempotencyKey = safeText(request.headers.get("idempotency-key"), 128);
+        if (!branchId || !["CASH_DRAWER", "PROVIDER_FLOAT"].includes(accountType) ||
+            (accountType === "PROVIDER_FLOAT" && !["MTN_MOMO", "AIRTEL_MONEY"].includes(providerValue)) ||
+            openingBalance === null || !displayName ||
+            !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+          return json({ error: "valid_branch_account_type_provider_balance_name_and_idempotency_key_required" }, 400);
+        }
+        const branch = await env.DB.prepare(
+          "SELECT id FROM omni_branches WHERE id=?1 AND company_id=?2 AND status='ACTIVE' LIMIT 1"
+        ).bind(branchId, staff.company_id).first<{ id: string }>();
+        if (!branch) return json({ error: "branch_not_available" }, 404);
+        const accountCode = accountType === "CASH_DRAWER"
+          ? "BRANCH_AGENCY_CASH"
+          : provider === "MTN_MOMO" ? "BRANCH_FLOAT_MTN" : "BRANCH_FLOAT_AIRTEL";
+        const existing = await env.DB.prepare(
+          "SELECT id,current_balance,status FROM omni_branch_agency_accounts WHERE company_id=?1 AND branch_id=?2 AND account_type=?3 AND provider IS ?4 AND status='ACTIVE' LIMIT 1"
+        ).bind(staff.company_id, branchId, accountType, provider).first<{ id: string; current_balance: number; status: string }>();
+        if (existing) return json({ error: "active_branch_agency_account_exists", accountId: existing.id }, 409);
+
+        const id = uuid();
+        const statements: D1Statement[] = [
+          env.DB.prepare(
+            "INSERT INTO omni_branch_agency_accounts (id,company_id,branch_id,account_type,provider,account_code,display_name,current_balance,idempotency_key,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,0,?8,?9)"
+          ).bind(id, staff.company_id, branchId, accountType, provider, accountCode, displayName, idempotencyKey, staff.id)
+        ];
+        if (openingBalance > 0) {
+          statements.push(env.DB.prepare(
+            "INSERT INTO omni_branch_agency_account_movements (id,company_id,branch_id,account_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason) VALUES (?1,?2,?3,?4,'OPENING_BALANCE','IN',?5,?5,?6,?7,?8)"
+          ).bind(uuid(), staff.company_id, branchId, id, openingBalance, idempotencyKey + ":opening", staff.id, "Owner-recorded opening balance"));
+        }
+        statements.push(env.DB.prepare(
+          "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'CREATE_BRANCH_AGENCY_ACCOUNT','BRANCH_AGENCY_ACCOUNT',?3,'Branch agency account created; opening amount is owner-recorded and not provider-confirmed',?4,?5,?6)"
+        ).bind(uuid(), staff.id, id, JSON.stringify({ branchId, accountType, provider, openingBalance, currency: "UGX" }), rid, staff.company_id));
+        try {
+          await env.DB.batch(statements);
+        } catch (error) {
+          if (error instanceof Error && (error.message.includes("UNIQUE constraint failed") || error.message.includes("BRANCH_AGENCY"))) {
+            return json({ error: "branch_agency_account_conflict" }, 409);
+          }
+          throw error;
+        }
+        const account = await env.DB.prepare(
+          "SELECT id,branch_id,account_type,provider,account_code,display_name,currency,current_balance,status,created_at,updated_at FROM omni_branch_agency_accounts WHERE id=?1 AND company_id=?2"
+        ).bind(id, staff.company_id).first();
+        return json({ data: account, balancesAreLocalRecords: true, requestId: rid }, 201);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/branch-agency/operations") {
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const context = await requireWorkContext(request, env, staff, ["MOBILE_MONEY"], "OPERATE", safeText(body.branchId, 64));
+        if (isWorkContextResponse(context)) return context;
+        const transactionType = safeText(body.transactionType, 16).toUpperCase();
+        const provider = safeText(body.provider, 24).toUpperCase();
+        const providerReference = safeText(body.providerReference, 120);
+        const customerLast4 = safeText(body.customerReferenceLast4, 4) || null;
+        const amount = int(body.amount, 1);
+        const idempotencyKey = safeText(request.headers.get("idempotency-key"), 128);
+        if (!["CASH_IN", "CASH_OUT"].includes(transactionType) ||
+            !["MTN_MOMO", "AIRTEL_MONEY"].includes(provider) ||
+            providerReference.length < 3 || amount === null ||
+            (customerLast4 && !/^\\d{4}$/.test(customerLast4)) ||
+            !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+          return json({ error: "valid_transaction_provider_reference_amount_and_idempotency_key_required" }, 400);
+        }
+
+        const fingerprint = await sha256Hex(JSON.stringify({
+          version: 1, branchId: context.branchId, transactionType, provider,
+          providerReference, customerLast4, amount
+        }));
+        const duplicate = await env.DB.prepare(
+          "SELECT id,reference,transaction_type,provider,provider_reference,amount,recording_status,request_fingerprint FROM omni_branch_agency_operations WHERE company_id=?1 AND branch_id=?2 AND idempotency_key=?3 LIMIT 1"
+        ).bind(staff.company_id, context.branchId, idempotencyKey).first<{
+          id: string; reference: string; transaction_type: string; provider: string; provider_reference: string;
+          amount: number; recording_status: string; request_fingerprint: string
+        }>();
+        if (duplicate) {
+          if (duplicate.request_fingerprint !== fingerprint) return json({ error: "agency_idempotency_payload_conflict" }, 409);
+          return json({ data: duplicate, replayed: true, providerCall: "NOT_EXECUTED", requestId: rid });
+        }
+
+        const [cash, float] = await Promise.all([
+          env.DB.prepare(
+            "SELECT id,current_balance FROM omni_branch_agency_accounts WHERE company_id=?1 AND branch_id=?2 AND account_type='CASH_DRAWER' AND provider IS NULL AND status='ACTIVE' LIMIT 1"
+          ).bind(staff.company_id, context.branchId).first<{ id: string; current_balance: number }>(),
+          env.DB.prepare(
+            "SELECT id,current_balance FROM omni_branch_agency_accounts WHERE company_id=?1 AND branch_id=?2 AND account_type='PROVIDER_FLOAT' AND provider=?3 AND status='ACTIVE' LIMIT 1"
+          ).bind(staff.company_id, context.branchId, provider).first<{ id: string; current_balance: number }>()
+        ]);
+        if (!cash || !float) return json({ error: "branch_agency_accounts_not_configured" }, 409);
+        const cashDelta = transactionType === "CASH_IN" ? amount : -amount;
+        const floatDelta = -cashDelta;
+        const cashAfter = Number(cash.current_balance) + cashDelta;
+        const floatAfter = Number(float.current_balance) + floatDelta;
+        if (!Number.isSafeInteger(cashAfter) || !Number.isSafeInteger(floatAfter) || cashAfter < 0 || floatAfter < 0) {
+          return json({ error: "insufficient_branch_cash_or_provider_float" }, 409);
+        }
+        const operationId = uuid();
+        const reference = "AG-" + new Date().toISOString().slice(0,10).replace(/-/g,"") + "-" + operationId.slice(0,8).toUpperCase();
+        const statements: D1Statement[] = [
+          env.DB.prepare(
+            "INSERT INTO omni_branch_agency_operations (id,company_id,branch_id,reference,transaction_type,provider,provider_reference,customer_reference_last4,amount,cash_account_id,float_account_id,request_fingerprint,idempotency_key,actor_id) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)"
+          ).bind(operationId, staff.company_id, context.branchId, reference, transactionType, provider, providerReference, customerLast4, amount, cash.id, float.id, fingerprint, idempotencyKey, staff.id),
+          env.DB.prepare(
+            "INSERT INTO omni_branch_agency_account_movements (id,company_id,branch_id,account_id,operation_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)"
+          ).bind(uuid(), staff.company_id, context.branchId, cash.id, operationId, transactionType, transactionType === "CASH_IN" ? "IN" : "OUT", amount, cashAfter, idempotencyKey + ":cash", staff.id, "Operator-recorded " + transactionType.replace("_"," ") + " cash movement"),
+          env.DB.prepare(
+            "INSERT INTO omni_branch_agency_account_movements (id,company_id,branch_id,account_id,operation_id,movement_type,direction,amount,balance_after,idempotency_key,actor_id,reason) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)"
+          ).bind(uuid(), staff.company_id, context.branchId, float.id, operationId, transactionType, transactionType === "CASH_IN" ? "OUT" : "IN", amount, floatAfter, idempotencyKey + ":float", staff.id, "Operator-recorded " + transactionType.replace("_"," ") + " provider float movement"),
+          env.DB.prepare(
+            "INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,after_state,request_id,company_id) VALUES (?1,?2,'RECORD_BRANCH_AGENCY_OPERATION','BRANCH_AGENCY_OPERATION',?3,'Operator-recorded only; provider call and provider confirmation were not performed',?4,?5,?6)"
+          ).bind(uuid(), staff.id, operationId, JSON.stringify({ branchId: context.branchId, transactionType, provider, providerReference, amount, recordingStatus: "OPERATOR_RECORDED_UNVERIFIED" }), rid, staff.company_id)
+        ];
+        try {
+          await env.DB.batch(statements);
+        } catch (error) {
+          if (error instanceof Error && (error.message.includes("UNIQUE constraint failed") || error.message.includes("BRANCH_AGENCY") || error.message.includes("ACCOUNT_NOT_AVAILABLE"))) {
+            return json({ error: "branch_agency_operation_conflict_retry" }, 409);
+          }
+          throw error;
+        }
+        return json({
+          data: { id: operationId, reference, branchId: context.branchId, transactionType, provider, providerReference, amount, currency: "UGX", recordingStatus: "OPERATOR_RECORDED_UNVERIFIED" },
+          providerCall: "NOT_EXECUTED",
+          requestId: rid
+        }, 201);
+      }
+
       if (request.method === "GET" && url.pathname === "/api/agency-overview") {
         const context = await requireWorkContext(request, env, staff, ["MOBILE_MONEY"], "READ");
         if (isWorkContextResponse(context)) return context;
