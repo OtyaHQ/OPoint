@@ -568,6 +568,9 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/me") {
+        const assignments = await env.DB.prepare(
+          "SELECT a.id,a.branch_id,a.work_area,a.duty_role,a.status,a.expires_at,b.branch_code,b.name AS branch_name FROM omni_staff_work_assignments a JOIN omni_branches b ON b.id=a.branch_id AND b.company_id=a.company_id WHERE a.company_id=?1 AND a.staff_membership_id=?2 AND a.status='ACTIVE' AND (a.expires_at IS NULL OR datetime(a.expires_at)>CURRENT_TIMESTAMP) ORDER BY b.name,a.work_area"
+        ).bind(staff.company_id, staff.id).all();
         return json({
           data: {
             id: staff.id,
@@ -578,7 +581,8 @@ export default {
             status: staff.status,
             displayName: staff.display_name || staff.verified_email || staff.email || staff.identity_subject,
             email: staff.verified_email || staff.email,
-            agentId: staff.agent_id
+            agentId: staff.agent_id,
+            workAssignments: assignments.results
           },
           requestId: rid
         });
@@ -951,23 +955,122 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/products") {
+        const context = await requireWorkContext(request, env, staff, ["RETAIL", "INVENTORY"], "READ");
+        if (isWorkContextResponse(context)) return context;
         const result = await env.DB.prepare(
-          "SELECT id, sku, name, description, category, cost_price, selling_price, quantity_on_hand, reorder_level, created_at, updated_at FROM omni_products WHERE is_active = 1 AND company_id = ?1 ORDER BY name LIMIT 500"
-        ).bind(staff.company_id).all();
-        return json({ data: result.results, count: result.results.length, requestId: rid });
+          "SELECT p.id,p.sku,p.name,p.description,p.category,p.cost_price,p.selling_price,COALESCE(bs.quantity_on_hand,0) AS quantity_on_hand,COALESCE(bs.reorder_level,p.reorder_level) AS reorder_level,p.created_at,p.updated_at FROM omni_products p LEFT JOIN omni_branch_stock bs ON bs.product_id=p.id AND bs.company_id=p.company_id AND bs.branch_id=?1 WHERE p.is_active=1 AND p.company_id=?2 ORDER BY p.name LIMIT 500"
+        ).bind(context.branchId, staff.company_id).all();
+        return json({ data: result.results, count: result.results.length, branchId: context.branchId, requestId: rid });
+      }
+
+      if (request.method === "GET" && url.pathname === "/api/branch-stock") {
+        const context = await requireWorkContext(request, env, staff, ["RETAIL", "INVENTORY"], "READ");
+        if (isWorkContextResponse(context)) return context;
+        const result = await env.DB.prepare(
+          "SELECT bs.product_id,bs.quantity_on_hand,bs.reorder_level,bs.updated_at,p.sku,p.name,p.category,p.cost_price,p.selling_price FROM omni_branch_stock bs JOIN omni_products p ON p.id=bs.product_id AND p.company_id=bs.company_id WHERE bs.company_id=?1 AND bs.branch_id=?2 AND p.is_active=1 ORDER BY p.name LIMIT 500"
+        ).bind(staff.company_id, context.branchId).all();
+        return json({ data: result.results, branchId: context.branchId, requestId: rid });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/branch-stock/opening") {
+        if (!isSovereign(staff)) return json({ error: "owner_approval_required" }, 403);
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const branchId = safeText(body.branchId, 64);
+        const productId = safeText(body.productId, 64);
+        const quantity = int(body.quantity, 1);
+        const reason = safeText(body.reason, 500);
+        const idempotencyKey = safeText(body.idempotencyKey, 128);
+        if (!branchId || !productId || quantity === null || !reason ||
+            !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+          return json({ error: "valid_branch_product_quantity_reason_and_idempotency_key_required" }, 400);
+        }
+        const [branchRow, product, existing] = await Promise.all([
+          env.DB.prepare("SELECT id FROM omni_branches WHERE id=?1 AND company_id=?2 AND status='ACTIVE' LIMIT 1").bind(branchId, staff.company_id).first<{ id: string }>(),
+          env.DB.prepare("SELECT id,quantity_on_hand,is_active FROM omni_products WHERE id=?1 AND company_id=?2 LIMIT 1").bind(productId, staff.company_id).first<{ id: string; quantity_on_hand: number; is_active: number }>(),
+          env.DB.prepare("SELECT id FROM omni_branch_stock WHERE company_id=?1 AND branch_id=?2 AND product_id=?3 LIMIT 1").bind(staff.company_id, branchId, productId).first<{ id: string }>()
+        ]);
+        if (!branchRow) return json({ error: "branch_not_available" }, 404);
+        if (!product || product.is_active !== 1) return json({ error: "product_not_available" }, 404);
+        if (existing) return json({ error: "branch_opening_stock_already_recorded" }, 409);
+        const movementId = uuid();
+        try {
+          await env.DB.batch([
+            env.DB.prepare("INSERT INTO omni_branch_stock_movements (id,company_id,branch_id,product_id,movement_type,quantity_delta,quantity_after,idempotency_key,actor_id,reason) VALUES (?1,?2,?3,?4,'OPENING',?5,?5,?6,?7,?8)")
+              .bind(movementId, staff.company_id, branchId, productId, quantity, idempotencyKey, staff.id, reason),
+            env.DB.prepare("UPDATE omni_products SET quantity_on_hand=quantity_on_hand+?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND company_id=?3")
+              .bind(quantity, productId, staff.company_id),
+            env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'OPEN_BRANCH_STOCK','BRANCH_STOCK',?3,?4,?5,?6,?7,?8)")
+              .bind(uuid(), staff.id, productId, reason, JSON.stringify({ branchId, quantityOnHand: 0 }), JSON.stringify({ branchId, quantityOnHand: quantity }), rid, staff.company_id)
+          ]);
+        } catch (error) {
+          if (error instanceof Error && (error.message.includes("UNIQUE constraint failed") || error.message.includes("BRANCH_STOCK"))) {
+            return json({ error: "branch_stock_opening_conflict" }, 409);
+          }
+          throw error;
+        }
+        return json({ data: { movementId, branchId, productId, quantityOnHand: quantity }, requestId: rid }, 201);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/branch-stock-adjustments") {
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const context = await requireWorkContext(request, env, staff, ["INVENTORY"], "SUPERVISE", safeText(body.branchId, 64));
+        if (isWorkContextResponse(context)) return context;
+        const productId = safeText(body.productId, 64);
+        const delta = Number.isSafeInteger(body.quantityDelta) ? Number(body.quantityDelta) : null;
+        const reason = safeText(body.reason, 500);
+        const idempotencyKey = safeText(body.idempotencyKey, 128);
+        if (!productId || delta === null || delta === 0 || !reason ||
+            !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+          return json({ error: "valid_product_quantity_reason_and_idempotency_key_required" }, 400);
+        }
+        const [stock, product, duplicate] = await Promise.all([
+          env.DB.prepare("SELECT quantity_on_hand FROM omni_branch_stock WHERE company_id=?1 AND branch_id=?2 AND product_id=?3 LIMIT 1").bind(staff.company_id, context.branchId, productId).first<{ quantity_on_hand: number }>(),
+          env.DB.prepare("SELECT id,quantity_on_hand,is_active FROM omni_products WHERE id=?1 AND company_id=?2 LIMIT 1").bind(productId, staff.company_id).first<{ id: string; quantity_on_hand: number; is_active: number }>(),
+          env.DB.prepare("SELECT id FROM omni_branch_stock_movements WHERE company_id=?1 AND idempotency_key=?2 LIMIT 1").bind(staff.company_id, idempotencyKey).first<{ id: string }>()
+        ]);
+        if (!stock) return json({ error: "branch_stock_not_initialized" }, 409);
+        if (!product || product.is_active !== 1) return json({ error: "product_not_available" }, 404);
+        if (duplicate) return json({ error: "branch_stock_idempotency_conflict" }, 409);
+        const nextQuantity = Number(stock.quantity_on_hand) + delta;
+        const nextCompanyQuantity = Number(product.quantity_on_hand) + delta;
+        if (!Number.isSafeInteger(nextQuantity) || nextQuantity < 0 ||
+            !Number.isSafeInteger(nextCompanyQuantity) || nextCompanyQuantity < 0) {
+          return json({ error: "insufficient_stock" }, 409);
+        }
+        const movementId = uuid();
+        try {
+          await env.DB.batch([
+            env.DB.prepare("INSERT INTO omni_branch_stock_movements (id,company_id,branch_id,product_id,movement_type,quantity_delta,quantity_after,idempotency_key,actor_id,reason) VALUES (?1,?2,?3,?4,'ADJUSTMENT',?5,?6,?7,?8,?9)")
+              .bind(movementId, staff.company_id, context.branchId, productId, delta, nextQuantity, idempotencyKey, staff.id, reason),
+            env.DB.prepare("UPDATE omni_products SET quantity_on_hand=quantity_on_hand+?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND company_id=?3 AND quantity_on_hand+?1>=0")
+              .bind(delta, productId, staff.company_id),
+            env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'ADJUST_BRANCH_STOCK','BRANCH_STOCK',?3,?4,?5,?6,?7,?8)")
+              .bind(uuid(), staff.id, productId, reason, JSON.stringify({ branchId: context.branchId, quantityOnHand: stock.quantity_on_hand }), JSON.stringify({ branchId: context.branchId, quantityOnHand: nextQuantity }), rid, staff.company_id)
+          ]);
+        } catch (error) {
+          if (error instanceof Error && (error.message.includes("BRANCH_STOCK") || error.message.includes("INSUFFICIENT_STOCK") || error.message.includes("UNIQUE constraint failed"))) {
+            return json({ error: "branch_stock_conflict_retry" }, 409);
+          }
+          throw error;
+        }
+        return json({ data: { movementId, branchId: context.branchId, productId, quantityOnHand: nextQuantity }, requestId: rid });
       }
 
       if (request.method === "GET" && url.pathname === "/api/summary") {
-        if (!canManage(staff)) return json({ error: "forbidden" }, 403);
+        const context = await requireWorkContext(request, env, staff, ["FINANCE", "REPORTS"], "READ");
+        if (isWorkContextResponse(context)) return context;
         const [products, sales, agency, retailLedger, agencyLedger] = await Promise.all([
-          env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(CASE WHEN quantity_on_hand <= reorder_level THEN 1 ELSE 0 END),0) AS low_stock FROM omni_products WHERE is_active=1 AND company_id=?1").bind(staff.company_id).first<{ count: number; low_stock: number }>(),
-          env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(total),0) AS total FROM omni_retail_sales WHERE status='COMPLETED' AND company_id=?1").bind(staff.company_id).first<{ count: number; total: number }>(),
-          env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(CASE WHEN provider_status='SUCCEEDED' THEN amount ELSE 0 END),0) AS succeeded_amount FROM omni_agency_transactions WHERE company_id=?1").bind(staff.company_id).first<{ count: number; succeeded_amount: number }>(),
-          env.DB.prepare("SELECT COALESCE(SUM(debit),0) AS debit, COALESCE(SUM(credit),0) AS credit FROM omni_ledger_entries WHERE ledger_type='RETAIL' AND company_id=?1").bind(staff.company_id).first<{ debit: number; credit: number }>(),
-          env.DB.prepare("SELECT COALESCE(SUM(debit),0) AS debit, COALESCE(SUM(credit),0) AS credit FROM omni_ledger_entries WHERE ledger_type='FINTECH_AGENCY' AND company_id=?1").bind(staff.company_id).first<{ debit: number; credit: number }>()
+          env.DB.prepare("SELECT COUNT(*) AS count,COALESCE(SUM(CASE WHEN quantity_on_hand<=reorder_level THEN 1 ELSE 0 END),0) AS low_stock FROM omni_branch_stock WHERE company_id=?1 AND branch_id=?2").bind(staff.company_id, context.branchId).first<{ count: number; low_stock: number }>(),
+          env.DB.prepare("SELECT COUNT(*) AS count,COALESCE(SUM(total),0) AS total FROM omni_retail_sales WHERE status='COMPLETED' AND company_id=?1 AND branch_id=?2").bind(staff.company_id, context.branchId).first<{ count: number; total: number }>(),
+          env.DB.prepare("SELECT COUNT(*) AS count,COALESCE(SUM(CASE WHEN provider_status='SUCCEEDED' THEN amount ELSE 0 END),0) AS succeeded_amount FROM omni_agency_transactions WHERE company_id=?1 AND branch_id=?2").bind(staff.company_id, context.branchId).first<{ count: number; succeeded_amount: number }>(),
+          env.DB.prepare("SELECT COALESCE(SUM(debit),0) AS debit,COALESCE(SUM(credit),0) AS credit FROM omni_ledger_entries WHERE ledger_type='RETAIL' AND company_id=?1 AND branch_id=?2").bind(staff.company_id, context.branchId).first<{ debit: number; credit: number }>(),
+          env.DB.prepare("SELECT COALESCE(SUM(debit),0) AS debit,COALESCE(SUM(credit),0) AS credit FROM omni_ledger_entries WHERE ledger_type='FINTECH_AGENCY' AND company_id=?1 AND branch_id=?2").bind(staff.company_id, context.branchId).first<{ debit: number; credit: number }>()
         ]);
         return json({
           currency: "UGX",
+          branchId: context.branchId,
           inventory: { activeProducts: products?.count || 0, lowStock: products?.low_stock || 0 },
           retail: { completedSales: sales?.count || 0, completedSalesTotal: sales?.total || 0, ledgerBalanced: (retailLedger?.debit || 0) === (retailLedger?.credit || 0) },
           agency: { transactions: agency?.count || 0, providerConfirmedAmount: agency?.succeeded_amount || 0, ledgerBalanced: (agencyLedger?.debit || 0) === (agencyLedger?.credit || 0) },
@@ -977,7 +1080,8 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/products") {
-        if (!canManage(staff)) return json({ error: "forbidden" }, 403);
+        const context = await requireWorkContext(request, env, staff, ["INVENTORY"], "SUPERVISE");
+        if (isWorkContextResponse(context)) return context;
         const body = await parseBody(request); if (isBodyResponse(body)) return body;
         const sku = safeText(body.sku, 64).toUpperCase();
         const name = safeText(body.name, 180);
@@ -1003,7 +1107,15 @@ export default {
       }
 
       if (request.method === "POST" && url.pathname === "/api/stock-adjustments") {
-        if (!canManage(staff)) return json({ error: "forbidden" }, 403);
+        return json({
+          error: "branch_scoped_inventory_required",
+          replacementEndpoint: "/api/branch-stock-adjustments",
+          detail: "Company-wide stock adjustments are retired. Select a branch and use the branch stock ledger."
+        }, 410);
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/stock-adjustments-legacy-disabled") {
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
         const body = await parseBody(request); if (isBodyResponse(body)) return body;
         const productId = safeText(body.productId, 64);
         const delta = Number.isSafeInteger(body.quantityDelta) ? Number(body.quantityDelta) : null;
