@@ -1413,13 +1413,16 @@ export default {
         const transactionType = safeText(body.transactionType, 16).toUpperCase();
         const provider = safeText(body.provider, 24).toUpperCase();
         const providerReference = safeText(body.providerReference, 120);
-        const customerLast4 = safeText(body.customerReferenceLast4, 4) || null;
+        const rawCustomerLast4 = body.customerReferenceLast4;
+        const customerLast4 = typeof rawCustomerLast4 === "string" && rawCustomerLast4.trim()
+          ? rawCustomerLast4.trim()
+          : null;
         const amount = int(body.amount, 1);
         const idempotencyKey = safeText(request.headers.get("idempotency-key"), 128);
         if (!["CASH_IN", "CASH_OUT"].includes(transactionType) ||
             !["MTN_MOMO", "AIRTEL_MONEY"].includes(provider) ||
             providerReference.length < 3 || amount === null ||
-            (customerLast4 && !/^\d{4}$/.test(customerLast4)) ||
+            (customerLast4 !== null && !/^\\d{4}$/.test(customerLast4)) ||
             !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
           return json({ error: "valid_transaction_provider_reference_amount_and_idempotency_key_required" }, 400);
         }
