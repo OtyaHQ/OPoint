@@ -59,6 +59,7 @@ const env = {
       if (token === "Bearer owner-token") return Response.json({ ok: true, user_id: "identity-owner", email: "owner@example.invalid" });
       if (token === "Bearer worker-token") return Response.json({ ok: true, user_id: "identity-worker", email: "worker@example.invalid" });
       if (token === "Bearer mobile-token") return Response.json({ ok: true, user_id: "identity-mobile", email: "mobile@example.invalid" });
+      if (token === "Bearer approver-token") return Response.json({ ok: true, user_id: "identity-approver", email: "approver@example.invalid" });
       return Response.json({ ok: false }, { status: 401 });
     }
   }
@@ -215,6 +216,108 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
   const mobileAgency = await call("/api/agency-overview", { token: "mobile-token" });
   assert.equal(mobileAgency.status, 200, await mobileAgency.text());
   assert.equal((await mobileAgency.json()).branchId, "branch-a");
+});
+
+test("purchase orders require separate approval before branch stock is received", async () => {
+  const productResponse = await call("/api/products", {
+    method: "POST",
+    body: {
+      sku: "PURCHASE-TEST-01",
+      name: "Purchase receipt test product",
+      category: "Accessories",
+      costPrice: 250,
+      sellingPrice: 500,
+      reorderLevel: 3
+    }
+  });
+  const productBody = await productResponse.json();
+  assert.equal(productResponse.status, 201, JSON.stringify(productBody));
+  const productId = productBody.data.id;
+
+  const supplierResponse = await call("/api/suppliers", {
+    method: "POST",
+    body: {
+      businessName: "Synthetic Supplier Ltd",
+      contactName: "Test Contact",
+      phoneNumber: "+256700000001",
+      businessLocation: "Mbirizi"
+    }
+  });
+  const supplierBody = await supplierResponse.json();
+  assert.equal(supplierResponse.status, 201, JSON.stringify(supplierBody));
+
+  const approverId = "approver-a";
+  await run(
+    "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,display_name,email) VALUES (?,?,?,?,?,?,?,?)",
+    approverId, "identity-approver", "company-a", "branch-a", "ATTENDANT", "ACTIVE", "Synthetic Approver", "approver@example.invalid"
+  );
+  const assignmentResponse = await call("/api/staff/work-assignments", {
+    method: "POST",
+    body: { staffMembershipId: approverId, branchId: "branch-a", workArea: "PURCHASING", dutyRole: "APPROVER" }
+  });
+  const assignmentBody = await assignmentResponse.json();
+  assert.equal(assignmentResponse.status, 201, JSON.stringify(assignmentBody));
+
+  const poResponse = await call("/api/purchase-orders", {
+    method: "POST",
+    body: {
+      supplierId: supplierBody.data.id,
+      notes: "Synthetic purchase order for branch receipt test",
+      lines: [{ productId, quantity: 6, unitCost: 250 }]
+    }
+  });
+  const poBody = await poResponse.json();
+  assert.equal(poResponse.status, 201, JSON.stringify(poBody));
+  assert.equal(poBody.data.status, "DRAFT");
+
+  const submitResponse = await call("/api/purchase-orders/" + poBody.data.id + "/submit", {
+    method: "POST",
+    body: { branchId: "branch-a" }
+  });
+  const submitBody = await submitResponse.json();
+  assert.equal(submitResponse.status, 200, JSON.stringify(submitBody));
+  assert.equal(submitBody.data.approval, "PENDING");
+
+  const selfApproval = await call("/api/purchase-orders/" + poBody.data.id + "/approve", {
+    method: "POST",
+    body: { branchId: "branch-a" }
+  });
+  const selfApprovalBody = await selfApproval.json();
+  assert.equal(selfApproval.status, 403);
+  assert.equal(selfApprovalBody.error, "maker_checker_required");
+
+  const approvalResponse = await call("/api/purchase-orders/" + poBody.data.id + "/approve", {
+    token: "approver-token",
+    method: "POST",
+    body: { branchId: "branch-a" }
+  });
+  const approvalBody = await approvalResponse.json();
+  assert.equal(approvalResponse.status, 200, JSON.stringify(approvalBody));
+  assert.equal(approvalBody.data.approval, "APPROVED");
+  assert.equal(approvalBody.data.approvedBy, approverId);
+
+  const receiptResponse = await call("/api/purchase-orders/" + poBody.data.id + "/receive", {
+    method: "POST",
+    headers: undefined,
+    body: { branchId: "branch-a", receipts: [{ productId, quantity: 6 }] }
+  });
+  const receiptBody = await receiptResponse.json();
+  assert.equal(receiptResponse.status, 200, JSON.stringify(receiptBody));
+  assert.equal(receiptBody.data.status, "RECEIVED");
+  assert.equal(receiptBody.supplierPayment, "NOT_EXECUTED");
+
+  const stock = await first(
+    "SELECT quantity_on_hand FROM omni_branch_stock WHERE company_id='company-a' AND branch_id='branch-a' AND product_id=?",
+    productId
+  );
+  assert.equal(Number(stock.quantity_on_hand), 6);
+  const purchase = await first(
+    "SELECT status,submitted_by,approved_by FROM omni_purchase_orders WHERE id=?",
+    poBody.data.id
+  );
+  assert.equal(purchase.status, "RECEIVED");
+  assert.equal(purchase.submitted_by, "owner-a");
+  assert.equal(purchase.approved_by, approverId);
 });
 
 test("work assignment cannot cross company or branch membership boundaries", async () => {
