@@ -1910,7 +1910,11 @@ export default {
           return json({ error: "valid_compliance_document_metadata_required" }, 400);
         }
         const id = uuid();
-        const branchId = body.branchId === null ? null : context.branchId;
+        const companyWide = body.branchId === null;
+        if (companyWide && !isSovereign(staff)) {
+          return json({ error: "company_wide_compliance_record_owner_only" }, 403);
+        }
+        const branchId = companyWide ? null : context.branchId;
         await env.DB.batch([
           env.DB.prepare(
             "INSERT INTO omni_business_compliance_items (id,company_id,branch_id,document_type,issuing_authority,display_label,reference_suffix,issue_date,expiry_date,status,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,'PENDING_REVIEW',?10)"
