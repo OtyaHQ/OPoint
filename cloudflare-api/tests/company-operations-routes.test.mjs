@@ -190,7 +190,7 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
 
   const mobileProducts = await call("/api/products", { token: "mobile-token" });
   assert.equal(mobileProducts.status, 403);
-  assert.equal((await mobileProducts.json()).error, "branch_work_assignment_required");
+  assert.equal((await mobileProducts.json()).error, "work_area_assignment_required");
 
   const mobileRetailSale = await call("/api/sales", {
     token: "mobile-token",
@@ -452,7 +452,7 @@ test("ordinary staff can only see branches they belong to or have active work as
 
 test("branch and work assignment changes are audited", async () => {
   const count = await first("SELECT COUNT(*) AS count FROM omni_audit_events WHERE company_id='company-a' AND action IN ('CREATE_BRANCH','CREATE_WORK_ASSIGNMENT','UPDATE_WORK_ASSIGNMENT')");
-  assert.equal(Number(count.count), 8);
+  assert.equal(Number(count.count), 9);
 });
 
 test.after(async () => {
