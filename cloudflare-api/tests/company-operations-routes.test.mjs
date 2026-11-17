@@ -147,8 +147,9 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
       reorderLevel: 2
     }
   });
-  assert.equal(created.status, 201, await created.text());
-  const productId = (await created.json()).data.id;
+  const createdBody = await created.json();
+  assert.equal(created.status, 201, JSON.stringify(createdBody));
+  const productId = createdBody.data.id;
 
   const opening = await call("/api/branch-stock/opening", {
     method: "POST",
@@ -160,7 +161,8 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
       idempotencyKey: "branch-opening-0001"
     }
   });
-  assert.equal(opening.status, 201, await opening.text());
+  const openingBody = await opening.json();
+  assert.equal(opening.status, 201, JSON.stringify(openingBody));
 
   await run(
     "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,display_name,email) VALUES ('mobile-only','identity-mobile','company-a','branch-a','ATTENDANT','ACTIVE','Mobile Agent','mobile@example.invalid')"
@@ -174,11 +176,13 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
       dutyRole: "OPERATOR"
     }
   });
-  assert.equal(mobileAssignment.status, 201, await mobileAssignment.text());
+  const mobileAssignmentBody = await mobileAssignment.json();
+  assert.equal(mobileAssignment.status, 201, JSON.stringify(mobileAssignmentBody));
 
   const retailProducts = await call("/api/products", { token: "worker-token" });
-  assert.equal(retailProducts.status, 200, await retailProducts.text());
-  const visibleProduct = (await retailProducts.json()).data.find(row => row.id === productId);
+  const retailProductsBody = await retailProducts.json();
+  assert.equal(retailProducts.status, 200, JSON.stringify(retailProductsBody));
+  const visibleProduct = retailProductsBody.data.find(row => row.id === productId);
   assert.equal(visibleProduct.quantity_on_hand, 10);
 
   const mobileProducts = await call("/api/products", { token: "mobile-token" });
@@ -198,13 +202,14 @@ test("Retail and Mobile Money assignments separate stock, sales and agency views
     method: "POST",
     body: { branchId: "branch-a", paymentMethod: "CASH", items: [{ productId, quantity: 1 }] },
   });
-  assert.equal(retailSale.status, 201, await retailSale.text());
   const result = await retailSale.json();
+  assert.equal(retailSale.status, 201, JSON.stringify(result));
   assert.equal(result.data.branchId, "branch-a");
 
   const stock = await call("/api/branch-stock", { token: "worker-token" });
-  assert.equal(stock.status, 200, await stock.text());
-  const updated = (await stock.json()).data.find(row => row.product_id === productId);
+  const stockBody = await stock.json();
+  assert.equal(stock.status, 200, JSON.stringify(stockBody));
+  const updated = stockBody.data.find(row => row.product_id === productId);
   assert.equal(updated.quantity_on_hand, 9);
 
   const mobileAgency = await call("/api/agency-overview", { token: "mobile-token" });
