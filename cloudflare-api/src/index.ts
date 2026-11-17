@@ -1359,7 +1359,9 @@ export default {
           : ["MOBILE_MONEY", "BILLS_AIRTIME"];
         const context = await requireWorkContext(request, env, staff, requiredAreas, "READ");
         if (isWorkContextResponse(context)) return context;
-        const permittedTypes = context.workArea === "MOBILE_MONEY" ? mobileMoneyTypes : billsTypes;
+        const permittedTypes = context.workArea === "OWNER"
+          ? (type ? (mobileMoneyTypes.includes(type) ? mobileMoneyTypes : billsTypes) : mobileMoneyTypes)
+          : context.workArea === "MOBILE_MONEY" ? mobileMoneyTypes : billsTypes;
         if (type && !permittedTypes.includes(type)) return json({ error: "work_area_assignment_required" }, 403);
         const allowedStatuses = ["DRAFT", "PENDING", "SUCCEEDED", "FAILED", "UNKNOWN", "REVERSED"];
         if (status && !allowedStatuses.includes(status)) return json({ error: "invalid_agency_transaction_status" }, 400);
