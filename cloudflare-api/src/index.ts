@@ -52,7 +52,6 @@ const uuid = () => crypto.randomUUID();
 const safeText = (value: unknown, max = 180) => typeof value === "string" ? value.trim().slice(0, max) : "";
 const int = (value: unknown, min = 0) => Number.isSafeInteger(value) && Number(value) >= min ? Number(value) : null;
 const isRole = (value: unknown): value is Role => typeof value === "string" && roles.includes(value as Role);
-const canManage = (staff: Staff) => ["SOVEREIGN", "MANAGER", "MANAGING_DIRECTOR", "CHAIRMAN"].includes(staff.role);
 const isResponse = (value: Staff | Response): value is Response => value instanceof Response;
 const isSovereign = (staff: Staff) => staff.role === "SOVEREIGN";
 const assignableRoles: Role[] = ["ATTENDANT", "MANAGER", "MANAGING_DIRECTOR", "CHAIRMAN"];
