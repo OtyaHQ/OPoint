@@ -548,14 +548,6 @@ BEGIN
     SELECT 1 FROM omni_branches b WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id
   ) THEN RAISE(ABORT, 'LEDGER_BRANCH_COMPANY_MISMATCH') END;
 END;
-CREATE TRIGGER IF NOT EXISTS omni_agency_transactions_branch_guard
-BEFORE INSERT ON omni_agency_transactions
-WHEN NEW.branch_id IS NOT NULL
-BEGIN
-  SELECT CASE WHEN NOT EXISTS (
-    SELECT 1 FROM omni_branches b WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id
-  ) THEN RAISE(ABORT, 'AGENCY_TRANSACTION_BRANCH_COMPANY_MISMATCH') END;
-END;
 CREATE TRIGGER IF NOT EXISTS omni_reconciliation_branch_guard
 BEFORE INSERT ON omni_reconciliation_sessions
 WHEN NEW.branch_id IS NOT NULL
