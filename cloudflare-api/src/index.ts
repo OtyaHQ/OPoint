@@ -238,6 +238,8 @@ export default {
           "idx_omni_sales_company_branch_created",
           "idx_omni_ledger_company_branch_type_date",
           "idx_omni_reconciliation_company_branch_date",
+          "idx_omni_agency_company_branch_created",
+          "omni_agency_transactions_branch_guard",
           "idx_omni_active_staff_work_assignment",
           "idx_omni_staff_work_assignment_lookup",
           "omni_staff_work_assignment_guard",
