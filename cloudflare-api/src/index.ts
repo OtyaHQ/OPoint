@@ -1422,7 +1422,7 @@ export default {
         if (!["CASH_IN", "CASH_OUT"].includes(transactionType) ||
             !["MTN_MOMO", "AIRTEL_MONEY"].includes(provider) ||
             providerReference.length < 3 || amount === null ||
-            (customerLast4 !== null && !/^\\d{4}$/.test(customerLast4)) ||
+            (customerLast4 !== null && !/^\d{4}$/.test(customerLast4)) ||
             !/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
           return json({ error: "valid_transaction_provider_reference_amount_and_idempotency_key_required" }, 400);
         }
