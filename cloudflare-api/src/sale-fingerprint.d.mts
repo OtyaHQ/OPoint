@@ -4,5 +4,6 @@ export interface SaleFingerprintLine {
 }
 export function saleRequestFingerprint(
   paymentMethod: string,
-  lines: SaleFingerprintLine[]
+  lines: SaleFingerprintLine[],
+  branchId?: string | null
 ): Promise<string>;
