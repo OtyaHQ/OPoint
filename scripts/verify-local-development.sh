@@ -77,7 +77,7 @@ PY
 agency_status="$(curl --silent --show-error --output /tmp/otyapoint-local-agency.json --write-out '%{http_code}' \
   --connect-timeout 3 --max-time 10 \
   -X POST -H 'Authorization: Bearer otya-local-test-token' \
-  -H 'Content-Type: application/json' --data '{}' \
+  -H 'Content-Type: application/json' --data '{"transactionType":"AIRTIME"}' \
   "$BASE_URL/api/agency-transactions")"
 test "$agency_status" = "501" || {
   cat /tmp/otyapoint-local-agency.json
