@@ -43,7 +43,7 @@ function makeEnv({ staff = manager, totals = [3, 1, 1], providers = [], authResp
             if (this.sql.includes("FROM omni_branches")) return { id: "branch-a" };
             if (this.sql.includes("COUNT(*) AS total")) {
               const index = this.sql.includes("provider_status IN ('DRAFT','PENDING')") ? 1
-                : this.sql.includes("provider_status = 'UNKNOWN'") ? 2 : 0;
+                : this.sql.includes("provider_status='UNKNOWN'") || this.sql.includes("provider_status = 'UNKNOWN'") ? 2 : 0;
               return { total: totals[index] };
             }
             throw new Error("Unexpected first query: " + this.sql);
@@ -160,7 +160,8 @@ test("transaction creation remains disabled after exposing read-only readiness",
   });
   assert.equal(calls.writes, 0);
   assert.equal(calls.batches, 0);
-  assert.equal(calls.queries.filter(query => !query.sql.includes("omni_staff_memberships")).length, 0);
+  assert.equal(calls.queries.filter(query => query.sql.includes("FROM omni_agency_transactions")).length, 0);
+  assert.ok(calls.queries.some(query => query.sql.includes("FROM omni_branches")));
 });
 
 test.after(() => rmSync(tempDir, { recursive: true, force: true }));
