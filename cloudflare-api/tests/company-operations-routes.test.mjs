@@ -39,7 +39,7 @@ async function first(sql, ...values) {
 async function applyMigrations() {
   const migrations = readdirSync(new URL("../migrations/", import.meta.url))
     .filter(name => /^\d{4}_[a-z0-9_]+\.sql$/.test(name)).sort();
-  assert.equal(migrations.at(-1), "0010_company_operations_level_1_2.sql");
+  assert.equal(migrations.at(-1), "0011_branch_agency_accounts.sql");
   for (const name of migrations) {
     const sql = readFileSync(new URL(name, migrationsDir), "utf8")
       .replace(/^[ \t]*--[^\n]*(?:\n|$)/gm, "");
@@ -59,6 +59,7 @@ const env = {
       if (token === "Bearer owner-token") return Response.json({ ok: true, user_id: "identity-owner", email: "owner@example.invalid" });
       if (token === "Bearer worker-token") return Response.json({ ok: true, user_id: "identity-worker", email: "worker@example.invalid" });
       if (token === "Bearer mobile-token") return Response.json({ ok: true, user_id: "identity-mobile", email: "mobile@example.invalid" });
+      if (token === "Bearer branch-agent-token") return Response.json({ ok: true, user_id: "identity-branch-agent", email: "branch-agent@example.invalid" });
       if (token === "Bearer approver-token") return Response.json({ ok: true, user_id: "identity-approver", email: "approver@example.invalid" });
       return Response.json({ ok: false }, { status: 401 });
     }
@@ -319,6 +320,90 @@ test("purchase orders require separate approval before branch stock is received"
   assert.equal(purchase.status, "RECEIVED");
   assert.equal(purchase.submitted_by, "owner-a");
   assert.equal(purchase.approved_by, approverId);
+});
+
+test("Mobile Money operations post balanced branch cash and float movements without provider calls", async () => {
+  await run(
+    "INSERT INTO omni_staff_memberships (id,identity_subject,company_id,branch_id,role,status,display_name,email) VALUES (?,?,?,?,?,?,?,?)",
+    "branch-money-agent", "identity-branch-agent", "company-a", "branch-a", "ATTENDANT", "ACTIVE", "Branch Money Agent", "branch-agent@example.invalid"
+  );
+  const assignment = await call("/api/staff/work-assignments", {
+    method: "POST",
+    body: { staffMembershipId: "branch-money-agent", branchId: "branch-a", workArea: "MOBILE_MONEY", dutyRole: "OPERATOR" }
+  });
+  assert.equal(assignment.status, 201, JSON.stringify(await assignment.json()));
+
+  const cash = await call("/api/branch-agency/accounts", {
+    method: "POST",
+    headers: { "idempotency-key": "branch-cash-account-01" },
+    body: { branchId: "branch-a", accountType: "CASH_DRAWER", displayName: "Main shop cash", openingBalance: 100000 }
+  });
+  const cashBody = await cash.json();
+  assert.equal(cash.status, 201, JSON.stringify(cashBody));
+  assert.equal(cashBody.data.current_balance, 100000);
+
+  const float = await call("/api/branch-agency/accounts", {
+    method: "POST",
+    headers: { "idempotency-key": "branch-mtn-float-01" },
+    body: { branchId: "branch-a", accountType: "PROVIDER_FLOAT", provider: "MTN_MOMO", displayName: "Main shop MTN float", openingBalance: 200000 }
+  });
+  const floatBody = await float.json();
+  assert.equal(float.status, 201, JSON.stringify(floatBody));
+  assert.equal(floatBody.data.current_balance, 200000);
+
+  const payload = {
+    branchId: "branch-a",
+    transactionType: "CASH_IN",
+    provider: "MTN_MOMO",
+    providerReference: "MTN-REF-0001",
+    customerReferenceLast4: "4321",
+    amount: 10000
+  };
+  const operation = await call("/api/branch-agency/operations", {
+    token: "branch-agent-token",
+    method: "POST",
+    headers: { "idempotency-key": "branch-mm-operation-001" },
+    body: payload
+  });
+  const operationBody = await operation.json();
+  assert.equal(operation.status, 201, JSON.stringify(operationBody));
+  assert.equal(operationBody.data.recordingStatus, "OPERATOR_RECORDED_UNVERIFIED");
+  assert.equal(operationBody.providerCall, "NOT_EXECUTED");
+
+  const replay = await call("/api/branch-agency/operations", {
+    token: "branch-agent-token",
+    method: "POST",
+    headers: { "idempotency-key": "branch-mm-operation-001" },
+    body: payload
+  });
+  const replayBody = await replay.json();
+  assert.equal(replay.status, 200, JSON.stringify(replayBody));
+  assert.equal(replayBody.replayed, true);
+
+  const accounts = await call("/api/branch-agency/accounts", { token: "branch-agent-token" });
+  const accountsBody = await accounts.json();
+  assert.equal(accounts.status, 200, JSON.stringify(accountsBody));
+  const cashBalance = accountsBody.data.find(row => row.account_type === "CASH_DRAWER");
+  const floatBalance = accountsBody.data.find(row => row.account_type === "PROVIDER_FLOAT" && row.provider === "MTN_MOMO");
+  assert.equal(Number(cashBalance.current_balance), 110000);
+  assert.equal(Number(floatBalance.current_balance), 190000);
+
+  const overdraw = await call("/api/branch-agency/operations", {
+    token: "branch-agent-token",
+    method: "POST",
+    headers: { "idempotency-key": "branch-mm-operation-002" },
+    body: { ...payload, transactionType: "CASH_OUT", providerReference: "MTN-REF-0002", amount: 150000 }
+  });
+  assert.equal(overdraw.status, 409);
+  assert.equal((await overdraw.json()).error, "insufficient_branch_cash_or_provider_float");
+
+  const unassigned = await call("/api/branch-agency/operations", {
+    token: "approver-token",
+    method: "POST",
+    headers: { "idempotency-key": "branch-mm-no-assignment" },
+    body: { ...payload, providerReference: "MTN-REF-0003" }
+  });
+  assert.equal(unassigned.status, 403);
 });
 
 test("work assignment cannot cross company or branch membership boundaries", async () => {
