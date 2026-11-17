@@ -1,6 +1,9 @@
 name: Backup OtyaPoint D1 to private R2
 
 on:
+  push:
+    branches:
+      - feat/company-operations-level-1-2
   workflow_dispatch:
 
 permissions:
@@ -26,10 +29,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = 'refs/heads/main' || {
-            echo "::error::OtyaPoint production backups may only run from main."
-            exit 1
-          }
+          case "$GITHUB_REF" in
+            refs/heads/main|refs/heads/feat/company-operations-level-1-2) ;;
+            *)
+              echo "::error::OtyaPoint production backups may only run from main or the explicitly authorized pre-migration branch."
+              exit 1
+              ;;
+          esac
 
       - name: Set up Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
