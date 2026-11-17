@@ -720,7 +720,7 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/staff") {
-        if (!canManage(staff)) return json({ error: "forbidden" }, 403);
+        if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
         const status = url.searchParams.get("status");
         if (status && !staffStatuses.includes(status as typeof staffStatuses[number])) {
           return json({ error: "invalid_staff_status" }, 400);
@@ -1295,28 +1295,30 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/agency-readiness") {
-        if (!canManage(staff)) return json({ error: "forbidden" }, 403);
+        const context = await requireWorkContext(request, env, staff, ["MOBILE_MONEY", "BILLS_AIRTIME", "FINANCE"], "READ");
+        if (isWorkContextResponse(context)) return context;
 
-        // This is an operations snapshot of locally recorded rows only.
-        // It never contacts a provider, creates a transaction, or posts a ledger entry.
+        // Read-only branch snapshot. It never contacts a provider, creates a
+        // transaction or posts a ledger entry.
         const [totals, pending, unknown, providers] = await Promise.all([
           env.DB.prepare(
-            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1"
-          ).bind(staff.company_id).first<{ total: number }>(),
+            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND branch_id=?2"
+          ).bind(staff.company_id, context.branchId).first<{ total: number }>(),
           env.DB.prepare(
-            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND provider_status IN ('DRAFT','PENDING')"
-          ).bind(staff.company_id).first<{ total: number }>(),
+            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND branch_id=?2 AND provider_status IN ('DRAFT','PENDING')"
+          ).bind(staff.company_id, context.branchId).first<{ total: number }>(),
           env.DB.prepare(
-            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND provider_status = 'UNKNOWN'"
-          ).bind(staff.company_id).first<{ total: number }>(),
+            "SELECT COUNT(*) AS total FROM omni_agency_transactions WHERE company_id=?1 AND branch_id=?2 AND provider_status='UNKNOWN'"
+          ).bind(staff.company_id, context.branchId).first<{ total: number }>(),
           env.DB.prepare(
-            "SELECT provider, COUNT(*) AS transactions FROM omni_agency_transactions WHERE company_id=?1 GROUP BY provider ORDER BY provider"
-          ).bind(staff.company_id).all<{ provider: string | null; transactions: number }>()
+            "SELECT provider,COUNT(*) AS transactions FROM omni_agency_transactions WHERE company_id=?1 AND branch_id=?2 GROUP BY provider ORDER BY provider"
+          ).bind(staff.company_id, context.branchId).all<{ provider: string | null; transactions: number }>()
         ]);
 
         return json({
           service: "otyapoint-agency",
           currency: "UGX",
+          branchId: context.branchId,
           mode: "LOCAL_RECORDS_ONLY",
           transactionCreation: "DISABLED_UNTIL_PROVIDER_ADAPTERS_AND_CONTROLS_ARE_VERIFIED",
           providers: [
@@ -1340,43 +1342,24 @@ export default {
       }
 
       if (request.method === "GET" && url.pathname === "/api/agency-overview") {
-        // Read-only operations summary. Managers see company records; other
-        // staff see only records they created. Only provider-confirmed records
-        // contribute to the confirmed amount and commission totals.
-        const scopeSql = canManage(staff)
-          ? "company_id = ?1"
-          : "company_id = ?1 AND actor_id = ?2";
-        const scopeValues: unknown[] = [staff.company_id];
-        if (!canManage(staff)) scopeValues.push(staff.id);
-
+        const context = await requireWorkContext(request, env, staff, ["MOBILE_MONEY"], "READ");
+        if (isWorkContextResponse(context)) return context;
         const [totals, recent] = await Promise.all([
           env.DB.prepare(
-            `SELECT COUNT(*) AS transaction_count,
-                    COALESCE(SUM(CASE WHEN provider_status = 'SUCCEEDED' THEN amount ELSE 0 END), 0) AS confirmed_amount,
-                    COALESCE(SUM(CASE WHEN provider_status = 'SUCCEEDED' THEN commission ELSE 0 END), 0) AS confirmed_commission,
-                    COALESCE(SUM(CASE WHEN provider_status IN ('PENDING','UNKNOWN') THEN 1 ELSE 0 END), 0) AS needs_reconciliation,
-                    COALESCE(SUM(CASE WHEN provider_status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failed_count
-               FROM omni_agency_transactions WHERE ${scopeSql}`
-          ).bind(...scopeValues).first<{
-            transaction_count: number;
-            confirmed_amount: number;
-            confirmed_commission: number;
-            needs_reconciliation: number;
-            failed_count: number;
+            "SELECT COUNT(*) AS transaction_count,COALESCE(SUM(CASE WHEN provider_status='SUCCEEDED' THEN amount ELSE 0 END),0) AS confirmed_amount,COALESCE(SUM(CASE WHEN provider_status='SUCCEEDED' THEN commission ELSE 0 END),0) AS confirmed_commission,COALESCE(SUM(CASE WHEN provider_status IN ('PENDING','UNKNOWN') THEN 1 ELSE 0 END),0) AS needs_reconciliation,COALESCE(SUM(CASE WHEN provider_status='FAILED' THEN 1 ELSE 0 END),0) AS failed_count FROM omni_agency_transactions WHERE company_id=?1 AND branch_id=?2 AND transaction_type IN ('CASH_IN','CASH_OUT','FLOAT_ADJUSTMENT','REVERSAL')"
+          ).bind(staff.company_id, context.branchId).first<{
+            transaction_count: number; confirmed_amount: number; confirmed_commission: number;
+            needs_reconciliation: number; failed_count: number;
           }>(),
           env.DB.prepare(
-            `SELECT id, reference, transaction_type, provider, provider_status,
-                    amount, commission, currency, created_at, updated_at
-               FROM omni_agency_transactions
-              WHERE ${scopeSql}
-              ORDER BY created_at DESC
-              LIMIT 10`
-          ).bind(...scopeValues).all()
+            "SELECT id,reference,transaction_type,provider,provider_status,amount,commission,currency,created_at,updated_at FROM omni_agency_transactions WHERE company_id=?1 AND branch_id=?2 AND transaction_type IN ('CASH_IN','CASH_OUT','FLOAT_ADJUSTMENT','REVERSAL') ORDER BY created_at DESC LIMIT 10"
+          ).bind(staff.company_id, context.branchId).all()
         ]);
-
         return json({
           source: "LOCAL_D1_RECORDS_ONLY",
           currency: "UGX",
+          branchId: context.branchId,
+          workArea: "MOBILE_MONEY",
           transactions: {
             count: totals?.transaction_count ?? 0,
             providerConfirmedAmount: totals?.confirmed_amount ?? 0,
@@ -1385,7 +1368,6 @@ export default {
             failed: totals?.failed_count ?? 0
           },
           recent: recent.results,
-          scope: canManage(staff) ? "company" : "own",
           requestId: rid
         });
       }
@@ -1393,50 +1375,63 @@ export default {
       if (request.method === "GET" && url.pathname === "/api/agency-transactions") {
         const type = url.searchParams.get("type");
         const status = url.searchParams.get("status");
-        const allowedTypes = ["CASH_IN", "CASH_OUT", "AIRTIME", "BILL_PAYMENT", "FLOAT_ADJUSTMENT", "REVERSAL"];
-        const allowedStatuses = ["DRAFT", "PENDING", "SUCCEEDED", "FAILED", "UNKNOWN", "REVERSED"];
+        const mobileMoneyTypes = ["CASH_IN", "CASH_OUT", "FLOAT_ADJUSTMENT", "REVERSAL"];
+        const billsTypes = ["AIRTIME", "BILL_PAYMENT"];
+        const allowedTypes = [...mobileMoneyTypes, ...billsTypes];
         if (type && !allowedTypes.includes(type)) return json({ error: "invalid_agency_transaction_type" }, 400);
+        const requiredAreas: WorkArea[] = type
+          ? (mobileMoneyTypes.includes(type) ? ["MOBILE_MONEY"] : ["BILLS_AIRTIME"])
+          : ["MOBILE_MONEY", "BILLS_AIRTIME"];
+        const context = await requireWorkContext(request, env, staff, requiredAreas, "READ");
+        if (isWorkContextResponse(context)) return context;
+        const permittedTypes = context.workArea === "MOBILE_MONEY" ? mobileMoneyTypes : billsTypes;
+        if (type && !permittedTypes.includes(type)) return json({ error: "work_area_assignment_required" }, 403);
+        const allowedStatuses = ["DRAFT", "PENDING", "SUCCEEDED", "FAILED", "UNKNOWN", "REVERSED"];
         if (status && !allowedStatuses.includes(status)) return json({ error: "invalid_agency_transaction_status" }, 400);
 
-        // Managers can review the company's transactions. Other staff can only
-        // see transactions they created; request/response metadata is never returned.
-        const clauses = ["company_id = ?1"];
-        const values: unknown[] = [staff.company_id];
-        if (!canManage(staff)) {
-          values.push(staff.id);
-          clauses.push(`actor_id = ?${values.length}`);
-        }
+        const clauses = ["company_id=?1", "branch_id=?2", "transaction_type IN (" + permittedTypes.map((_, index) => "?" + (index + 3)).join(",") + ")"];
+        const values: unknown[] = [staff.company_id, context.branchId, ...permittedTypes];
         if (type) {
           values.push(type);
-          clauses.push(`transaction_type = ?${values.length}`);
+          clauses.push("transaction_type=?" + values.length);
         }
         if (status) {
           values.push(status);
-          clauses.push(`provider_status = ?${values.length}`);
+          clauses.push("provider_status=?" + values.length);
         }
         const result = await env.DB.prepare(
-          `SELECT id, reference, transaction_type, provider, provider_reference, provider_status, amount, commission, currency, customer_reference, actor_id, created_at, updated_at
-             FROM omni_agency_transactions
-            WHERE ${clauses.join(" AND ")}
-            ORDER BY created_at DESC
-            LIMIT 100`
+          "SELECT id,reference,transaction_type,provider,provider_reference,provider_status,amount,commission,currency,customer_reference,actor_id,created_at,updated_at FROM omni_agency_transactions WHERE " + clauses.join(" AND ") + " ORDER BY created_at DESC LIMIT 100"
         ).bind(...values).all();
-        return json({ data: result.results, requestId: rid });
+        return json({ data: result.results, branchId: context.branchId, workArea: context.workArea, requestId: rid });
       }
 
       if (request.method === "POST" && url.pathname === "/api/agency-transactions") {
-        return json({ error: "provider_adapter_required", detail: "No provider call was made and no agency transaction was recorded." }, 501);
+        const body = await parseBody(request);
+        if (isBodyResponse(body)) return body;
+        const type = safeText(body.transactionType, 24).toUpperCase();
+        const mobileMoneyTypes = ["CASH_IN", "CASH_OUT", "FLOAT_ADJUSTMENT", "REVERSAL"];
+        const billsTypes = ["AIRTIME", "BILL_PAYMENT"];
+        if (!mobileMoneyTypes.includes(type) && !billsTypes.includes(type)) return json({ error: "invalid_agency_transaction_type" }, 400);
+        const areas: WorkArea[] = mobileMoneyTypes.includes(type) ? ["MOBILE_MONEY"] : ["BILLS_AIRTIME"];
+        const context = await requireWorkContext(request, env, staff, areas, "OPERATE", safeText(body.branchId, 64));
+        if (isWorkContextResponse(context)) return context;
+        return json({
+          error: "provider_adapter_required",
+          detail: "No provider call was made and no agency transaction was recorded.",
+          branchId: context.branchId
+        }, 501);
       }
 
       if (request.method === "GET" && url.pathname === "/api/ledger") {
-        if (!canManage(staff)) return json({ error: "forbidden" }, 403);
+        const context = await requireWorkContext(request, env, staff, ["FINANCE"], "READ");
+        if (isWorkContextResponse(context)) return context;
         const type = url.searchParams.get("type");
         if (type && type !== "RETAIL" && type !== "FINTECH_AGENCY") return json({ error: "invalid_ledger_type" }, 400);
         const query = type
-          ? env.DB.prepare("SELECT id,ledger_type,account_code,currency,debit,credit,source_type,source_id,description,effective_at,created_at FROM omni_ledger_entries WHERE ledger_type=?1 AND company_id=?2 ORDER BY effective_at DESC LIMIT 500").bind(type, staff.company_id)
-          : env.DB.prepare("SELECT id,ledger_type,account_code,currency,debit,credit,source_type,source_id,description,effective_at,created_at FROM omni_ledger_entries WHERE company_id=?1 ORDER BY effective_at DESC LIMIT 500").bind(staff.company_id);
+          ? env.DB.prepare("SELECT id,ledger_type,account_code,currency,debit,credit,source_type,source_id,description,effective_at,created_at,branch_id FROM omni_ledger_entries WHERE ledger_type=?1 AND company_id=?2 AND branch_id=?3 ORDER BY effective_at DESC LIMIT 500").bind(type, staff.company_id, context.branchId)
+          : env.DB.prepare("SELECT id,ledger_type,account_code,currency,debit,credit,source_type,source_id,description,effective_at,created_at,branch_id FROM omni_ledger_entries WHERE company_id=?1 AND branch_id=?2 ORDER BY effective_at DESC LIMIT 500").bind(staff.company_id, context.branchId);
         const result = await query.all();
-        return json({ data: result.results, requestId: rid });
+        return json({ data: result.results, branchId: context.branchId, requestId: rid });
       }
 
       return json({ error: "not_found", requestId: rid }, 404);
