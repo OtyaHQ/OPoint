@@ -987,7 +987,7 @@ export default {
         }
         const [branchRow, product, existing] = await Promise.all([
           env.DB.prepare("SELECT id FROM omni_branches WHERE id=?1 AND company_id=?2 AND status='ACTIVE' LIMIT 1").bind(branchId, staff.company_id).first<{ id: string }>(),
-          env.DB.prepare("SELECT id,quantity_on_hand,is_active FROM omni_products WHERE id=?1 AND company_id=?2 LIMIT 1").bind(productId, staff.company_id).first<{ id: string; quantity_on_hand: number; is_active: number }>(),
+          env.DB.prepare("SELECT id,quantity_on_hand,reorder_level,is_active FROM omni_products WHERE id=?1 AND company_id=?2 LIMIT 1").bind(productId, staff.company_id).first<{ id: string; quantity_on_hand: number; reorder_level: number; is_active: number }>(),
           env.DB.prepare("SELECT id FROM omni_branch_stock WHERE company_id=?1 AND branch_id=?2 AND product_id=?3 LIMIT 1").bind(staff.company_id, branchId, productId).first<{ id: string }>()
         ]);
         if (!branchRow) return json({ error: "branch_not_available" }, 404);
@@ -1000,6 +1000,8 @@ export default {
               .bind(movementId, staff.company_id, branchId, productId, quantity, idempotencyKey, staff.id, reason),
             env.DB.prepare("UPDATE omni_products SET quantity_on_hand=quantity_on_hand+?1,updated_at=CURRENT_TIMESTAMP WHERE id=?2 AND company_id=?3")
               .bind(quantity, productId, staff.company_id),
+            env.DB.prepare("UPDATE omni_branch_stock SET reorder_level=?1,updated_at=CURRENT_TIMESTAMP WHERE company_id=?2 AND branch_id=?3 AND product_id=?4")
+              .bind(product.reorder_level, staff.company_id, branchId, productId),
             env.DB.prepare("INSERT INTO omni_audit_events (id,actor_id,action,entity_type,entity_id,reason,before_state,after_state,request_id,company_id) VALUES (?1,?2,'OPEN_BRANCH_STOCK','BRANCH_STOCK',?3,?4,?5,?6,?7,?8)")
               .bind(uuid(), staff.id, productId, reason, JSON.stringify({ branchId, quantityOnHand: 0 }), JSON.stringify({ branchId, quantityOnHand: quantity }), rid, staff.company_id)
           ]);
