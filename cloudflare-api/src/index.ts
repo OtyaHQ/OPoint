@@ -2128,8 +2128,23 @@ export default {
         if (!isSovereign(staff)) return json({ error: "forbidden" }, 403);
         const result = await env.DB.prepare(
           "SELECT id,provider,capability,environment,status,provider_contract_ref,approval_evidence_ref,approved_by,approved_at,production_write_enabled,credential_binding_name,last_verified_at,created_at,updated_at FROM omni_provider_connections WHERE company_id=?1 ORDER BY provider,capability,environment LIMIT 250"
-        ).bind(staff.company_id).all();
-        return json({ data: result.results, productionWriteEnabled: result.results.some((row: any) => row.production_write_enabled === 1), requestId: rid });
+        ).bind(staff.company_id).all<{
+          id: string;
+          provider: string;
+          capability: string;
+          environment: string;
+          status: string;
+          provider_contract_ref: string | null;
+          approval_evidence_ref: string | null;
+          approved_by: string | null;
+          approved_at: string | null;
+          production_write_enabled: number;
+          credential_binding_name: string | null;
+          last_verified_at: string | null;
+          created_at: string;
+          updated_at: string;
+        }>();
+        return json({ data: result.results, productionWriteEnabled: result.results.some(row => row.production_write_enabled === 1), requestId: rid });
       }
 
       if (request.method === "POST" && url.pathname === "/api/provider-connections") {
