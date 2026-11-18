@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type FormEvent } from "react";
 
 type Membership = {
   membership_id?: string;
@@ -18,13 +18,16 @@ type Branch = { id: string; name: string; district?: string | null; town_council
 type Staff = { membership_id: string; display_name: string; email: string; role_key: string; membership_status: string; branch_name?: string | null };
 type Invitation = { id: string; email: string; display_name: string; role_key: string; status: string; delivery_status: string; expires_at: string; branch_name?: string | null };
 type Assignment = { id: string; work_area: string; duty_role: string; branch_name?: string; status: string };
+type StaffAssignment = { id: string; staff_membership_id: string; display_name: string; email: string; membership_role: string; branch_id: string; branch_name: string; work_area: string; duty_role: string; status: string };
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = new Headers(init.headers || {});
+  if (init.body && !headers.has("content-type")) headers.set("content-type", "application/json");
   const response = await fetch(path, {
     ...init,
     credentials: "same-origin",
     cache: "no-store",
-    headers: { ...(init.headers || {}), ...(init.body ? { "content-type": "application/json" } : {}) },
+    headers,
   });
   const payload = await response.json().catch(() => ({})) as ApiObject;
   if (response.status === 401) {
@@ -46,6 +49,7 @@ export default function OtyaWorkspace() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [staffAssignments, setStaffAssignments] = useState<StaffAssignment[]>([]);
   const [busy, setBusy] = useState(true);
   const [companyBusy, setCompanyBusy] = useState(false);
   const [error, setError] = useState("");
@@ -55,13 +59,19 @@ export default function OtyaWorkspace() {
   const [inviteRole, setInviteRole] = useState("CASHIER");
   const [inviteBranch, setInviteBranch] = useState("");
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const [assignmentStaff, setAssignmentStaff] = useState("");
+  const [assignmentBranch, setAssignmentBranch] = useState("");
+  const [assignmentArea, setAssignmentArea] = useState("RETAIL");
+  const [assignmentDuty, setAssignmentDuty] = useState("OPERATOR");
+  const [assignmentReason, setAssignmentReason] = useState("");
+  const [assignmentReasons, setAssignmentReasons] = useState<Record<string, string>>({});
 
   const membership = useMemo(
     () => session?.memberships.find((item) => item.company_id === companyId) ?? null,
     [session, companyId],
   );
   const role = (membership?.role_key || "").toUpperCase();
-  const canManageStaff = ["OWNER", "ADMIN", "MANAGER"].includes(role);
+  const canManageStaff = ["OWNER", "ADMIN"].includes(role);
   const canInvite = ["OWNER", "ADMIN"].includes(role);
 
   const loadCompany = useCallback(async (selectedCompanyId: string, selectedRole: string) => {
@@ -71,12 +81,14 @@ export default function OtyaWorkspace() {
     const query = "?companyId=" + encodeURIComponent(selectedCompanyId);
     const requests: Promise<unknown>[] = [
       api<{ data?: Branch[] }>("/api/otyapoint/workforce/branches" + query).then((r) => setBranches(getData(r) || [])).catch((e) => { setBranches([]); throw e; }),
-      api<{ data?: Assignment[] }>("/api/otyapoint/workforce/assignments" + query).then((r) => setAssignments(getData(r) || [])).catch(() => setAssignments([])),
+      api<{ data?: Assignment[] }>("/api/otyapoint/workforce/my-assignments").then((r) => setAssignments(getData(r) || [])).catch(() => setAssignments([])),
     ];
-    if (["OWNER", "ADMIN", "MANAGER"].includes(selectedRole)) {
+    if (["OWNER", "ADMIN"].includes(selectedRole)) {
       requests.push(api<{ data?: Staff[] }>("/api/otyapoint/workforce/staff" + query).then((r) => setStaff(getData(r) || [])).catch((e) => { setStaff([]); setError(e.message); }));
+      requests.push(api<{ data?: StaffAssignment[] }>("/api/otyapoint/workforce/assignments" + query).then((r) => setStaffAssignments(getData(r) || [])).catch((e) => { setStaffAssignments([]); setError(e.message); }));
     } else {
       setStaff([]);
+      setStaffAssignments([]);
     }
     if (["OWNER", "ADMIN"].includes(selectedRole)) {
       requests.push(api<{ data?: Invitation[] }>("/api/otyapoint/workforce/invitations" + query).then((r) => setInvitations(getData(r) || [])).catch((e) => { setInvitations([]); setError(e.message); }));
@@ -114,7 +126,7 @@ export default function OtyaWorkspace() {
     if (membership) void loadCompany(companyId, role);
   }, [companyId, membership, role, loadCompany]);
 
-  async function sendInvite(event: React.FormEvent<HTMLFormElement>) {
+  async function sendInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!companyId) return;
     setError("");
@@ -161,6 +173,69 @@ export default function OtyaWorkspace() {
       await loadCompany(companyId, role);
     } catch (reasonValue) {
       setError(reasonValue instanceof Error ? reasonValue.message : "Could not update staff access.");
+    } finally {
+      setCompanyBusy(false);
+    }
+  }
+
+  const assignableStaff = staff.filter((person) =>
+    person.membership_status === "ACTIVE" && !["OWNER", "ADMIN"].includes(person.role_key),
+  );
+
+  async function createWorkAssignment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!companyId) return;
+    if (assignmentReason.trim().length < 4) {
+      setError("A reason is required for a work-area assignment.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    setCompanyBusy(true);
+    try {
+      await api("/api/otyapoint/workforce/assignments?companyId=" + encodeURIComponent(companyId), {
+        method: "POST",
+        headers: { "idempotency-key": window.crypto.randomUUID() },
+        body: JSON.stringify({
+          staffMembershipId: assignmentStaff,
+          branchId: assignmentBranch,
+          workArea: assignmentArea,
+          dutyRole: assignmentDuty,
+          reason: assignmentReason.trim(),
+        }),
+      });
+      setAssignmentStaff("");
+      setAssignmentBranch("");
+      setAssignmentReason("");
+      setNotice(assignmentArea === "RETAIL"
+        ? "Retail work access assigned. It does not grant Mobile Money access."
+        : "Mobile Money work access assigned separately from Retail access.");
+      await loadCompany(companyId, role);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not create the work-area assignment.");
+    } finally {
+      setCompanyBusy(false);
+    }
+  }
+
+  async function changeAssignmentStatus(item: StaffAssignment, status: "ACTIVE" | "SUSPENDED" | "REVOKED") {
+    const reason = (assignmentReasons[item.id] || "").trim();
+    if (reason.length < 4) {
+      setError("Add a short reason before changing a work-area assignment.");
+      return;
+    }
+    setError("");
+    setNotice("");
+    setCompanyBusy(true);
+    try {
+      await api("/api/otyapoint/workforce/assignments/" + encodeURIComponent(item.id) + "/status?companyId=" + encodeURIComponent(companyId), {
+        method: "POST",
+        body: JSON.stringify({ status, reason }),
+      });
+      setNotice("Work-area assignment updated. This change is audited separately from the staff membership.");
+      await loadCompany(companyId, role);
+    } catch (reasonValue) {
+      setError(reasonValue instanceof Error ? reasonValue.message : "Could not update the work-area assignment.");
     } finally {
       setCompanyBusy(false);
     }
@@ -223,7 +298,7 @@ export default function OtyaWorkspace() {
           <>
             <section style={grid}>
               <article style={panel}><p style={eyebrow}>COMPANY</p><h2>{membership.company_name || membership.company_slug || "Your company"}</h2><p style={muted}>Role: {role || "Staff"} · {membership.branch_name || "Company-wide / assigned branch scope"}</p></article>
-              <article style={panel}><p style={eyebrow}>YOUR WORK AREAS</p>{assignments.length ? assignments.map((item) => <div key={item.id} style={assignmentRow}><strong>{item.work_area.replaceAll("_", " ")}</strong><span style={smallMuted}>{item.duty_role} · {item.branch_name || "Assigned branch"}</span></div>) : <p style={muted}>No active work-area assignment is linked to this account.</p>}</article>
+              <article style={panel}><p style={eyebrow}>YOUR WORK AREAS</p>{assignments.length ? assignments.map((item) => <div key={item.id} style={assignmentRow}><strong>{item.work_area.replace(/_/g, " ")}</strong><span style={smallMuted}>{item.duty_role} · {item.branch_name || "Assigned branch"}</span></div>) : <p style={muted}>No active work-area assignment is linked to this account.</p>}</article>
               <article style={panel}><p style={eyebrow}>BRANCH ACCESS</p>{branches.length ? branches.map((item) => <div key={item.id} style={assignmentRow}><strong>{item.name}</strong><span style={smallMuted}>{[item.town_council, item.district].filter(Boolean).join(", ")}</span></div>) : <p style={muted}>No active branch is available in your current scope.</p>}</article>
             </section>
 
@@ -245,6 +320,35 @@ export default function OtyaWorkspace() {
                   </tr>)}
                 </tbody></table></div>
               )}
+            </section>}
+
+            {canManageStaff && <section style={panel}>
+              <div style={sectionHeader}><div><p style={eyebrow}>DUTY SEPARATION</p><h2>Retail and Mobile Money assignments</h2><p style={muted}>A staff job title alone does not grant access. Assign each work area independently.</p></div><span style={counter}>{staffAssignments.length} assignments</span></div>
+              <form onSubmit={createWorkAssignment} style={inviteGrid}>
+                <label style={field}>Active staff member<select required value={assignmentStaff} onChange={(e) => setAssignmentStaff(e.target.value)} style={textInput}><option value="">Select staff</option>{assignableStaff.map((person) => <option key={person.membership_id} value={person.membership_id}>{person.display_name} · {person.role_key}</option>)}</select></label>
+                <label style={field}>Branch<select required value={assignmentBranch} onChange={(e) => setAssignmentBranch(e.target.value)} style={textInput}><option value="">Select branch</option>{branches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                <label style={field}>Work area<select value={assignmentArea} onChange={(e) => setAssignmentArea(e.target.value)} style={textInput}><option value="RETAIL">Retail</option><option value="MOBILE_MONEY">Mobile Money</option></select></label>
+                <label style={field}>Duty level<select value={assignmentDuty} onChange={(e) => setAssignmentDuty(e.target.value)} style={textInput}><option value="OPERATOR">Operator</option><option value="SUPERVISOR">Supervisor</option><option value="APPROVER">Approver</option><option value="VIEWER">Viewer</option></select></label>
+                <label style={field}>Reason<input required minLength={4} maxLength={300} value={assignmentReason} onChange={(e) => setAssignmentReason(e.target.value)} style={textInput} placeholder="Why is this duty assigned?"/></label>
+                <button type="submit" disabled={companyBusy || assignableStaff.length === 0 || branches.length === 0} style={primaryButton}>{companyBusy ? "Saving…" : "Assign work area"}</button>
+              </form>
+              <div style={{ marginTop: 20 }}>
+                <h3 style={subheading}>Current company work-area assignments</h3>
+                {staffAssignments.length === 0 ? <p style={muted}>No work-area assignments have been configured for this company yet.</p> : (
+                  <div style={tableWrap}><table style={table}><thead><tr><th>STAFF</th><th>WORK AREA</th><th>DUTY</th><th>BRANCH</th><th>STATUS</th><th>CONTROL</th></tr></thead><tbody>
+                    {staffAssignments.map((item) => <tr key={item.id}>
+                      <td><strong>{item.display_name}</strong><div style={smallMuted}>{item.email}</div></td>
+                      <td>{item.work_area === "MOBILE_MONEY" ? "Mobile Money" : "Retail"}</td><td>{item.duty_role}</td><td>{item.branch_name}</td><td>{item.status}</td>
+                      <td>{item.status !== "REVOKED" ? <div style={statusControls}>
+                        <input aria-label={"Reason for assignment " + item.id} value={assignmentReasons[item.id] || ""} onChange={(e) => setAssignmentReasons((old) => ({ ...old, [item.id]: e.target.value }))} placeholder="Reason (required)" style={reasonInput}/>
+                        {item.status === "SUSPENDED" && <button disabled={companyBusy} onClick={() => void changeAssignmentStatus(item, "ACTIVE")} style={smallButton}>Resume</button>}
+                        {item.status === "ACTIVE" && <button disabled={companyBusy} onClick={() => void changeAssignmentStatus(item, "SUSPENDED")} style={smallButton}>Suspend</button>}
+                        <button disabled={companyBusy} onClick={() => void changeAssignmentStatus(item, "REVOKED")} style={dangerButton}>Revoke</button>
+                      </div> : <span style={smallMuted}>Terminal</span>}</td>
+                    </tr>)}
+                  </tbody></table></div>
+                )}
+              </div>
             </section>}
 
             {canInvite && <section style={panel}>
@@ -273,36 +377,35 @@ export default function OtyaWorkspace() {
   );
 }
 
-const page: React.CSSProperties = { minHeight: "100vh", background: "#0c1422", color: "#f0f4fa" };
-const topbar: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, minHeight: 72, padding: "12px 28px", background: "#0e1929", borderBottom: "1px solid #243249" };
-const brandRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 10, fontSize: 16 };
-const mark: React.CSSProperties = { width: 36, height: 36, display: "grid", placeItems: "center", borderRadius: 11, background: "linear-gradient(145deg,#9c9aff,#6f75e9)", color: "white", fontWeight: 900, fontSize: 18 };
-const smallMuted: React.CSSProperties = { display: "block", fontSize: 10, color: "#8d9bb0", marginTop: 4 };
-const account: React.CSSProperties = { display: "flex", alignItems: "center", gap: 14 };
-const content: React.CSSProperties = { maxWidth: 1300, margin: "0 auto", padding: "32px 24px" };
-const intro: React.CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, marginBottom: 22 };
-const eyebrow: React.CSSProperties = { color: "#a8b8ff", fontSize: 9, letterSpacing: 1.4, fontWeight: 800, marginBottom: 8 };
-const muted: React.CSSProperties = { color: "#8d9bb0", fontSize: 12, lineHeight: 1.65, marginTop: 7 };
-const grid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 14, marginBottom: 16 };
-const panel: React.CSSProperties = { border: "1px solid #243249", borderRadius: 13, background: "#111e30", padding: 19, marginBottom: 16, minWidth: 0 };
-const assignmentRow: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, borderTop: "1px solid #243249", padding: "10px 0" };
-const select: React.CSSProperties = { background: "#111e30", color: "#f0f4fa", border: "1px solid #33445f", borderRadius: 8, padding: 10, minWidth: 210 };
-const sectionHeader: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", marginBottom: 15 };
-const counter: React.CSSProperties = { color: "#a8b8ff", background: "#7777ff20", borderRadius: 7, padding: "6px 9px", fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" };
-const tableWrap: React.CSSProperties = { width: "100%", overflowX: "auto" };
-const table: React.CSSProperties = { width: "100%", borderCollapse: "collapse", textAlign: "left", minWidth: 760 };
-const statusControls: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, minWidth: 260 };
-const reasonInput: React.CSSProperties = { maxWidth: 150, minWidth: 110, border: "1px solid #33445f", borderRadius: 6, background: "#0c1422", color: "#f0f4fa", padding: 7, fontSize: 10 };
-const smallButton: React.CSSProperties = { border: "1px solid #40516e", borderRadius: 6, background: "#1c2b42", color: "#dce5f4", padding: "7px 9px", fontSize: 10, fontWeight: 700 };
-const dangerButton: React.CSSProperties = { border: "1px solid #7f343d", borderRadius: 6, background: "#7f1d1d33", color: "#fecaca", padding: "7px 9px", fontSize: 10, fontWeight: 700 };
-const inviteGrid: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", alignItems: "end", gap: 12 };
-const field: React.CSSProperties = { display: "grid", gap: 6, color: "#b6c2d4", fontSize: 11, fontWeight: 700 };
-const textInput: React.CSSProperties = { height: 39, background: "#0c1422", border: "1px solid #33445f", borderRadius: 7, color: "#f0f4fa", padding: "0 10px", minWidth: 0 };
-const primaryButton: React.CSSProperties = { border: 0, borderRadius: 8, background: "#8585fa", color: "#fff", padding: "11px 13px", fontWeight: 800, fontSize: 11 };
-const secondaryButton: React.CSSProperties = { border: "1px solid #33445f", background: "transparent", color: "#c5d0e1", borderRadius: 7, padding: "8px 10px", fontSize: 10, fontWeight: 700 };
-const link: React.CSSProperties = { color: "#a8b8ff" };
-const gridPanel: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr" };
-const subheading: React.CSSProperties = { fontSize: 12, marginBottom: 10 };
-const bottomNote: React.CSSProperties = { color: "#62728a", fontSize: 10, textAlign: "center", padding: "10px 0 25px" };
-const errorBox: React.CSSProperties = { color: "#fecaca", background: "#7f1d1d33", border: "1px solid #991b1b66", borderRadius: 8, padding: 11, fontSize: 12, marginBottom: 12 };
-const noticeBox: React.CSSProperties = { color: "#c7d2fe", background: "#6366f11c", border: "1px solid #6366f155", borderRadius: 8, padding: 11, fontSize: 12, lineHeight: 1.5, marginBottom: 12 };
+const page: CSSProperties = { minHeight: "100vh", background: "#0c1422", color: "#f0f4fa" };
+const topbar: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, minHeight: 72, padding: "12px 28px", background: "#0e1929", borderBottom: "1px solid #243249" };
+const brandRow: CSSProperties = { display: "flex", alignItems: "center", gap: 10, fontSize: 16 };
+const mark: CSSProperties = { width: 36, height: 36, display: "grid", placeItems: "center", borderRadius: 11, background: "linear-gradient(145deg,#9c9aff,#6f75e9)", color: "white", fontWeight: 900, fontSize: 18 };
+const smallMuted: CSSProperties = { display: "block", fontSize: 10, color: "#8d9bb0", marginTop: 4 };
+const account: CSSProperties = { display: "flex", alignItems: "center", gap: 14 };
+const content: CSSProperties = { maxWidth: 1300, margin: "0 auto", padding: "32px 24px" };
+const intro: CSSProperties = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, marginBottom: 22 };
+const eyebrow: CSSProperties = { color: "#a8b8ff", fontSize: 9, letterSpacing: 1.4, fontWeight: 800, marginBottom: 8 };
+const muted: CSSProperties = { color: "#8d9bb0", fontSize: 12, lineHeight: 1.65, marginTop: 7 };
+const grid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(250px,1fr))", gap: 14, marginBottom: 16 };
+const panel: CSSProperties = { border: "1px solid #243249", borderRadius: 13, background: "#111e30", padding: 19, marginBottom: 16, minWidth: 0 };
+const assignmentRow: CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, borderTop: "1px solid #243249", padding: "10px 0" };
+const select: CSSProperties = { background: "#111e30", color: "#f0f4fa", border: "1px solid #33445f", borderRadius: 8, padding: 10, minWidth: 210 };
+const sectionHeader: CSSProperties = { display: "flex", justifyContent: "space-between", gap: 14, alignItems: "center", marginBottom: 15 };
+const counter: CSSProperties = { color: "#a8b8ff", background: "#7777ff20", borderRadius: 7, padding: "6px 9px", fontSize: 10, fontWeight: 800, whiteSpace: "nowrap" };
+const tableWrap: CSSProperties = { width: "100%", overflowX: "auto" };
+const table: CSSProperties = { width: "100%", borderCollapse: "collapse", textAlign: "left", minWidth: 760 };
+const statusControls: CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, minWidth: 260 };
+const reasonInput: CSSProperties = { maxWidth: 150, minWidth: 110, border: "1px solid #33445f", borderRadius: 6, background: "#0c1422", color: "#f0f4fa", padding: 7, fontSize: 10 };
+const smallButton: CSSProperties = { border: "1px solid #40516e", borderRadius: 6, background: "#1c2b42", color: "#dce5f4", padding: "7px 9px", fontSize: 10, fontWeight: 700 };
+const dangerButton: CSSProperties = { border: "1px solid #7f343d", borderRadius: 6, background: "#7f1d1d33", color: "#fecaca", padding: "7px 9px", fontSize: 10, fontWeight: 700 };
+const inviteGrid: CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", alignItems: "end", gap: 12 };
+const field: CSSProperties = { display: "grid", gap: 6, color: "#b6c2d4", fontSize: 11, fontWeight: 700 };
+const textInput: CSSProperties = { height: 39, background: "#0c1422", border: "1px solid #33445f", borderRadius: 7, color: "#f0f4fa", padding: "0 10px", minWidth: 0 };
+const primaryButton: CSSProperties = { border: 0, borderRadius: 8, background: "#8585fa", color: "#fff", padding: "11px 13px", fontWeight: 800, fontSize: 11 };
+const secondaryButton: CSSProperties = { border: "1px solid #33445f", background: "transparent", color: "#c5d0e1", borderRadius: 7, padding: "8px 10px", fontSize: 10, fontWeight: 700 };
+const link: CSSProperties = { color: "#a8b8ff" };
+const subheading: CSSProperties = { fontSize: 12, marginBottom: 10 };
+const bottomNote: CSSProperties = { color: "#62728a", fontSize: 10, textAlign: "center", padding: "10px 0 25px" };
+const errorBox: CSSProperties = { color: "#fecaca", background: "#7f1d1d33", border: "1px solid #991b1b66", borderRadius: 8, padding: 11, fontSize: 12, marginBottom: 12 };
+const noticeBox: CSSProperties = { color: "#c7d2fe", background: "#6366f11c", border: "1px solid #6366f155", borderRadius: 8, padding: 11, fontSize: 12, lineHeight: 1.5, marginBottom: 12 };
