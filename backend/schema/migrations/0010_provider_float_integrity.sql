@@ -96,4 +96,4 @@ END;
 
 -- Checksum covers the migration body above and excludes the ledger insert.
 INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
-VALUES ('0010_provider_float_integrity', '49548df047b0f5eb5935ea51b3669c857b9adfe1828405cee778dceed97553cf', CURRENT_TIMESTAMP);
+VALUES ('0010_provider_float_integrity', '9ec442c43b49d6ae28578c5cef5a0a19624ba84a4677e8fe698594a4be6b4f05', CURRENT_TIMESTAMP);
