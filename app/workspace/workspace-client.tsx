@@ -293,7 +293,7 @@ export default function OtyaWorkspace() {
         {notice && <div role="status" style={noticeBox}>{notice}</div>}
 
         {session.memberships.length === 0 ? (
-          <section style={panel}><h2>No active company membership</h2><p style={muted}>Your Otya Account is signed in, but it is not yet linked to an active OtyaPoint company. Ask the company owner to invite the email address shown above.</p></section>
+          <section style={panel}><h2>No active company membership</h2><p style={muted}>Your Otya Account is signed in, but it is not yet linked to an active OtyaPoint company. Ask the company owner to invite the email address shown above.</p><p style={muted}>Already have an invitation code? <a href="/workspace/invitations/accept" style={link}>Accept your invitation</a></p></section>
         ) : membership ? (
           <>
             <section style={grid}>
