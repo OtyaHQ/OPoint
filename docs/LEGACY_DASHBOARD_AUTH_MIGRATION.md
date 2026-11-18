@@ -33,13 +33,16 @@ Cloudflare's current Next.js guidance (updated 5 November 2026) recommends **vin
 - https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/
 - https://developers.cloudflare.com/workers/static-assets/migration-guides/vercel-to-workers/nextjs/
 
-Therefore, assess compatibility first on a separate branch. Keep `next dev`/`next build` intact during evaluation. Do not point the dashboard to production domains or attach production secrets during this migration. If the current dashboard uses features that do not pass vinext compatibility, evaluate the documented OpenNext adapter as a maintenance path and migrate later when compatible.
+The read-only vinext audit completed successfully: **100% compatible, 13 supported, 0 partial, 0 issues** across the current imports, config, libraries and scanned App Router structure. It also notes that `middleware.ts` is deprecated in Next.js 16; the application currently uses Next.js 15.1, so this is a future upgrade item rather than a current blocker. This is a static compatibility scan, not a production runtime test.
+
+A separate build experiment is now in draft PR #155 (`experiment/opoint-vinext-cloudflare-build`). It runs `vinext init` and `build:vinext` on a separate branch with a staging-named Worker, no prerender, no shared response/data cache, no image optimizer, no Cloudflare credentials, and no deploy step. The existing `next dev`/`next build` scripts and legacy API Worker config remain untouched. Do not connect Auth/D1 service bindings or production secrets during this build-only experiment. If the build passes, review the generated Worker config before a separate staging integration and browser E2E phase.
 
 ## Safe implementation order
 
 - [ ] Complete and merge the canonical OtyaPoint workforce API and shared Otya Auth invitation contract only after both PRs' checks pass and reviews are complete.
 - [ ] Provision a dedicated staging-only service token and staging Auth route; verify that staging email delivery cannot use production credentials.
-- [ ] Run the non-destructive Next.js/vinext compatibility check and document unsupported features.
+- [x] Run the read-only Next.js/vinext compatibility check; record its 100% scan result and Next.js 16 middleware note.
+- [ ] Complete the separate Cloudflare vinext build-only spike (PR #155); inspect generated config and build artifacts before any service binding is added.
 - [ ] Build the dashboard BFF/session routes on the chosen Cloudflare runtime. Use host-only cookies, refresh rotation, logout/revocation, no-store responses, origin/CSRF checks and server-only service bindings.
 - [ ] Replace Supabase middleware, login actions, staff actions and server authorization with Otya ID + canonical OtyaPoint API calls.
 - [ ] Add browser E2E tests for login/OTP, session refresh and rotation, logout/revocation, email-bound invitations, Owner/Admin activation rules, company/branch/work-area isolation and CSRF/origin rejection.
