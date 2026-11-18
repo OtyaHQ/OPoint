@@ -25,7 +25,7 @@ assert db.execute("SELECT name FROM sqlite_master WHERE type='view' AND name='jo
 expected = {
     "0001_opoint_core": "22c119954d58b7ae6887cf3a215fdeb9caaf1c9bb7b3560e61fef52abd47c224",
     "0002_operational_hardening": "1176f077bb80a3aa3c86c68f0f1647d43cbe6e47a2b254669c5bc1c6dc24f45a",
-    "0003_financial_integrity_guards": "10dc15adb79c67a47d7d9b15fb45868",
+    "0003_financial_integrity_guards": "10dc15adb79c67a47db28ffa8582cfc8bad973edec07999e47d7d9b15fb45868",
     "0004_staff_work_assignments": "fa3666d4eb0e62322800d5b9f0e9b762d24851b282fd01a7c20a4f1eed3a9090",
 }
 actual = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
