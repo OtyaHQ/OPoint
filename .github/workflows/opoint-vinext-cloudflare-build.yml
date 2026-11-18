@@ -7,9 +7,12 @@ on:
   pull_request:
     paths:
       - ".github/workflows/opoint-vinext-cloudflare-build.yml"
+      - ".github/workflows/deploy-opoint-staging.yml"
+      - ".github/workflows/deploy-opoint-dashboard-staging.yml"
       - "app/**"
       - "backend/src/index.mjs"
       - "cloudflare-api/tests/staging-config-boundary.test.mjs"
+      - "cloudflare.config.ts"
       - "components/**"
       - "lib/**"
       - "middleware.ts"
