@@ -13,11 +13,14 @@ OtyaPoint is private company software for Otya's own retail and mobile-money age
 ## Main capabilities in code
 
 - Company and branch onboarding.
-- Product catalogue and operational read views.
+- Product catalogue, opening inventory, branch stock views and cash-controlled retail sales.
+- Cash session opening, count submission and supervisor/owner review with discrepancy handling.
+- Atomic cash sales: receipt, cash payment intent, stock movement, cash-session expected balance and balanced double-entry journal are committed together.
 - Branch-scoped work assignments with separate **RETAIL** and **MOBILE_MONEY** work areas.
 - Independent duty roles for workers assigned to both areas.
 - Cash-account work-area classification under owner/admin authorization.
-- Idempotent journal and sales primitives, stock integrity guards, audit records and sandbox provider adapters.
+- Idempotent sales and opening-stock records, stock integrity guards, audited cash sessions and balanced journal posting.
+- Retail sales are cash-only for now; mobile-money and bill-payment provider execution remains disabled.
 
 ## Workforce and provider access
 
@@ -32,7 +35,7 @@ The API layer is implemented on the review branch; complete browser workforce sc
 ## Production runtime
 
 - Production Worker config: `wrangler.opoint-production.toml`.
-- Production D1: `otyapoint-prod-db`, initialized from the schema-only baseline and forward migrations.
+- Production D1: `otyapoint-prod-db`, initialized from the schema-only baseline and forward migrations through `0009_cash_session_lifecycle`.
 - Identity: the existing single Otya Auth/ID Worker (`otya-auth`) through a private service binding. No duplicate identity database is created.
 - The Worker has no `workers.dev` hostname or public custom domain; the Core gateway is its only browser entry point.
 - The legacy `cloudflare-api/` implementation is compatibility/reference code and is not the canonical production runtime.
