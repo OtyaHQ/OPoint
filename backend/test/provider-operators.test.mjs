@@ -21,6 +21,20 @@ test("normalizes Airtel, MTN and InterSwitch provider relationships separately",
   }
 });
 
+test("partial relationship and operator updates preserve previously recorded expiry dates", () => {
+  const relationship = normalizeProviderRelationshipStatus({
+    onboardingStatus: "SUSPENDED",
+    reason: "Provider temporarily paused",
+  }, { corporate_agent_reference: "CORP-AGENT-001", agreement_reference: "AGREEMENT-2026-001", expires_at: "2027-12-31" });
+  assert.equal(relationship.value.expiresAt, "2027-12-31");
+
+  const operator = normalizeProviderOperatorStatus({
+    approvalStatus: "SUSPENDED",
+    reason: "Operator access paused",
+  }, { training_status: "COMPLETED", provider_operator_reference: "AIR-OP-001", valid_until: "2027-06-30" });
+  assert.equal(operator.value.validUntil, "2027-06-30");
+});
+
 test("provider relationship cannot be activated without corporate and agreement references", () => {
   assert.equal(
     normalizeProviderRelationshipStatus({ onboardingStatus: "ACTIVE", reason: "Approve provider" }, {}).error,
