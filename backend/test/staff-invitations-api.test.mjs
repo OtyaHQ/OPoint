@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   handleStaffInvitationAcceptance,
   handleStaffInvitationManagement,
+  handleStaffMembershipStatusManagement,
 } from "../src/staff-invitations.mjs";
 
 const OWNER = {
@@ -22,10 +23,11 @@ const AGENT = {
 };
 
 class MemoryD1 {
-  constructor({ invitation = null, existingMembership = null, existingInvitation = null } = {}) {
+  constructor({ invitation = null, existingMembership = null, existingInvitation = null, targetMembership = null } = {}) {
     this.invitation = invitation;
     this.existingMembership = existingMembership;
     this.existingInvitation = existingInvitation;
+    this.targetMembership = targetMembership;
     this.batches = [];
     this.calls = [];
   }
@@ -48,6 +50,9 @@ class MemoryD1 {
         }
         if (this.sql.includes("FROM staff_memberships WHERE company_id=?1 AND (identity_subject")) {
           return this.existingMembership;
+        }
+        if (this.sql.includes("FROM staff_memberships WHERE company_id=?1 AND id=?2")) {
+          return this.targetMembership;
         }
         if (this.sql.includes("FROM staff_invitations WHERE company_id=?1 AND email_normalized")) {
           return this.existingInvitation;
@@ -316,4 +321,116 @@ test("Invitation lists never expose token digests", async () => {
   const body = await result.json();
   assert.equal(body.data[0].email, "worker@example.invalid");
   assert.equal(JSON.stringify(body).includes("token_digest"), false);
+});
+
+
+test("Owner explicitly activates an accepted pending membership", async () => {
+  const { env } = makeEnv({
+    targetMembership: {
+      id: "membership-pending",
+      identity_subject: "worker-identity",
+      role_key: "AGENT",
+      status: "PENDING",
+    },
+  });
+  const result = await handleStaffMembershipStatusManagement(
+    apiRequest("/v1/staff/membership-pending/status", {
+      status: "ACTIVE",
+      reason: "Employment checks completed",
+    }),
+    env, { userId: "owner-identity" }, OWNER,
+    requestUrl("/v1/staff/membership-pending/status"), "request-11",
+  );
+  assert.equal(result.status, 200);
+  assert.equal((await result.json()).data.status, "ACTIVE");
+  const statements = env.DB.batches.flat();
+  const update = statements.find(row => row.sql.includes("UPDATE staff_memberships SET status"));
+  assert.equal(update.values[0], "ACTIVE");
+  assert.equal(update.values[1], "owner-identity");
+  const event = statements.find(row => row.sql.includes("INSERT INTO staff_membership_events"));
+  assert.ok(event);
+  assert.equal(event.values[3], "ACTIVATED");
+});
+
+test("Admin cannot activate or manage another Admin membership", async () => {
+  const { env } = makeEnv({
+    targetMembership: {
+      id: "membership-admin-2",
+      identity_subject: "other-admin",
+      role_key: "ADMIN",
+      status: "PENDING",
+    },
+  });
+  const result = await handleStaffMembershipStatusManagement(
+    apiRequest("/v1/staff/membership-admin-2/status", {
+      status: "ACTIVE",
+      reason: "Attempted admin escalation",
+    }),
+    env, { userId: "admin-identity" }, ADMIN,
+    requestUrl("/v1/staff/membership-admin-2/status"), "request-12",
+  );
+  assert.equal(result.status, 403);
+  assert.equal((await result.json()).error, "owner_required_to_manage_admin");
+  assert.equal(env.DB.batches.length, 0);
+});
+
+test("Ordinary membership controls cannot change Owner or self access", async () => {
+  const ownerEnv = makeEnv({
+    targetMembership: {
+      id: "owner-membership",
+      identity_subject: "owner-identity",
+      role_key: "OWNER",
+      status: "ACTIVE",
+    },
+  }).env;
+  const ownerResult = await handleStaffMembershipStatusManagement(
+    apiRequest("/v1/staff/owner-membership/status", {
+      status: "SUSPENDED",
+      reason: "Not permitted",
+    }),
+    ownerEnv, { userId: "admin-identity" }, ADMIN,
+    requestUrl("/v1/staff/owner-membership/status"), "request-13",
+  );
+  assert.equal(ownerResult.status, 403);
+  assert.equal((await ownerResult.json()).error, "owner_transfer_requires_separate_controlled_process");
+
+  const selfEnv = makeEnv({
+    targetMembership: {
+      id: "membership-owner",
+      identity_subject: "owner-identity",
+      role_key: "OWNER",
+      status: "ACTIVE",
+    },
+  }).env;
+  const selfResult = await handleStaffMembershipStatusManagement(
+    apiRequest("/v1/staff/membership-owner/status", {
+      status: "SUSPENDED",
+      reason: "Self test",
+    }),
+    selfEnv, { userId: "owner-identity" }, OWNER,
+    requestUrl("/v1/staff/membership-owner/status"), "request-14",
+  );
+  assert.equal(selfResult.status, 403);
+});
+
+test("Revoked memberships cannot be reactivated", async () => {
+  const { env } = makeEnv({
+    targetMembership: {
+      id: "membership-revoked",
+      identity_subject: "worker-identity",
+      role_key: "AGENT",
+      status: "REVOKED",
+    },
+  });
+  const result = await handleStaffMembershipStatusManagement(
+    apiRequest("/v1/staff/membership-revoked/status", {
+      status: "ACTIVE",
+      reason: "Trying to restore revoked access",
+    }),
+    env, { userId: "owner-identity" }, OWNER,
+    requestUrl("/v1/staff/membership-revoked/status"), "request-15",
+  );
+  assert.equal(result.status, 409);
+  assert.equal((await result.json()).error, "staff_membership_revoked_terminal");
+  assert.equal(env.DB.batches.length, 0);
 });
