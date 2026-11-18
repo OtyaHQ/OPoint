@@ -179,7 +179,7 @@ assert db.execute("SELECT COUNT(*) FROM provider_outlet_accounts WHERE provider_
 assert db.execute("SELECT COUNT(*) FROM provider_balance_observations WHERE provider_outlet_account_id='pa-1'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM provider_transaction_records WHERE evidence_level='PROVIDER_FEED'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_provider_operator_one_current_employee_account','idx_employee_provider_operation_grant_active')").fetchone()[0] == 2
-assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('provider_operator_active_insert_guard','provider_operator_active_update_guard','employee_provider_grant_active_insert_guard','employee_provider_grant_active_update_guard')").fetchone()[0] == 6
+assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('provider_operator_active_insert_guard','provider_operator_active_update_guard','employee_provider_grant_active_insert_guard','employee_provider_grant_active_update_guard','mobile_money_assignment_deactivation_revokes_provider_access','staff_work_assignment_revoked_terminal')").fetchone()[0] == 6
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 print("PASS: Otya Enterprise migrations support branch-scoped provider relationships, outlet accounts, employee operator approval, company SIM assignment, statement evidence and receipt history without payment execution.")
 
