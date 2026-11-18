@@ -19,11 +19,15 @@ OtyaPoint is private company software for Otya's own retail and mobile-money age
 - Cash-account work-area classification under owner/admin authorization.
 - Idempotent journal and sales primitives, stock integrity guards, audit records and sandbox provider adapters.
 
-## Schema-only enterprise foundation
+## Workforce and provider access
 
-Forward migrations `0005_enterprise_automation` and `0006_message_capture_and_receipts` model employee profiles, company assets/SIM inventory, provider relationships and outlet accounts, provider balance observations, explicitly shared message evidence, statement imports and issued receipt history.
+Forward migrations `0005_enterprise_automation`, `0006_message_capture_and_receipts` and `0007_provider_operator_access` model employee profiles, branch assignments, company assets/SIM inventory, provider relationships and outlet accounts, provider balance observations, explicitly shared message evidence, statement imports and immutable receipt history.
 
-Migrations 0005 and 0006 establish the enterprise schema. The provider relationship, outlet-account and operator-approval API is implemented as a separate reviewable Worker layer and uses those canonical tables; it does not create duplicate employee/provider entities. Provider operator approval requires the exact active branch Mobile Money assignment, active company SIM assignment when used, provider approval reference and completed training. Message parsing is candidate extraction for human review only and returns `providerStatus: UNKNOWN`. These capabilities do not request Android SMS inbox permissions, read notifications, or initiate payments.
+The Worker exposes company-scoped staff and branch read endpoints, branch-scoped Retail/Mobile Money work assignments, provider relationship/outlet/operator management endpoints, and a signed-in employee endpoint for their own currently approved provider operator assignments. Owner/admin checks, branch scope, provider approval, completed training and optional company-SIM network/assignment checks are enforced server-side. Suspending or revoking a Mobile Money work assignment automatically suspends or revokes its linked provider operator profile and outlet permission grant. Revoked assignments are terminal.
+
+The workforce directory returns limited employment metadata only. It does not expose raw KYC documents or identity numbers. Provider lines are modeled as separate company SIM assets, not employee KYC/login phone numbers. InterSwitch Marketplace Routing and Quickteller Business remain distinct bill-payment/merchant integrations, not Airtel/MTN mobile-money operator accounts.
+
+The API layer is implemented on the review branch; the complete browser workforce screens, Otya ID server-side session bridge, generic trusted-device proof and end-to-end acceptance remain follow-on work. Message parsing is candidate extraction for human review only and returns `providerStatus: UNKNOWN`. These capabilities do not request Android SMS inbox permissions, read notifications, or initiate payments. See [WORKFORCE_ACCESS_MODEL.md](../docs/WORKFORCE_ACCESS_MODEL.md).
 
 ## Local verification
 
