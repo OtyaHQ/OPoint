@@ -26,10 +26,28 @@ required = {
     "provider_balance_observations", "capture_records", "capture_extractions",
     "provider_statement_imports", "provider_transaction_records", "provider_statement_rows",
     "provider_message_captures", "issued_receipts", "receipt_events",
-    "staff_invitations", "staff_invitation_events",
+    "staff_invitations", "staff_invitation_events", "staff_membership_events",
 }
 tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 assert required <= tables, sorted(required - tables)
+
+required_invitation_guards = {
+    "staff_invitations_terminal_status_guard",
+    "staff_invitations_core_fields_immutable",
+    "staff_invitations_delivery_transition_guard",
+    "staff_invitations_acceptance_guard",
+    "staff_invitation_events_no_update",
+    "staff_invitation_events_no_delete",
+    "staff_memberships_owner_status_guard",
+    "staff_memberships_role_transfer_guard",
+    "staff_memberships_revoked_terminal",
+    "staff_memberships_no_delete",
+    "staff_membership_status_cascade_work_assignments",
+    "staff_membership_events_no_update",
+    "staff_membership_events_no_delete",
+}
+triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+assert required_invitation_guards <= triggers, sorted(required_invitation_guards - triggers)
 assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
@@ -41,7 +59,7 @@ expected_migrations = {
     "0005_enterprise_automation": "0a18fcb1eeb7f1bc6e658dd86b4f49e808b62bbd6a1833d3404415b3dceebe3e",
     "0006_message_capture_and_receipts": "db7576a526fefd6d585fb94539281f00996929404437ecc6b5f79fef05da07c1",
     "0007_provider_operator_access": "94b6f4af7180571c2c284d3f40813a4e80fd5c88ecb32e455c84ca57979a92e1",
-    "0008_staff_invitations": "8907a2017b5f9cb79792f6ba67935862a543bbc784a638d6c27330c9d5e69513",
+    "0008_staff_invitations": "9c9d4b29b5bfffa4efad98590ef12edb3d2731f2e2aba707f49c233cab6fa850",
 }
 actual_migrations = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
 assert actual_migrations == expected_migrations, actual_migrations
@@ -382,5 +400,60 @@ except sqlite3.IntegrityError:
 
 assert db.execute("SELECT COUNT(*) FROM provider_message_captures WHERE source_kind='USER_SHARED_MESSAGE'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM issued_receipts").fetchone()[0] == 2
+
+# Suspending/revoking the staff membership cascades into every branch work assignment.
+db.execute(
+    "INSERT INTO staff_memberships(id,company_id,branch_id,identity_subject,display_name,email,role_key,status) "
+    "VALUES ('st-3','co-1','br-1','subject-3','New Worker','new.worker@example.invalid','CASHIER','ACTIVE')"
+)
+db.executemany(
+    "INSERT INTO staff_work_assignments(id,company_id,staff_membership_id,branch_id,work_area,duty_role,status,idempotency_key,request_fingerprint,reason,created_by) "
+    "VALUES (?,?,?,?,?,'OPERATOR','ACTIVE',?,?,?,?)",
+    [
+        ("work-st-3-retail","co-1","st-3","br-1","RETAIL","work-st-3-retail","fp-retail","Retail assignment","owner"),
+        ("work-st-3-mm","co-1","st-3","br-1","MOBILE_MONEY","work-st-3-mm","fp-mm","Mobile Money assignment","owner"),
+    ],
+)
+db.execute(
+    "UPDATE staff_memberships SET status='SUSPENDED',last_updated_by='owner' WHERE id='st-3'"
+)
+assert db.execute(
+    "SELECT COUNT(*) FROM staff_work_assignments WHERE staff_membership_id='st-3' AND status='SUSPENDED'"
+).fetchone()[0] == 2
+assert db.execute(
+    "SELECT COUNT(*) FROM staff_work_assignment_events WHERE assignment_id IN ('work-st-3-retail','work-st-3-mm') AND event_type='SUSPENDED' AND actor_id='owner'"
+).fetchone()[0] == 2
+
+# Re-activating the membership does not silently restore either work assignment.
+db.execute("UPDATE staff_memberships SET status='ACTIVE',last_updated_by='owner' WHERE id='st-3'")
+assert db.execute(
+    "SELECT COUNT(*) FROM staff_work_assignments WHERE staff_membership_id='st-3' AND status='SUSPENDED'"
+).fetchone()[0] == 2
+
+# Revoking the membership revokes suspended work assignments as well.
+db.execute("UPDATE staff_memberships SET status='REVOKED',last_updated_by='owner' WHERE id='st-3'")
+assert db.execute(
+    "SELECT COUNT(*) FROM staff_work_assignments WHERE staff_membership_id='st-3' AND status='REVOKED'"
+).fetchone()[0] == 2
+try:
+    db.execute("UPDATE staff_memberships SET status='ACTIVE' WHERE id='st-3'")
+    raise AssertionError("A revoked staff membership must remain terminal")
+except sqlite3.IntegrityError:
+    pass
+try:
+    db.execute("UPDATE staff_memberships SET status='SUSPENDED' WHERE id='st-1'")
+    raise AssertionError("Owner membership cannot be suspended through staff lifecycle")
+except sqlite3.IntegrityError:
+    pass
+try:
+    db.execute("UPDATE staff_memberships SET role_key='ADMIN' WHERE id='st-1'")
+    raise AssertionError("Owner role changes require a separate controlled transfer")
+except sqlite3.IntegrityError:
+    pass
+try:
+    db.execute("DELETE FROM staff_memberships WHERE id='st-3'")
+    raise AssertionError("Staff memberships must be retained for audit")
+except sqlite3.IntegrityError:
+    pass
 assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
