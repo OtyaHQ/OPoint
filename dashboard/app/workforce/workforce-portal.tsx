@@ -2,12 +2,10 @@
 
 import {
   Activity,
-  ArrowRight,
   Building2,
   CheckCircle2,
   ChevronDown,
   ClipboardList,
-  GitBranch,
   LogOut,
   Mail,
   Plus,
@@ -18,7 +16,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 type Identity = { userId: string; email: string | null; emailVerified: boolean };
@@ -270,7 +268,7 @@ export default function WorkforcePortal() {
     }
   }
 
-  async function submitInvitation(event: React.FormEvent<HTMLFormElement>) {
+  async function submitInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeMembership) return;
     setBusy(true);
@@ -341,7 +339,7 @@ export default function WorkforcePortal() {
     }
   }
 
-  async function createAssignment(event: React.FormEvent<HTMLFormElement>) {
+  async function createAssignment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!activeMembership) return;
     setBusy(true);
@@ -433,7 +431,7 @@ export default function WorkforcePortal() {
     }
   }
 
-  async function acceptInvitation(event: React.FormEvent<HTMLFormElement>) {
+  async function acceptInvitation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
