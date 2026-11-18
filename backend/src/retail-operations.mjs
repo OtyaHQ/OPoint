@@ -318,6 +318,105 @@ async function reviewCashSession(request, env, identity, membership, context, se
   }
 }
 
+async function recordOpeningStock(request, env, identity, membership, context) {
+  const access = await requireRetail(request, membership, context, ["OWNER", "ADMIN", "MANAGER"], ["SUPERVISOR", "APPROVER"]);
+  if (access.response) return access.response;
+  const parsed = await readJson(request, 4096);
+  if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
+  const productId = clean(parsed.value.productId, 80);
+  const quantity = parsed.value.quantity;
+  const reason = clean(parsed.value.reason, 240);
+  if (!productId || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > 100_000 || reason.length < 4) {
+    return json({ error: "invalid_opening_stock_input", requestId: context.requestId }, 400, context.requestId);
+  }
+  const key = idempotencyKey(request);
+  if (!key) return json({ error: "idempotency_key_required", requestId: context.requestId }, 400, context.requestId);
+  const fingerprint = await sha256(JSON.stringify({ productId, quantity, branchId: context.scopedBranchId, reason }));
+  const replay = await replayOrConflict(env.DB, context.companyId, "OPENING_STOCK", key, fingerprint, context.requestId);
+  if (replay.response) return replay.response;
+
+  const product = await env.DB.prepare(
+    "SELECT id,sku,name,cost_amount,track_stock,status FROM products WHERE company_id=?1 AND id=?2 LIMIT 1"
+  ).bind(context.companyId, productId).first();
+  if (!product || product.status !== "ACTIVE" || Number(product.track_stock) !== 1) {
+    return json({ error: "active_stock_tracked_product_required", requestId: context.requestId }, 409, context.requestId);
+  }
+  const unitCost = Number(product.cost_amount);
+  const stockValue = quantity * unitCost;
+  if (!Number.isSafeInteger(unitCost) || unitCost <= 0 || !Number.isSafeInteger(stockValue) || stockValue <= 0 || stockValue > MAX_UGX) {
+    return json({ error: "positive_inventory_cost_required", requestId: context.requestId }, 400, context.requestId);
+  }
+  const location = await env.DB.prepare(
+    "SELECT id FROM inventory_locations WHERE company_id=?1 AND branch_id=?2 AND code='MAIN' AND status='ACTIVE' LIMIT 1"
+  ).bind(context.companyId, context.scopedBranchId).first();
+  if (!location) return json({ error: "active_inventory_location_required", requestId: context.requestId }, 409, context.requestId);
+  const history = await env.DB.prepare(
+    "SELECT COUNT(*) AS movement_count,COALESCE(SUM(quantity_delta),0) AS quantity_on_hand FROM stock_movements WHERE company_id=?1 AND product_id=?2 AND location_id=?3"
+  ).bind(context.companyId, productId, location.id).first();
+  if (Number(history?.movement_count || 0) > 0 || Number(history?.quantity_on_hand || 0) !== 0) {
+    return json({ error: "opening_stock_already_recorded", requestId: context.requestId }, 409, context.requestId);
+  }
+  const accounts = await env.DB.prepare(
+    "SELECT id,account_code FROM ledger_accounts WHERE company_id=?1 AND status='ACTIVE' AND account_code IN ('1200','3000')"
+  ).bind(context.companyId).all();
+  const chart = new Map((accounts.results || []).map(row => [row.account_code, row.id]));
+  if (!chart.has("1200") || !chart.has("3000")) {
+    return json({ error: "inventory_opening_ledger_accounts_missing", requestId: context.requestId }, 409, context.requestId);
+  }
+  const journalLines = validateJournalLines([
+    { ledgerAccountId: chart.get("1200"), debitAmount: stockValue, creditAmount: 0, memo: "Opening inventory" },
+    { ledgerAccountId: chart.get("3000"), debitAmount: 0, creditAmount: stockValue, memo: "Owner-funded opening stock" },
+  ]);
+  if (!journalLines.ok) return json({ error: journalLines.error, requestId: context.requestId }, 400, context.requestId);
+
+  const movementId = crypto.randomUUID();
+  const journalId = crypto.randomUUID();
+  const journalNumber = "JRN-" + journalId.slice(0, 12).toUpperCase();
+  const resultBody = {
+    data: {
+      movementId, productId, sku: product.sku, productName: product.name,
+      branchId: context.scopedBranchId, quantity, quantityOnHand: quantity,
+      unitCostUGX: unitCost, stockValueUGX: stockValue, currency: "UGX",
+      journalEntryId: journalId, status: "RECORDED",
+    },
+  };
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO stock_movements (id,company_id,product_id,location_id,movement_type,quantity_delta,quantity_after,unit_cost_amount,reference_type,reference_id,idempotency_key,actor_id,reason) VALUES (?1,?2,?3,?4,'OPENING',?5,?5,?6,'OPENING_STOCK',?1,?7,?8,?9)"
+      ).bind(movementId, context.companyId, productId, location.id, quantity, unitCost, "OPENING:" + await sha256(key + "|" + productId), identity.userId, reason),
+      env.DB.prepare(
+        "INSERT INTO journal_entries (id,company_id,entry_number,source_type,source_id,status,currency,description,idempotency_key,created_by) VALUES (?1,?2,?3,'OPENING_STOCK',?4,'DRAFT','UGX',?5,?6,?7)"
+      ).bind(journalId, context.companyId, journalNumber, movementId, "Opening stock: " + product.name, key + ":OPENING_JOURNAL", identity.userId),
+      ...journalLines.value.lines.map((line, index) => env.DB.prepare(
+        "INSERT INTO journal_lines (id,company_id,journal_entry_id,line_number,ledger_account_id,debit_amount,credit_amount,memo) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
+      ).bind(crypto.randomUUID(), context.companyId, journalId, index + 1, line.ledgerAccountId, line.debitAmount, line.creditAmount, line.memo)),
+      env.DB.prepare(
+        "UPDATE journal_entries SET status='POSTED',posted_by=?1,posted_at=CURRENT_TIMESTAMP WHERE company_id=?2 AND id=?3 AND status='DRAFT'"
+      ).bind(identity.userId, context.companyId, journalId),
+      auditStatement(env.DB, {
+        companyId: context.companyId, actorId: identity.userId, action: "OPENING_STOCK_RECORDED",
+        entityType: "STOCK_MOVEMENT", entityId: movementId, reason, requestId: context.requestId,
+        before: null, after: resultBody.data,
+      }),
+      idempotencyStatement(env.DB, {
+        companyId: context.companyId, scope: "OPENING_STOCK", key, fingerprint, status: 201,
+        body: resultBody, resourceType: "STOCK_MOVEMENT", resourceId: movementId,
+      }),
+    ]);
+    return json(resultBody, 201, context.requestId);
+  } catch (error) {
+    const existing = await replayOrConflict(env.DB, context.companyId, "OPENING_STOCK", key, fingerprint, context.requestId);
+    if (existing.response) return existing.response;
+    const message = String(error?.message || "");
+    if (message.includes("UNIQUE constraint failed") || message.includes("stock_quantity_after_mismatch")) {
+      return json({ error: "opening_stock_conflict_retry", requestId: context.requestId }, 409, context.requestId);
+    }
+    console.error("[opoint] opening stock record failed", { type: error?.name || "Error" });
+    return json({ error: "opening_stock_record_failed", requestId: context.requestId }, 500, context.requestId);
+  }
+}
+
 async function createCashSale(request, env, identity, membership, context) {
   const access = await requireRetail(request, membership, context, ["OWNER", "ADMIN", "MANAGER", "CASHIER"]);
   if (access.response) return access.response;
@@ -520,6 +619,9 @@ export async function handleRetailWriteRoutes(request, env, identity, membership
   const review = url.pathname.match(/^\/v1\/cash\/sessions\/([A-Za-z0-9._:-]{1,80})\/review$/);
   if (review && request.method === "POST") {
     return reviewCashSession(request, env, identity, membership, context, review[1]);
+  }
+  if (url.pathname === "/v1/stock/opening" && request.method === "POST") {
+    return recordOpeningStock(request, env, identity, membership, context);
   }
   if (url.pathname === "/v1/sales" && request.method === "POST") {
     return createCashSale(request, env, identity, membership, context);
