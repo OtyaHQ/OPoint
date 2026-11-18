@@ -124,3 +124,17 @@ jobs:
           }
           console.log('OtyaPoint staging identity and disabled execution flags verified.');
           NODE
+
+      - name: Smoke test deployed OtyaPoint staging API
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://opoint-api-staging.petersmartlink.workers.dev"
+          health="$(curl --retry 3 --retry-delay 2 --retry-all-errors --max-time 25 -fsS "$base/health")"
+          echo "$health"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.status!=="ready" || x.schemaReady!==true) process.exit(1)' "$health"
+          capabilities="$(curl --max-time 20 -fsS "$base/v1/capabilities")"
+          node -e 'const x=JSON.parse(process.argv[1]); if(x.paymentsEnabled!==false || x.providerExecutionEnabled!==false || x.aiAssistantEnabled!==false || x.salesPostingEnabled!==false || x.journalPostingEnabled!==false || x.cashMovementEnabled!==false) process.exit(1)' "$capabilities"
+          status="$(curl --max-time 20 -sS -o /tmp/opoint-protected.json -w '%{http_code}' "$base/v1/me")"
+          cat /tmp/opoint-protected.json
+          test "$status" = "401"
