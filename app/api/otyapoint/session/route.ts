@@ -1,5 +1,4 @@
 import {
-  appendClearedSessionCookies,
   getOtyaSession,
   jsonResponse,
 } from "@/lib/server/otya-runtime";
