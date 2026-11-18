@@ -1,7 +1,7 @@
 name = "opoint-api-staging"
 main = "backend/src/index.mjs"
 compatibility_date = "2026-11-11"
-workers_dev = false
+workers_dev = true
 keep_vars = false
 
 [vars]
