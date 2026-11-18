@@ -43,6 +43,7 @@ BEGIN
      WHERE pr.id = NEW.provider_relationship_id
        AND pr.company_id = NEW.company_id
        AND pr.onboarding_status = 'ACTIVE'
+       AND pr.provider_code IN ('AIRTEL_MONEY','MTN_MOMO')
        AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
        AND poa.id = NEW.provider_outlet_account_id
        AND poa.scope_type = 'OUTLET'
@@ -117,6 +118,7 @@ BEGIN
      WHERE pr.id = NEW.provider_relationship_id
        AND pr.company_id = NEW.company_id
        AND pr.onboarding_status = 'ACTIVE'
+       AND pr.provider_code IN ('AIRTEL_MONEY','MTN_MOMO')
        AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
        AND poa.id = NEW.provider_outlet_account_id
        AND poa.scope_type = 'OUTLET'
@@ -197,6 +199,7 @@ BEGIN
        AND poa.scope_type = 'OUTLET'
        AND poa.status = 'ACTIVE'
        AND pr.onboarding_status = 'ACTIVE'
+       AND pr.provider_code IN ('AIRTEL_MONEY','MTN_MOMO')
        AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
        AND op.approval_status = 'APPROVED'
        AND op.training_status = 'COMPLETED'
@@ -267,6 +270,7 @@ BEGIN
        AND poa.scope_type = 'OUTLET'
        AND poa.status = 'ACTIVE'
        AND pr.onboarding_status = 'ACTIVE'
+       AND pr.provider_code IN ('AIRTEL_MONEY','MTN_MOMO')
        AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
        AND op.approval_status = 'APPROVED'
        AND op.training_status = 'COMPLETED'
@@ -305,4 +309,4 @@ END;
 
 -- Migration checksum covers the SQL above and excludes this ledger insert.
 INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
-VALUES ('0007_provider_operator_access', '3e450fecd3373a96468f532ade9533076242b3e0c7019898590b5aa5e5663222', CURRENT_TIMESTAMP);
+VALUES ('0007_provider_operator_access', '7d04e726e84e1ba9243c99a167be011056e6824527b27b6fff8284e3cad5cbe4', CURRENT_TIMESTAMP);
