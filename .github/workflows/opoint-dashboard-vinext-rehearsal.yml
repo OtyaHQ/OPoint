@@ -1,0 +1,88 @@
+name: OtyaPoint Dashboard vinext Staging Rehearsal
+
+on:
+  push:
+    branches:
+      - feature/dashboard-otyapoint-auth-workforce
+  pull_request:
+    paths:
+      - .github/workflows/opoint-dashboard-vinext-rehearsal.yml
+      - app/**
+      - components/**
+      - lib/**
+      - middleware.ts
+      - next.config.*
+      - package.json
+      - prisma/**
+      - public/**
+      - tsconfig.json
+
+permissions:
+  contents: read
+
+jobs:
+  rehearsal:
+    name: Non-destructive vinext setup and build rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+
+      - name: Create isolated rehearsal copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/opoint-vinext-rehearsal"
+          mkdir -p "$TARGET"
+          git archive HEAD | tar -x -C "$TARGET"
+          # The root wrangler.toml belongs to the legacy API Worker.
+          rm -f "$TARGET/wrangler.toml"
+          echo "REHEARSAL_DIR=$TARGET" >> "$GITHUB_ENV"
+
+      - name: Install existing dependencies in isolated copy
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/opoint-vinext-rehearsal"
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+
+      - name: Initialize vinext in isolated copy
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/opoint-vinext-rehearsal"
+          npx --yes vinext init --platform=cloudflare --name=opoint-dashboard-staging --cdn-cache=none --data-cache=none --image-optimization=none
+
+      - name: Build the isolated dashboard Worker
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/opoint-vinext-rehearsal"
+          npm run build:vinext
+
+      - name: Report generated runtime configuration
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET="$RUNNER_TEMP/opoint-vinext-rehearsal"
+          {
+            echo '## Isolated OtyaPoint dashboard vinext rehearsal'
+            echo
+            echo 'The root legacy API wrangler.toml was excluded from this copy.'
+            echo
+            echo '### Generated configuration files'
+            find "$TARGET" -maxdepth 2 -type f | grep -E '(^|/)(wrangler\.jsonc|wrangler\.toml|cloudflare\.config\.ts|vite\.config\.[^/]+|package\.json|tsconfig\.json)$' | sort || true
+            echo
+            for file in package.json cloudflare.config.ts wrangler.jsonc wrangler.toml vite.config.ts tsconfig.json; do
+              if [[ -f "$TARGET/$file" ]]; then
+                echo "### $file"
+                echo '-----'
+                sed -n '1,240p' "$TARGET/$file"
+                echo '-----'
+              fi
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
