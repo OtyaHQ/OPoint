@@ -7,15 +7,15 @@ on:
   pull_request:
     paths:
       - .github/workflows/opoint-dashboard-vinext-rehearsal.yml
-      - app/**
-      - components/**
-      - lib/**
-      - middleware.ts
-      - next.config.*
-      - package.json
-      - prisma/**
-      - public/**
-      - tsconfig.json
+      - dashboard/**
+      - dashboard/components/**
+      - dashboard/lib/**
+      - dashboard/middleware.ts
+      - dashboard/next.config.*
+      - dashboard/package.json
+      - dashboard/prisma/**
+      - dashboard/public/**
+      - dashboard/tsconfig.json
 
 permissions:
   contents: read
@@ -40,9 +40,7 @@ jobs:
           set -euo pipefail
           TARGET="$RUNNER_TEMP/opoint-vinext-rehearsal"
           mkdir -p "$TARGET"
-          git archive HEAD | tar -x -C "$TARGET"
-          # The root wrangler.toml belongs to the legacy API Worker.
-          rm -f "$TARGET/wrangler.toml"
+          cp -R dashboard/. "$TARGET/"
           echo "REHEARSAL_DIR=$TARGET" >> "$GITHUB_ENV"
 
       - name: Install existing dependencies in isolated copy
@@ -72,12 +70,12 @@ jobs:
           {
             echo '## Isolated OtyaPoint dashboard vinext rehearsal'
             echo
-            echo 'The root legacy API wrangler.toml was excluded from this copy.'
+            echo 'The rehearsal builds the isolated dashboard/ app; the root legacy API Worker is outside this project.'
             echo
             echo '### Generated configuration files'
             find "$TARGET" -maxdepth 2 -type f | grep -E '(^|/)(wrangler\.jsonc|wrangler\.toml|cloudflare\.config\.ts|vite\.config\.[^/]+|package\.json|tsconfig\.json)$' | sort || true
             echo
-            for file in package.json cloudflare.config.ts wrangler.jsonc wrangler.toml vite.config.ts tsconfig.json; do
+            for file in dashboard/package.json cloudflare.config.ts wrangler.jsonc wrangler.toml vite.config.ts dashboard/tsconfig.json; do
               if [[ -f "$TARGET/$file" ]]; then
                 echo "### $file"
                 echo '-----'
