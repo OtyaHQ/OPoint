@@ -8,6 +8,8 @@ on:
     paths:
       - ".github/workflows/opoint-vinext-cloudflare-build.yml"
       - "app/**"
+      - "backend/src/index.mjs"
+      - "cloudflare-api/tests/staging-config-boundary.test.mjs"
       - "components/**"
       - "lib/**"
       - "middleware.ts"
@@ -16,12 +18,13 @@ on:
       - "prisma/**"
       - "public/**"
       - "tsconfig.json"
+      - "wrangler.opoint-staging.toml"
 
 permissions:
   contents: read
 
 concurrency:
-  group: opoint-vinext-build-spike-\${{ github.event.pull_request.number || github.ref }}
+  group: opoint-vinext-build-spike-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -45,6 +48,9 @@ jobs:
       - name: Verify exact dashboard toolchain versions
         run: npm ls --depth=0
 
+      - name: Verify staging isolation and disabled execution flags
+        run: node --test cloudflare-api/tests/staging-config-boundary.test.mjs
+
       - name: Build the dashboard using vinext
         run: npm run build:vinext
 
@@ -55,7 +61,7 @@ jobs:
           {
             echo '## Isolated Cloudflare build spike'
             echo
-            for file in vite.config.ts cloudflare.config.ts; do
+            for file in vite.config.ts cloudflare.config.ts wrangler.opoint-staging.toml; do
               if [[ -f "$file" ]]; then
                 echo "### $file"
                 echo '---'
