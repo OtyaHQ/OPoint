@@ -5,6 +5,7 @@ import {
   normalizeAssignmentStatus,
   normalizeWorkAssignment,
 } from "./work-assignments.mjs";
+import { handleProviderAgentRoutes } from "./provider-agents.mjs";
 
 const REQUIRED_TABLES = [
   "companies", "branches", "staff_memberships", "company_creation_requests",
@@ -15,6 +16,8 @@ const REQUIRED_TABLES = [
   "payment_intents", "payment_attempts", "payment_reversals", "agency_operations",
   "biller_catalog", "opoint_schema_migrations", "audit_events", "integration_status",
   "staff_work_assignments", "staff_work_assignment_events",
+  "provider_agent_accounts", "provider_agent_account_events",
+  "provider_agent_staff_assignments", "provider_agent_staff_assignment_events",
 ];
 const REQUIRED_GUARDS = [
   "trg_journal_post_balance_guard",
@@ -23,6 +26,10 @@ const REQUIRED_GUARDS = [
   "trg_stock_movement_balance_guard",
   "staff_work_assignment_events_no_update",
   "staff_work_assignment_events_no_delete",
+  "provider_agent_account_events_no_update",
+  "provider_agent_account_events_no_delete",
+  "provider_agent_staff_events_no_update",
+  "provider_agent_staff_events_no_delete",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -437,6 +444,8 @@ async function handle(request, env) {
   if (!membership) return json({ error: "company_access_denied", requestId }, 403, requestId);
   const assignmentResponse = await handleWorkAssignmentRoutes(request, env, identity, membership, url, requestId);
   if (assignmentResponse) return assignmentResponse;
+  const providerAgentResponse = await handleProviderAgentRoutes(request, env, identity, membership, url, requestId);
+  if (providerAgentResponse) return providerAgentResponse;
 
   const privileged = canManageWorkAssignments(membership.role_key);
   const requestedBranchId = clean(request.headers.get("x-branch-id") || url.searchParams.get("branchId"), 80) || null;
