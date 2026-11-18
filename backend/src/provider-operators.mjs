@@ -83,7 +83,9 @@ export function normalizeProviderRelationshipStatus(body, current = {}) {
   const agreementReference = body?.agreementReference == null
     ? current.agreement_reference
     : clean(body.agreementReference, 120);
-  const expiresAt = body?.expiresAt == null || body.expiresAt === "" ? null : clean(body.expiresAt, 40);
+  const expiresAt = body?.expiresAt == null
+    ? (current.expires_at || null)
+    : body.expiresAt === "" ? null : clean(body.expiresAt, 40);
   const reason = clean(body?.reason, 300);
   if (!RELATIONSHIP_STATES.includes(onboardingStatus)) return { error: "invalid_onboarding_status" };
   if (reason.length < 4) return { error: "reason_required" };
@@ -142,7 +144,9 @@ export function normalizeProviderOperatorStatus(body, current = {}) {
   const providerOperatorReference = body?.providerOperatorReference == null
     ? clean(current.provider_operator_reference, 120)
     : clean(body.providerOperatorReference, 120);
-  const validUntil = body?.validUntil == null || body.validUntil === "" ? null : clean(body.validUntil, 40);
+  const validUntil = body?.validUntil == null
+    ? (current.valid_until || null)
+    : body.validUntil === "" ? null : clean(body.validUntil, 40);
   const reason = clean(body?.reason, 300);
   if (!OPERATOR_STATES.includes(approvalStatus)) return { error: "invalid_operator_approval_status" };
   if (!TRAINING_STATES.includes(trainingStatus)) return { error: "invalid_training_status" };
@@ -282,7 +286,7 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
       statements.push(
         env.DB.prepare("UPDATE provider_outlet_accounts SET status=?1,updated_at=CURRENT_TIMESTAMP WHERE company_id=?2 AND provider_relationship_id=?3 AND status<>'CLOSED'").bind(childStatus === "CLOSED" ? "CLOSED" : "SUSPENDED", companyId, id),
         env.DB.prepare("UPDATE provider_operator_profiles SET approval_status=?1,updated_at=CURRENT_TIMESTAMP WHERE company_id=?2 AND provider_relationship_id=?3 AND approval_status='APPROVED'").bind(operatorStatus, companyId, id),
-        env.DB.prepare("UPDATE employee_permission_grants SET status=?1 WHERE company_id=?2 AND scope_type='PROVIDER_ACCOUNT' AND scope_id IN (SELECT id FROM provider_outlet_accounts WHERE company_id=?2 AND provider_relationship_id=?3)").bind(grantStatus, companyId, id),
+        env.DB.prepare("UPDATE employee_permission_grants SET status=?1 WHERE company_id=?2 AND scope_type='PROVIDER_ACCOUNT' AND scope_id IN (SELECT id FROM provider_outlet_accounts WHERE company_id=?2 AND provider_relationship_id=?3) AND status IN ('ACTIVE','SUSPENDED')").bind(grantStatus, companyId, id),
       );
     }
     statements.push(auditStatement(env, { companyId, actorId, action: "PROVIDER_RELATIONSHIP_STATUS_CHANGED", entityType: "PROVIDER_RELATIONSHIP", entityId: id, reason: next.reason, requestId, beforeState: current, afterState: after }));
@@ -484,7 +488,7 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
     if (nextGrantStatus === "ACTIVE") {
       statements.push(
         env.DB.prepare(
-          "UPDATE employee_permission_grants SET status='ACTIVE',starts_at=CURRENT_TIMESTAMP,expires_at=?1 WHERE company_id=?2 AND employee_profile_id=?3 AND permission_key=?4 AND scope_type='PROVIDER_ACCOUNT' AND scope_id=?5 AND status='SUSPENDED'"
+          "UPDATE employee_permission_grants SET status='ACTIVE',starts_at=CURRENT_TIMESTAMP,expires_at=?1 WHERE company_id=?2 AND employee_profile_id=?3 AND permission_key=?4 AND scope_type='PROVIDER_ACCOUNT' AND scope_id=?5 AND status IN ('ACTIVE','SUSPENDED','EXPIRED')"
         ).bind(next.validUntil, companyId, current.employee_profile_id, OPERATING_GRANT, current.provider_outlet_account_id),
         env.DB.prepare(
           "INSERT INTO employee_permission_grants (id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason,expires_at) SELECT ?1,?2,?3,?4,'PROVIDER_ACCOUNT',?5,'ACTIVE',?6,?7,?8 WHERE NOT EXISTS (SELECT 1 FROM employee_permission_grants WHERE company_id=?2 AND employee_profile_id=?3 AND permission_key=?4 AND scope_type='PROVIDER_ACCOUNT' AND scope_id=?5 AND status='ACTIVE')"
