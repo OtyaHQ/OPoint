@@ -6,39 +6,38 @@ class MemoryD1 {
   constructor(roleKey) {
     this.roleKey = roleKey;
     this.calls = [];
-  }
-  prepare(sql) {
-    const database = this;
-    const statement = {
-      sql,
-      values: [],
-      bind(...values) { this.values = values; return this; },
-      async first() {
-        database.calls.push({ kind: "first", sql: this.sql, values: this.values });
-        if (this.sql.includes("FROM staff_memberships sm JOIN companies c")) {
-          return {
-            membership_id: "membership-1",
-            company_id: "company-1",
-            branch_id: "branch-1",
-            display_name: "Synthetic test owner",
-            email: "owner@example.invalid",
-            role_key: database.roleKey,
-            status: "ACTIVE",
-            company_name: "Synthetic Otya company",
-          };
-        }
-        return null;
-      },
-      async all() {
-        database.calls.push({ kind: "all", sql: this.sql, values: this.values });
-        return { results: [] };
-      },
-      async run() {
-        database.calls.push({ kind: "run", sql: this.sql, values: this.values });
-        return { meta: { changes: 1 } };
-      },
+    this.prepare = (sql) => {
+      const values = [];
+      const statement = {
+        sql,
+        bind(...nextValues) { values.splice(0, values.length, ...nextValues); return statement; },
+        first: async () => {
+          this.calls.push({ kind: "first", sql, values: [...values] });
+          if (sql.includes("FROM staff_memberships sm JOIN companies c")) {
+            return {
+              membership_id: "membership-1",
+              company_id: "company-1",
+              branch_id: "branch-1",
+              display_name: "Synthetic test owner",
+              email: "owner@example.invalid",
+              role_key: this.roleKey,
+              status: "ACTIVE",
+              company_name: "Synthetic Otya company",
+            };
+          }
+          return null;
+        },
+        all: async () => {
+          this.calls.push({ kind: "all", sql, values: [...values] });
+          return { results: [] };
+        },
+        run: async () => {
+          this.calls.push({ kind: "run", sql, values: [...values] });
+          return { meta: { changes: 1 } };
+        },
+      };
+      return statement;
     };
-    return statement;
   }
   async batch() {
     throw new Error("Unexpected database write in read-only provider access test");
