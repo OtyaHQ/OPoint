@@ -572,6 +572,26 @@ export default function WorkforcePortal() {
           {error ? <div className="message error" role="alert">{error}</div> : null}
           {notice ? <div className="message success" role="status">{notice}</div> : null}
 
+          {pendingMemberships.length ? (
+            <section className="panel pending-banner">
+              <div className="panel-head">
+                <div><h2>Memberships awaiting activation</h2><p>You have accepted invitations that an Owner/Admin still needs to activate.</p></div>
+                <span className="badge amber">{pendingMemberships.length} pending</span>
+              </div>
+              {pendingMemberships.map(item => (
+                <div className="pending-row" key={item.membership_id}>
+                  <div><strong>{item.company_name}</strong><span>{item.role_key} · {item.email ?? identity.email ?? "Otya Account"}</span></div>
+                  <span className="badge amber">AWAITING ACTIVATION</span>
+                </div>
+              ))}
+            </section>
+          ) : null}
+          {!identity.emailVerified ? (
+            <div className="message error" role="status">
+              Your Otya Account email is not verified. Some onboarding actions, including invitation acceptance, require email verification.
+            </div>
+          ) : null}
+
           {isPrivileged ? (
             <>
               <div className="grid-4">
