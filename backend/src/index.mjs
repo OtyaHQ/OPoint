@@ -5,6 +5,15 @@ import {
   normalizeAssignmentStatus,
   normalizeWorkAssignment,
 } from "./work-assignments.mjs";
+import {
+  handleMyProviderOperatorAssignments,
+  handleProviderOperatorRoutes,
+} from "./provider-operators.mjs";
+import {
+  handleStaffInvitationAcceptance,
+  handleStaffInvitationManagement,
+  handleStaffMembershipStatusManagement,
+} from "./staff-invitations.mjs";
 
 const REQUIRED_TABLES = [
   "companies", "branches", "staff_memberships", "company_creation_requests",
@@ -14,7 +23,7 @@ const REQUIRED_TABLES = [
   "reconciliation_sessions", "reconciliation_items", "journal_entries", "journal_lines",
   "payment_intents", "payment_attempts", "payment_reversals", "agency_operations",
   "biller_catalog", "opoint_schema_migrations", "audit_events", "integration_status",
-  "staff_work_assignments", "staff_work_assignment_events", "stored_files",
+  "staff_work_assignments", "staff_work_assignment_events", "staff_invitations", "staff_invitation_events", "staff_membership_events", "stored_files",
   "departments", "job_positions", "employee_profiles", "employee_assignments",
   "employee_permission_grants", "employee_documents", "company_assets", "company_sim_details",
   "asset_assignments", "provider_relationships", "provider_outlet_accounts", "provider_operator_profiles",
@@ -46,6 +55,25 @@ const REQUIRED_GUARDS = [
   "issued_receipts_record_void",
   "provider_message_captures_no_delete",
   "provider_message_captures_review_only",
+  "provider_operator_active_insert_guard",
+  "provider_operator_active_update_guard",
+  "employee_provider_grant_active_insert_guard",
+  "employee_provider_grant_active_update_guard",
+  "mobile_money_assignment_deactivation_revokes_provider_access",
+  "staff_work_assignment_revoked_terminal",
+  "staff_invitations_terminal_status_guard",
+  "staff_invitations_core_fields_immutable",
+  "staff_invitations_delivery_transition_guard",
+  "staff_invitations_acceptance_guard",
+  "staff_invitation_events_no_update",
+  "staff_invitation_events_no_delete",
+  "staff_memberships_owner_status_guard",
+  "staff_memberships_role_transfer_guard",
+  "staff_memberships_revoked_terminal",
+  "staff_memberships_no_delete",
+  "staff_membership_status_cascade_work_assignments",
+  "staff_membership_events_no_update",
+  "staff_membership_events_no_delete",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -144,6 +172,7 @@ async function verifyIdentity(request, env) {
       identity: {
         userId: data.user_id,
         email: typeof data.email === "string" ? data.email.toLowerCase() : null,
+        emailVerified: data.email_verified === true || data.email_verified === 1 || data.email_verified === "true",
       },
     };
   } catch {
@@ -404,7 +433,7 @@ async function handle(request, env) {
       const migrationNames = new Set((migrations.results || []).map(row => row.version));
       const missingTables = REQUIRED_TABLES.filter(name => !names.has(name));
       const missingGuards = REQUIRED_GUARDS.filter(name => !names.has(name));
-      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts"];
+      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access", "0008_staff_invitations"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
       return json({ service: "opoint-api-staging", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
@@ -437,6 +466,12 @@ async function handle(request, env) {
   if (verified.response) return verified.response;
   const identity = verified.identity;
 
+  const myProviderOperatorAssignments = await handleMyProviderOperatorAssignments(request, env, identity, requestId);
+  if (myProviderOperatorAssignments) return myProviderOperatorAssignments;
+
+  const invitationAcceptanceResponse = await handleStaffInvitationAcceptance(request, env, identity, url, requestId);
+  if (invitationAcceptanceResponse) return invitationAcceptanceResponse;
+
   if (request.method === "GET" && url.pathname === "/v1/me") {
     const memberships = await companyMemberships(env, identity.userId);
     return json({ data: { userId: identity.userId, email: identity.email, memberships }, requestId }, 200, requestId);
@@ -458,10 +493,48 @@ async function handle(request, env) {
   const companyId = clean(request.headers.get("x-company-id") || url.searchParams.get("companyId"), 80);
   const membership = await requireMembership(env, identity.userId, companyId);
   if (!membership) return json({ error: "company_access_denied", requestId }, 403, requestId);
+  const staffInvitationResponse = await handleStaffInvitationManagement(request, env, identity, membership, url, requestId);
+  if (staffInvitationResponse) return staffInvitationResponse;
+  const staffMembershipStatusResponse = await handleStaffMembershipStatusManagement(request, env, identity, membership, url, requestId);
+  if (staffMembershipStatusResponse) return staffMembershipStatusResponse;
+  const providerOperatorResponse = await handleProviderOperatorRoutes(request, env, identity, membership, url, requestId);
+  if (providerOperatorResponse) return providerOperatorResponse;
   const assignmentResponse = await handleWorkAssignmentRoutes(request, env, identity, membership, url, requestId);
   if (assignmentResponse) return assignmentResponse;
 
   const privileged = canManageWorkAssignments(membership.role_key);
+  // Workforce directory: management-only. Return business contact and employment metadata,
+  // never identity documents, private KYC data, provider PINs, or device secrets.
+  if (request.method === "GET" && url.pathname === "/v1/staff") {
+    if (!canManageWorkAssignments(membership.role_key)) {
+      return json({ error: "staff_directory_forbidden", requestId }, 403, requestId);
+    }
+    const branchId = clean(url.searchParams.get("branchId"), 80) || null;
+    if (branchId) {
+      const branch = await env.DB.prepare(
+        "SELECT id FROM branches WHERE company_id=?1 AND id=?2 AND status='ACTIVE' LIMIT 1"
+      ).bind(companyId, branchId).first();
+      if (!branch) return json({ error: "active_branch_required", requestId }, 404, requestId);
+    }
+    const rows = await env.DB.prepare(
+      "SELECT sm.id AS membership_id,sm.display_name,sm.email,sm.role_key,sm.status AS membership_status,COALESCE(ea.branch_id,sm.branch_id) AS branch_id,b.name AS branch_name,ep.id AS employee_profile_id,ep.employee_number,ep.employment_type,ep.employment_status,ep.hire_date,ep.end_date,jp.title AS position_title,d.name AS department_name FROM staff_memberships sm LEFT JOIN employee_profiles ep ON ep.company_id=sm.company_id AND ep.staff_membership_id=sm.id LEFT JOIN employee_assignments ea ON ea.id=(SELECT ea2.id FROM employee_assignments ea2 WHERE ea2.company_id=sm.company_id AND ea2.employee_profile_id=ep.id AND ea2.status='ACTIVE' AND datetime(ea2.starts_at)<=CURRENT_TIMESTAMP AND (ea2.ends_at IS NULL OR datetime(ea2.ends_at)>CURRENT_TIMESTAMP) ORDER BY CASE WHEN ea2.assignment_type='PRIMARY' THEN 0 ELSE 1 END,ea2.starts_at DESC LIMIT 1) LEFT JOIN branches b ON b.company_id=sm.company_id AND b.id=COALESCE(ea.branch_id,sm.branch_id) LEFT JOIN job_positions jp ON jp.company_id=ea.company_id AND jp.id=ea.position_id LEFT JOIN departments d ON d.company_id=ea.company_id AND d.id=ea.department_id WHERE sm.company_id=?1 AND (?2 IS NULL OR COALESCE(ea.branch_id,sm.branch_id)=?2) ORDER BY CASE sm.status WHEN 'ACTIVE' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END,sm.display_name LIMIT 250"
+    ).bind(companyId, branchId).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  // Branch discovery is company-scoped for privileged members and restricted
+  // to the employee's default/explicitly assigned branches for everyone else.
+  if (request.method === "GET" && url.pathname === "/v1/branches") {
+    const rows = privileged
+      ? await env.DB.prepare(
+        "SELECT id,branch_code,name,district,town_council,location_label,public_phone,status,is_primary FROM branches WHERE company_id=?1 AND status='ACTIVE' ORDER BY is_primary DESC,name LIMIT 100"
+      ).bind(companyId).all()
+      : await env.DB.prepare(
+        "SELECT b.id,b.branch_code,b.name,b.district,b.town_council,b.location_label,b.public_phone,b.status,b.is_primary FROM branches b WHERE b.company_id=?1 AND b.status='ACTIVE' AND (b.id=?2 OR EXISTS (SELECT 1 FROM staff_work_assignments a WHERE a.company_id=b.company_id AND a.branch_id=b.id AND a.staff_membership_id=?3 AND a.status='ACTIVE')) ORDER BY b.is_primary DESC,b.name LIMIT 100"
+      ).bind(companyId, membership.branch_id, membership.membership_id).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
   const requestedBranchId = clean(request.headers.get("x-branch-id") || url.searchParams.get("branchId"), 80) || null;
   if (!privileged && membership.branch_id && requestedBranchId && membership.branch_id !== requestedBranchId) {
     return json({ error: "branch_access_denied", requestId }, 403, requestId);
