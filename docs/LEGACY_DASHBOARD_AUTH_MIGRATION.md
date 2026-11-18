@@ -1,36 +1,51 @@
-# Opoint web dashboard — legacy authentication migration
+# OtyaPoint web dashboard — authentication and Cloudflare migration
 
-**Current finding (11 November 2026):** The existing Next.js management dashboard still has active Supabase Auth dependencies. This is not dead code yet; pages and server actions use it to gate staff access. The new Opoint Cloudflare Worker foundation does not currently replace this entire web session flow.
+**Current finding (18 November 2026):** The existing Next.js management dashboard still uses Supabase Auth and Prisma for staff-facing authorization. Those imports are active and cannot be deleted safely yet. The canonical OtyaPoint Worker and workforce API are now checked into this repository on draft PR #152, but the browser session bridge and dashboard cutover are not complete.
 
-## Confirmed active references on the current default branch
+## Confirmed current implementation
 
 - `middleware.ts` creates a Supabase server client, calls `auth.getUser()`, and redirects unauthenticated requests to `/login`.
-- `lib/auth.ts` calls Supabase `auth.getUser()` and then resolves the staff profile and role through Prisma.
-- `app/login/actions.ts` currently signs in using email/password.
-- `lib/supabase/server.ts` manages auth cookies.
-- `lib/supabase/admin.ts` is used by staff invitations.
-- `app/management/staff/actions.ts` uses the admin client.
-- The package manifest includes `@supabase/ssr` and `@supabase/supabase-js`; `.env.example` still contains Supabase variables.
+- `lib/auth.ts` uses Supabase Auth and then resolves staff profile/role through Prisma.
+- `app/login/actions.ts` signs in with the legacy email/password flow.
+- `lib/supabase/server.ts` manages Supabase auth cookies.
+- `lib/supabase/admin.ts` and `app/management/staff/actions.ts` use the Supabase admin client for staff invitations.
+- The root package still depends on `@supabase/ssr` and `@supabase/supabase-js`, and the dashboard package build is part of the current verification workflow.
+- Root `wrangler.toml` still targets the legacy `cloudflare-api/src/index.ts` Worker. It is **not** a Next.js deployment configuration.
+- The canonical OtyaPoint API is `backend/src/index.mjs`, with isolated staging config in `wrangler.opoint-staging.toml`. Draft PR #152 contains the new staff directory, branch/work-area, provider-operator, invitation and membership lifecycle APIs. Its backend CI, security baseline and full Verify OtyaPoint workflow passed at the recorded branch revision; the PR is not merged or deployed.
+- The staging OtyaPoint Worker uses a service binding to the isolated Otya ID service. Invitation delivery remains fail-closed until a separate staging-only invitation service token and matching isolated Auth route are provisioned.
 
-Therefore, removing the two dependencies or deleting `lib/supabase/` now would break staff authentication and invitation flows. These items must be migrated, not simply deleted.
+Removing Supabase or Prisma today would break the existing dashboard login, server-side authorization and invitation paths. Migrate those flows end-to-end before removing the legacy dependencies.
 
-## Target replacement
+## Target architecture
 
-1. Otya ID becomes the only account/session authority and uses email OTP, with Telegram bot as an optional delivery channel only after explicit account linking.
-2. The web dashboard stores short-lived Otya ID access and rotating refresh sessions in secure, HttpOnly, SameSite cookies. Tokens never enter localStorage or client-visible page props.
-3. Server-side authorization verifies the Otya ID session and then resolves Opoint's company membership and role through the Opoint API. The browser cannot choose the tenant or role.
-4. Opoint staff invitations become Opoint-owned commands. The server records the invitation and requests email delivery through an authenticated, narrow Otya End mail interface. No Supabase admin key is retained.
-5. Prisma/PostgreSQL staff-profile duplication is removed only after the source of truth has moved to Opoint D1 and migration/backfill/reconciliation has been verified.
+1. **One identity authority:** Otya ID is the only login/session authority. OtyaPoint stores company membership, staff roles, branch assignments and work-area permissions in its canonical D1 database.
+2. **Server-only browser sessions:** the dashboard BFF holds short-lived access tokens and rotating refresh tokens in secure, HttpOnly, SameSite cookies. Prefer host-only `__Host-` cookie names with `Path=/`, `Secure`, and no `Domain` attribute. Do not reuse the legacy `.petersmartlink.com` cookie domain or expose tokens to localStorage/client page props.
+3. **Session validation and revocation:** the BFF validates the Otya ID session server-side, refreshes through the Auth service binding, rotates refresh credentials, and supports logout/session revocation. Protect state-changing browser requests with origin/CSRF controls.
+4. **Server-side tenant authorization:** the BFF obtains the authenticated user identity from Otya ID and calls the canonical OtyaPoint API. The API remains responsible for resolving the company membership, role, branch and work-area permissions. Never trust a browser-provided tenant or role.
+5. **OtyaPoint-owned onboarding:** staff invitations, acceptance, activation, suspension and revocation go through OtyaPoint APIs. A verified current Otya ID email must match the invitation; acceptance creates a pending membership; an Owner/Admin must activate it.
+6. **One employment source of truth:** remove Prisma/PostgreSQL staff-profile duplication only after the OtyaPoint D1 source of truth, any required backfill/reconciliation, audit history and recovery plan have been tested.
 
-## Safe removal order
+## Cloudflare dashboard runtime decision
 
-- First build and stage Otya ID email OTP plus optional linked Telegram bot delivery.
-- Migrate Opoint web login, middleware, server actions, API routes, invitations, logout, refresh and revocation to the new Otya ID contract.
-- Run role/tenant/branch isolation and CSRF/session rotation tests.
-- Remove Supabase Auth imports and environment variables; confirm the build and all protected dashboard routes pass.
-- Remove `@supabase/ssr`, `@supabase/supabase-js`, stale Supabase files and old lockfile references only after the dependency scanner confirms no imports remain.
-- Keep any unrelated third-party integration credentials until a separate usage audit proves they are unused.
+The current package uses Next.js 15.1 with ordinary `next dev`, `next build` and `next start` scripts. It has no checked-in OpenNext/vinext configuration or Next.js Worker deployment manifest. The existing API Worker config must not be reused as if it hosts the dashboard.
 
-## Current limitation
+Cloudflare's current Next.js guidance (updated 5 November 2026) recommends **vinext** as the default Next.js-on-Workers path, but explicitly labels vinext beta and instructs teams to run `npx vinext check` and review compatibility before adopting it. The non-destructive `vinext init` workflow keeps the normal Next.js toolchain available while testing the Workers path. See:
+- https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/
+- https://developers.cloudflare.com/workers/static-assets/migration-guides/vercel-to-workers/nextjs/
 
-The new Opoint API Worker foundation is a separate implementation archive and its staging D1 is prepared, but the Worker source has not yet been checked into the product repository or deployed. This dashboard migration is consequently a planned integration gate, not a completed cutover.
+Therefore, assess compatibility first on a separate branch. Keep `next dev`/`next build` intact during evaluation. Do not point the dashboard to production domains or attach production secrets during this migration. If the current dashboard uses features that do not pass vinext compatibility, evaluate the documented OpenNext adapter as a maintenance path and migrate later when compatible.
+
+## Safe implementation order
+
+- [ ] Complete and merge the canonical OtyaPoint workforce API and shared Otya Auth invitation contract only after both PRs' checks pass and reviews are complete.
+- [ ] Provision a dedicated staging-only service token and staging Auth route; verify that staging email delivery cannot use production credentials.
+- [ ] Run the non-destructive Next.js/vinext compatibility check and document unsupported features.
+- [ ] Build the dashboard BFF/session routes on the chosen Cloudflare runtime. Use host-only cookies, refresh rotation, logout/revocation, no-store responses, origin/CSRF checks and server-only service bindings.
+- [ ] Replace Supabase middleware, login actions, staff actions and server authorization with Otya ID + canonical OtyaPoint API calls.
+- [ ] Add browser E2E tests for login/OTP, session refresh and rotation, logout/revocation, email-bound invitations, Owner/Admin activation rules, company/branch/work-area isolation and CSRF/origin rejection.
+- [ ] Verify recovery/backups and staff membership reconciliation before removing Prisma staff-profile usage.
+- [ ] Remove Supabase packages, environment variables, files and lockfile references only after a repository-wide import scan and all protected-route tests pass.
+
+## Release boundaries
+
+The current PR work is source-only. No remote D1 migration, Worker deployment, DNS mutation, production secret change, live payment execution or provider operation has been performed. Keep payment execution, provider execution and AI execution disabled until their separate release approvals and operational controls are complete.
