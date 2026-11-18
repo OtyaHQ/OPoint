@@ -8,13 +8,13 @@ class PendingMembershipD1 {
   }
 
   prepare(sql) {
-    const state = this;
+    const calls = this.calls;
     return {
       sql,
       values: [],
       bind(...values) { this.values = values; return this; },
       async all() {
-        state.calls.push({ sql: this.sql, values: [...this.values] });
+        calls.push({ sql: this.sql, values: [...this.values] });
         return {
           results: [{
             membership_id: "membership-pending-1",
