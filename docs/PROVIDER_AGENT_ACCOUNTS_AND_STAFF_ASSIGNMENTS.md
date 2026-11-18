@@ -40,6 +40,7 @@ All routes below require an authenticated Otya ID token, an active company membe
 
 | Method | Route | Purpose |
 |---|---|---|
+| GET | `/v1/me/provider-agent-assignments` | Let signed-in staff read their own active provider-account assignments |
 | GET | `/v1/provider-agent-accounts` | List accounts; optional `branchId` and `providerCode` filters |
 | POST | `/v1/provider-agent-accounts` | Create a pending provider account; requires an idempotency key |
 | POST | `/v1/provider-agent-accounts/:id/status` | Activate, suspend or revoke an account |
