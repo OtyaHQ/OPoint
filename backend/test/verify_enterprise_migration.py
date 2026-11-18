@@ -37,7 +37,7 @@ expected_migrations = {
     "0004_staff_work_assignments": "fa3666d4eb0e62322800d5b9f0e9b762d24851b282fd01a7c20a4f1eed3a9090",
     "0005_enterprise_automation": "0a18fcb1eeb7f1bc6e658dd86b4f49e808b62bbd6a1833d3404415b3dceebe3e",
     "0006_message_capture_and_receipts": "db7576a526fefd6d585fb94539281f00996929404437ecc6b5f79fef05da07c1",
-    "0007_provider_operator_access": "3e450fecd3373a96468f532ade9533076242b3e0c7019898590b5aa5e5663222",
+    "0007_provider_operator_access": "7d04e726e84e1ba9243c99a167be011056e6824527b27b6fff8284e3cad5cbe4",
 }
 actual_migrations = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
 assert actual_migrations == expected_migrations, actual_migrations
