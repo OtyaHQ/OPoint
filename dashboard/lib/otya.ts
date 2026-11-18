@@ -265,16 +265,6 @@ export function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-export async function callOtyaAuth(path: string, init: RequestInit): Promise<Response> {
-  return workerEnv.OTYA_ID.fetch(new Request("https://auth" + path, {
-    ...init,
-    headers: new Headers({
-      Accept: "application/json",
-      ...(init.headers instanceof Headers ? Object.fromEntries(init.headers.entries()) : init.headers || {}),
-    }),
-  }));
-}
-
 export async function callOpoint(path: string, accessToken: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   headers.set("Authorization", "Bearer " + accessToken);
