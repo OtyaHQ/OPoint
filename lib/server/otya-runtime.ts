@@ -230,7 +230,7 @@ export async function getOtyaSession(request: Request): Promise<SessionLookup> {
 
   const userId = typeof verified.body.user_id === "string" ? verified.body.user_id : "";
   const email = typeof verified.body.email === "string" ? verified.body.email : "";
-  if (!userId || !email) {
+  if (!userId || !email || verified.body.email_verified !== true) {
     appendClearedSessionCookies(cookieHeaders);
     return { authenticated: false, cookieHeaders };
   }
@@ -319,6 +319,10 @@ export async function proxyOpointRequest(
     accept: "application/json",
   });
   if (body !== undefined) headers.set("content-type", "application/json");
+  const idempotencyKey = request.headers.get("idempotency-key") || "";
+  if (/^[A-Za-z0-9._:-]{8,128}$/.test(idempotencyKey)) {
+    headers.set("idempotency-key", idempotencyKey);
+  }
 
   try {
     const upstream = await bindings.OPOINT_API.fetch(new Request(target, {
