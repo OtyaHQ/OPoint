@@ -14,7 +14,13 @@ const REQUIRED_TABLES = [
   "reconciliation_sessions", "reconciliation_items", "journal_entries", "journal_lines",
   "payment_intents", "payment_attempts", "payment_reversals", "agency_operations",
   "biller_catalog", "opoint_schema_migrations", "audit_events", "integration_status",
-  "staff_work_assignments", "staff_work_assignment_events",
+  "staff_work_assignments", "staff_work_assignment_events", "stored_files",
+  "departments", "job_positions", "employee_profiles", "employee_assignments",
+  "employee_permission_grants", "employee_documents", "company_assets", "company_sim_details",
+  "asset_assignments", "provider_relationships", "provider_outlet_accounts", "provider_operator_profiles",
+  "provider_balance_observations", "capture_records", "capture_extractions", "provider_statement_imports",
+  "provider_transaction_records", "provider_statement_rows", "provider_message_captures",
+  "issued_receipts", "receipt_events",
 ];
 const REQUIRED_GUARDS = [
   "trg_journal_post_balance_guard",
@@ -23,6 +29,23 @@ const REQUIRED_GUARDS = [
   "trg_stock_movement_balance_guard",
   "staff_work_assignment_events_no_update",
   "staff_work_assignment_events_no_delete",
+  "provider_transaction_records_guard",
+  "provider_balance_observations_no_update",
+  "provider_balance_observations_no_delete",
+  "provider_transaction_records_no_update",
+  "provider_transaction_records_no_delete",
+  "provider_outlet_account_active_guard",
+  "issued_receipts_source_guard",
+  "issued_receipts_no_delete",
+  "issued_receipt_events_no_update",
+  "issued_receipt_events_no_delete",
+  "provider_operator_account_relationship_guard",
+  "company_sim_asset_type_guard",
+  "issued_receipts_void_only",
+  "issued_receipts_record_issue",
+  "issued_receipts_record_void",
+  "provider_message_captures_no_delete",
+  "provider_message_captures_review_only",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -381,7 +404,7 @@ async function handle(request, env) {
       const migrationNames = new Set((migrations.results || []).map(row => row.version));
       const missingTables = REQUIRED_TABLES.filter(name => !names.has(name));
       const missingGuards = REQUIRED_GUARDS.filter(name => !names.has(name));
-      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments"];
+      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
       return json({ service: "opoint-api-staging", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
