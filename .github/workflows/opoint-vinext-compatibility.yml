@@ -1,0 +1,58 @@
+name: OtyaPoint Dashboard Cloudflare Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/opoint-vinext-compatibility.yml"
+      - "app/**"
+      - "components/**"
+      - "lib/**"
+      - "middleware.ts"
+      - "next.config.*"
+      - "package.json"
+      - "package-lock.json"
+      - "prisma/**"
+      - "public/**"
+      - "tsconfig.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opoint-vinext-compatibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Read-only vinext compatibility check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install existing dashboard dependencies
+        run: npm ci
+
+      - name: Check Next.js compatibility with Cloudflare vinext
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes vinext check 2>&1 | tee vinext-compatibility-report.log
+
+      - name: Preserve compatibility report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opoint-vinext-compatibility-report
+          path: vinext-compatibility-report.log
+          if-no-files-found: ignore
+          retention-days: 14
