@@ -70,8 +70,8 @@ db.executemany(
 )
 
 db.execute(
-    "INSERT INTO company_assets(id,company_id,branch_id,asset_tag,asset_type,manufacturer,model) "
-    "VALUES ('sim-asset-1','co-1','br-1','SIM-001','SIM_CARD','Airtel','Corporate SIM')"
+    "INSERT INTO company_assets(id,company_id,branch_id,asset_tag,asset_type,manufacturer,model,lifecycle_status) "
+    "VALUES ('sim-asset-1','co-1','br-1','SIM-001','SIM_CARD','Airtel','Corporate SIM','ASSIGNED')"
 )
 db.execute(
     "INSERT INTO company_sim_details(asset_id,company_id,msisdn,iccid,network_code,registration_status) "
