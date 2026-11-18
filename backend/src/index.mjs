@@ -455,6 +455,7 @@ async function handle(request, env) {
       salesPostingEnabled: true,
       journalPostingEnabled: true,
       cashMovementEnabled: true,
+      openingStockEnabled: true,
       agencyOperationsEnabled: false,
       billPaymentsEnabled: false,
       airtimeAndDataEnabled: false,
