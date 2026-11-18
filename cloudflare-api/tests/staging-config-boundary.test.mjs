@@ -35,7 +35,7 @@ test("API release is gated, applies migrations, verifies private identity bindin
   assert.match(apiDeploy, /workflow_dispatch:/);
   assert.match(apiDeploy, /DEPLOY-STAGING/);
   assert.match(apiDeploy, /d1 migrations apply opoint-staging-db --remote/);
-  assert.match(apiDeploy, /service == 'otya-id-staging'/);
+  assert.match(apiDeploy, /service == "otya-id-staging"/);
   assert.match(apiDeploy, /PAYMENT_EXECUTION_ENABLED/);
   assert.match(apiDeploy, /previews_enabled == false/);
   assert.doesNotMatch(apiDeploy, /petersmartlink\.workers\.dev|petersmartlink\.com/);
