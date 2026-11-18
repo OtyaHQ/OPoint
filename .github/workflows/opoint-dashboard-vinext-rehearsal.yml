@@ -61,6 +61,12 @@ jobs:
           cd "$RUNNER_TEMP/opoint-vinext-rehearsal"
           npm run build:vinext
 
+      - name: Type-check the dashboard Worker and routes
+        shell: bash
+        run: |
+          cd "$RUNNER_TEMP/opoint-vinext-rehearsal"
+          npm run check
+
       - name: Report generated runtime configuration
         if: always()
         shell: bash
