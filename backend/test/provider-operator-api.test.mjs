@@ -8,13 +8,13 @@ class MemoryD1 {
     this.calls = [];
   }
   prepare(sql) {
-    const db = this;
+    const database = this;
     const statement = {
       sql,
       values: [],
       bind(...values) { this.values = values; return this; },
       async first() {
-        db.calls.push({ kind: "first", sql: this.sql, values: this.values });
+        database.calls.push({ kind: "first", sql: this.sql, values: this.values });
         if (this.sql.includes("FROM staff_memberships sm JOIN companies c")) {
           return {
             membership_id: "membership-1",
@@ -22,7 +22,7 @@ class MemoryD1 {
             branch_id: "branch-1",
             display_name: "Synthetic test owner",
             email: "owner@example.invalid",
-            role_key: db.roleKey,
+            role_key: database.roleKey,
             status: "ACTIVE",
             company_name: "Synthetic Otya company",
           };
@@ -30,11 +30,11 @@ class MemoryD1 {
         return null;
       },
       async all() {
-        db.calls.push({ kind: "all", sql: this.sql, values: this.values });
+        database.calls.push({ kind: "all", sql: this.sql, values: this.values });
         return { results: [] };
       },
       async run() {
-        db.calls.push({ kind: "run", sql: this.sql, values: this.values });
+        database.calls.push({ kind: "run", sql: this.sql, values: this.values });
         return { meta: { changes: 1 } };
       },
     };
