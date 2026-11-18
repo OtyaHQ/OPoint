@@ -2,18 +2,18 @@
 
 ## Purpose
 
-This contract defines how OtyaPoint relates to Otya products without merging their data, permissions, or production risk. It is the source-of-truth boundary for implementation work across the PeterSmart Link / Otya ecosystem.
+This contract defines how OtyaPoint relates to Otya products without merging their data, permissions, or production risk. It is the source-of-truth boundary for implementation work across the Otya ecosystem.
 
 ## System map
 
 - **Otya Auth (otya-auth)** — shared identity verification only. A successful login does not automatically grant access to any product or business.
 - **Otya Core (otya-core)** — shared Otya APIs and release/notification infrastructure. OtyaPoint business transactions must not be implemented by adding OtyaPoint tables or routes to the same production Worker unless a reviewed architecture decision explicitly chooses that coupling.
-- **OtyaPoint API (dedicated Worker, planned)** — isolated business API with its own D1 database, R2 namespace, cache namespace, queue and role checks. It is the only service allowed to write OtyaPoint operational records.
+- **OtyaPoint API (`otyapoint-api`)** — dedicated Worker and D1-backed business API with isolated business records, branch-aware authorization and provider gates. It is the only service allowed to write OtyaPoint operational records. New Level 1–2 branch/ledger changes remain in review until their migrations and UI are accepted.
 - **OtyaPoint web app** — staff-facing UI. It calls the OtyaPoint API; it must not connect directly to D1 or hold privileged credentials.
-- **Next (otya-next)** — owner assistant and approved automation interface. It can request scoped API operations but must not bypass OtyaPoint authorization or directly write operational tables.
-- **Otya Player** — offline-first media app. Local media remains local by default; its core playback must not depend on OtyaPoint or cloud availability.
-- **OtyaHub** — public product, documentation, policy and partner surfaces. Public content must not reveal private infrastructure, user records, or credentials.
-- **PeterSmart Link / Otya Hold / OtyaPoint UG Limited** — business and product ownership labels, not database-sharing permissions. Each company, branch, till, and business activity needs explicit tenancy and role scope.
+- **O (owner AI)** — private owner assistant and approved automation interface; it can request scoped API operations but must not bypass OtyaPoint authorization or directly write operational tables. It can request scoped API operations but must not bypass OtyaPoint authorization or directly write operational tables.
+- **Omy Play** — offline-first media app. Local media remains local by default; its core playback must not depend on OtyaPoint or cloud availability.
+- **OHub** — public developer, documentation, policy and partner surfaces. Public content must not reveal private infrastructure, user records, or credentials.
+- **Otya Holdings Limited** — intended parent-company identity, subject to completed URSB registration and provider acceptance. Do not treat it as an already-incorporated legal entity. Each company, branch, till and business activity needs explicit tenancy and role scope.
 
 ## Ownership rules
 
@@ -25,8 +25,8 @@ This contract defines how OtyaPoint relates to Otya products without merging the
 | Agency transactions, provider references, cash/float, commissions | OtyaPoint | Separate agency ledger; provider-confirmed status only; no inferred success |
 | Retail ledger and agency ledger | OtyaPoint | Separate ledger types and balanced entries; never silently net against each other |
 | Public product information and docs | OtyaHub | Publish only reviewed public-safe material |
-| Media files and release metadata | Otya Player / Otya Core release service | No default upload of local libraries or vault contents |
-| Owner-assistant conversations and approved action records | Next / Otya Core, according to its existing schema | Tool calls must carry actor, purpose, scope, approval and audit context |
+| Media files and release metadata | Omy Play / Otya Core release service | No default upload of local libraries or vault contents |
+| Owner-assistant conversations and approved action records | O / Otya Core, according to its existing schema | Tool calls must carry actor, purpose, scope, approval and audit context |
 | Shared static assets | Relevant product namespace | Signed/short-lived access for private files; no public bucket for receipts or exports |
 
 ## Communication pattern
