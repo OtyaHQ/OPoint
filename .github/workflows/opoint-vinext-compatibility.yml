@@ -2,6 +2,9 @@ name: OtyaPoint Dashboard Cloudflare Compatibility
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "chore/dashboard-vinext-compat-audit"
   pull_request:
     paths:
       - ".github/workflows/opoint-vinext-compatibility.yml"
