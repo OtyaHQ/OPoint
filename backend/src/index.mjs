@@ -52,6 +52,10 @@ const REQUIRED_GUARDS = [
   "provider_message_captures_review_only",
   "provider_operator_active_insert_guard",
   "provider_operator_active_update_guard",
+  "employee_provider_grant_active_insert_guard",
+  "employee_provider_grant_active_update_guard",
+  "mobile_money_assignment_deactivation_revokes_provider_access",
+  "staff_work_assignment_revoked_terminal",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -472,6 +476,7 @@ async function handle(request, env) {
   const assignmentResponse = await handleWorkAssignmentRoutes(request, env, identity, membership, url, requestId);
   if (assignmentResponse) return assignmentResponse;
 
+  const privileged = canManageWorkAssignments(membership.role_key);
   // Workforce directory: management-only. Return business contact and employment metadata,
   // never identity documents, private KYC data, provider PINs, or device secrets.
   if (request.method === "GET" && url.pathname === "/v1/staff") {
@@ -504,7 +509,6 @@ async function handle(request, env) {
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
 
-  const privileged = canManageWorkAssignments(membership.role_key);
   const requestedBranchId = clean(request.headers.get("x-branch-id") || url.searchParams.get("branchId"), 80) || null;
   if (!privileged && membership.branch_id && requestedBranchId && membership.branch_id !== requestedBranchId) {
     return json({ error: "branch_access_denied", requestId }, 403, requestId);
