@@ -29,7 +29,6 @@ head_sampling_rate = 0.05
 binding = "DB"
 database_name = "otyapoint-prod-db"
 database_id = "2f4bd0e0-cca1-414b-a086-ed86f3d8407f"
-migrations_dir = "backend/schema/migrations"
 
 [[services]]
 binding = "OTYA_ID"
