@@ -78,6 +78,10 @@ const REQUIRED_GUARDS = [
   "sale_requires_open_retail_cash_session",
   "cash_session_status_transition_guard",
   "cash_session_close_metadata_guard",
+  "cash_provider_float_insert_guard", "cash_provider_float_update_guard",
+  "provider_outlet_float_account_guard", "provider_outlet_float_account_update_guard",
+  "agency_operation_manual_operator_guard", "agency_operation_cash_session_balance",
+  "provider_float_nonnegative_balance_guard",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -437,7 +441,7 @@ async function handle(request, env) {
       const migrationNames = new Set((migrations.results || []).map(row => row.version));
       const missingTables = REQUIRED_TABLES.filter(name => !names.has(name));
       const missingGuards = REQUIRED_GUARDS.filter(name => !names.has(name));
-      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access", "0008_staff_invitations", "0009_cash_session_lifecycle"];
+      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access", "0008_staff_invitations", "0009_cash_session_lifecycle", "0010_provider_float_integrity"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
       return json({ service: "otyapoint-api", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
