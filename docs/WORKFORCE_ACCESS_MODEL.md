@@ -61,6 +61,26 @@ InterSwitch Marketplace Routing and Quickteller Business are separate bill-payme
 
 Provider account status, employee operator approval and staff-recorded receipts do not themselves initiate provider transactions. Actual payment execution remains disabled until provider contracts, approval, credential custody, trusted status verification, idempotency, reconciliation and release controls pass.
 
+## Invitation, acceptance and membership lifecycle
+
+Staff invitations are company-scoped, email-bound and one-use. Only an Owner or Admin can create/list/revoke them; only an Owner can invite another Admin. Normal invitations may assign Admin, Manager, Cashier, Agent, Accountant or Auditor roles. The Owner role is never assigned through a normal staff invitation.
+
+The invitation token is a random 256-bit value delivered only through the private Otya Auth service-binding route. OtyaPoint stores only its SHA-256 digest. Redemption requires a valid Otya ID session, a verified Otya Account email that matches the invitation address, a pending and unexpired invitation, and an available company/branch. An accepted invitation creates a **PENDING** staff membership; it does not activate shop access.
+
+An Owner/Admin must explicitly activate the pending membership through `POST /v1/staff/{membershipId}/status`. Admins cannot activate/manage another Admin; only an Owner can do that. Ordinary staff controls cannot change an Owner membership or perform ownership transfers. Membership activation, suspension and revocation are recorded in append-only membership history and audit events.
+
+Suspending a membership automatically suspends all of that person's active branch work assignments. Revoking a membership revokes all active or suspended work assignments. Those transitions also cascade to provider operator profiles and Mobile Money permission grants. Re-activating a suspended membership does **not** restore old work assignments or provider approvals; the Owner/Admin must review and reassign duties, and provider approval must be separately re-approved. Revoked memberships and revoked work assignments are terminal.
+
+Useful routes:
+
+- `POST /v1/staff/invitations` — create an invitation.
+- `GET /v1/staff/invitations` — list company invitations (no token or digest is returned).
+- `POST /v1/staff/invitations/{id}/revoke` — revoke a pending invitation.
+- `POST /v1/staff/invitations/accept` — redeem a token while signed in to Otya ID.
+- `POST /v1/staff/{membershipId}/status` — activate, suspend or revoke a membership.
+
+Invitation email delivery is fail-closed and uses the private Otya Auth route; OtyaPoint never receives a Resend API key. The staging deployment has no invitation service token binding yet, so invitation emails must remain disabled until a dedicated staging token and matching isolated Auth service are configured. Do not copy the production secret into staging.
+
 ## Device trust and remaining UI work
 
 The provider operator API can check assignment of a company SIM asset. This is not Android hardware attestation, device-bound session proof or evidence that the phone is uncompromised. A client-supplied device ID must never be accepted as that proof.
@@ -71,6 +91,6 @@ The legacy Next.js dashboard still contains active Supabase Auth/Prisma login an
 
 ## Release boundary
 
-- Forward migration `0007_provider_operator_access` is source-only until the separately authorized isolated staging migration workflow is run.
+- Forward migrations `0007_provider_operator_access` and `0008_staff_invitations` are source-only until the separately authorized isolated staging migration workflow is run.
 - No production D1 migration, production Worker deploy, DNS change, secret change, data import or live payment execution is part of this branch.
 - Passing source/CI tests proves the tested code contracts only; it does not prove provider onboarding, a successful live device trust flow or production readiness.
