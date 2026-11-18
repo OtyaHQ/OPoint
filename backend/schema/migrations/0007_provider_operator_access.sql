@@ -312,10 +312,10 @@ END;
 -- Re-enabling the work assignment does not silently restore provider approval;
 -- a manager must explicitly review and re-approve the operator profile.
 CREATE TRIGGER IF NOT EXISTS mobile_money_assignment_deactivation_revokes_provider_access
-AFTER UPDATE OF status ON staff_work_assignments
+AFTER UPDATE OF status, work_area ON staff_work_assignments
 WHEN OLD.work_area = 'MOBILE_MONEY'
  AND OLD.status = 'ACTIVE'
- AND NEW.status IN ('SUSPENDED','REVOKED')
+ AND (NEW.status IN ('SUSPENDED','REVOKED') OR NEW.work_area <> 'MOBILE_MONEY')
 BEGIN
   UPDATE provider_operator_profiles
      SET approval_status = CASE WHEN NEW.status = 'REVOKED' THEN 'REVOKED' ELSE 'SUSPENDED' END,
@@ -351,6 +351,15 @@ BEGIN
           AND scope_type = 'OUTLET'
      )
      AND status IN ('ACTIVE','SUSPENDED');
+END;
+
+-- Revocation is terminal at the database boundary too; a future assignment
+-- must be created and reviewed rather than silently reactivating a revoked grant.
+CREATE TRIGGER IF NOT EXISTS staff_work_assignment_revoked_terminal
+BEFORE UPDATE OF status ON staff_work_assignments
+WHEN OLD.status = 'REVOKED' AND NEW.status <> 'REVOKED'
+BEGIN
+  SELECT RAISE(ABORT, 'STAFF_WORK_ASSIGNMENT_REVOKED_TERMINAL');
 END;
 
 -- Migration checksum covers the SQL above and excludes this ledger insert.
