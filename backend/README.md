@@ -4,10 +4,10 @@ OtyaPoint is private company software for Otya's own retail and mobile-money age
 
 ## Runtime boundary
 
-- Product API: Cloudflare Worker `opoint-api-staging` for isolated staging.
+- Production API: Cloudflare Worker `otyapoint-api`, private behind the Otya Core same-origin gateway.
 - Data: product-owned D1 and private R2; no cross-product business records.
 - Identity: Otya ID service through a server-side service binding.
-- AI, payment execution and provider execution remain disabled in staging.
+- AI, payment execution and provider execution remain explicitly disabled in production until their individual release gates pass.
 - Amounts are whole-shilling UGX integers; ledger and provider evidence have separate integrity rules.
 
 ## Main capabilities in code
@@ -28,6 +28,14 @@ The Worker exposes company-scoped staff and branch read endpoints, branch-scoped
 The workforce directory returns limited employment metadata only. It does not expose raw KYC documents or identity numbers. One-use staff invitations require a verified Otya ID email, store only a token digest, and create a pending membership on redemption; only an Owner/Admin may activate that membership. Owner transfers are excluded from normal invites, and membership suspension/revocation cascades to work assignments and provider permissions. Provider lines are modeled as separate company SIM assets, not employee KYC/login phone numbers. InterSwitch Marketplace Routing and Quickteller Business remain distinct bill-payment/merchant integrations, not Airtel/MTN mobile-money operator accounts.
 
 The API layer is implemented on the review branch; complete browser workforce screens, the Otya ID server-side browser-session bridge, generic trusted-device proof and end-to-end browser acceptance remain follow-on work. Invitation delivery remains disabled in staging until a dedicated staging-only service token and matching Otya Auth staging route are available. Message parsing is candidate extraction for human review only and returns `providerStatus: UNKNOWN`. These capabilities do not request Android SMS inbox permissions, read notifications, or initiate payments. See [WORKFORCE_ACCESS_MODEL.md](../docs/WORKFORCE_ACCESS_MODEL.md).
+
+## Production runtime
+
+- Production Worker config: `wrangler.opoint-production.toml`.
+- Production D1: `otyapoint-prod-db`, initialized from the schema-only baseline and forward migrations.
+- Identity: the existing single Otya Auth/ID Worker (`otya-auth`) through a private service binding. No duplicate identity database is created.
+- The Worker has no `workers.dev` hostname or public custom domain; the Core gateway is its only browser entry point.
+- The legacy `cloudflare-api/` implementation is compatibility/reference code and is not the canonical production runtime.
 
 ## Local verification
 
