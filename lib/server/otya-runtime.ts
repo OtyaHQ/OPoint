@@ -288,10 +288,10 @@ export async function proxyOpointRequest(
   }
 
   const sessionResult = await getOtyaSession(request);
+  if ("error" in sessionResult) {
+    return jsonResponse({ error: sessionResult.error }, sessionResult.status, sessionResult.cookieHeaders);
+  }
   if (!sessionResult.authenticated) {
-    if ("error" in sessionResult) {
-      return jsonResponse({ error: sessionResult.error }, sessionResult.status, sessionResult.cookieHeaders);
-    }
     const headers = new Headers(sessionResult.cookieHeaders);
     return jsonResponse({ error: "authentication_required" }, 401, headers);
   }
