@@ -477,6 +477,13 @@ async function handle(request, env) {
     return json({ data: { userId: identity.userId, email: identity.email, memberships }, requestId }, 200, requestId);
   }
 
+  if (request.method === "GET" && url.pathname === "/v1/me/pending-memberships") {
+    const rows = await env.DB.prepare(
+      "SELECT sm.id AS membership_id,sm.company_id,c.display_name AS company_name,c.slug AS company_slug,sm.display_name,sm.email,sm.role_key,sm.status,sm.created_at FROM staff_memberships sm JOIN companies c ON c.id=sm.company_id WHERE sm.identity_subject=?1 AND sm.status='PENDING' AND c.status IN ('SETUP','ACTIVE') ORDER BY sm.created_at DESC LIMIT 50"
+    ).bind(identity.userId).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
   if (request.method === "GET" && url.pathname === "/v1/me/work-assignments") {
     const rows = await env.DB.prepare(
       "SELECT a.id,a.company_id,c.display_name AS company_name,a.branch_id,b.name AS branch_name,a.work_area,a.duty_role,a.status,a.created_at,a.updated_at FROM staff_work_assignments a JOIN staff_memberships sm ON sm.company_id=a.company_id AND sm.id=a.staff_membership_id JOIN companies c ON c.id=a.company_id JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE sm.identity_subject=?1 AND sm.status='ACTIVE' AND a.status='ACTIVE' AND b.status='ACTIVE' ORDER BY c.display_name,b.name,a.work_area LIMIT 100"
