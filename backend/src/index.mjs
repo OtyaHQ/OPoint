@@ -484,6 +484,7 @@ async function handle(request, env) {
   }
 
   if (request.method === "GET" && url.pathname === "/v1/overview") {
+    if (!privileged) return json({ error: "owner_or_admin_required", requestId }, 403, requestId);
     const [products, sales] = await Promise.all([
       env.DB.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN status='ACTIVE' THEN 1 ELSE 0 END) AS active FROM products WHERE company_id=?1").bind(companyId).first(),
       env.DB.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN status='COMPLETED' THEN total_amount ELSE 0 END) AS completed_amount FROM sales WHERE company_id=?1").bind(companyId).first(),
@@ -606,9 +607,12 @@ async function handle(request, env) {
 
   if (request.method === "GET" && url.pathname === "/v1/reconciliation") {
     if (!["OWNER","ADMIN","MANAGER","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
+    if (!privileged && !["ACCOUNTANT","AUDITOR"].includes(membership.role_key) && !scopedBranchId) {
+      return json({ error: "branch_selection_required", requestId }, 400, requestId);
+    }
     const rows = await env.DB.prepare(
       "SELECT r.id,r.branch_id,r.reconciliation_type,r.provider_code,r.business_date,r.expected_amount,r.counted_amount,r.difference_amount,r.status,r.notes,r.prepared_by,r.approved_by,r.created_at,r.updated_at,(SELECT COUNT(*) FROM reconciliation_items i WHERE i.company_id=r.company_id AND i.reconciliation_session_id=r.id) AS item_count FROM reconciliation_sessions r WHERE r.company_id=?1 AND (?2 IS NULL OR r.branch_id=?2) ORDER BY r.business_date DESC,r.created_at DESC LIMIT 100"
-    ).bind(companyId, membership.branch_id || null).all();
+    ).bind(companyId, scopedBranchId).all();
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
 
@@ -648,6 +652,7 @@ async function handle(request, env) {
   }
 
   if (request.method === "GET" && url.pathname === "/v1/integrations") {
+    if (!privileged) return json({ error: "owner_or_admin_required", requestId }, 403, requestId);
     const result = await env.DB.prepare(
       "SELECT provider_code,environment,status,last_health_check_at,last_error_code,updated_at FROM integration_status WHERE company_id=?1 ORDER BY provider_code,environment"
     ).bind(companyId).all();
