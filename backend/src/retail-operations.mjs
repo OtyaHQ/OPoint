@@ -126,6 +126,92 @@ async function requireWorkArea(request, membership, context, workArea, allowedRo
   return { area };
 }
 
+export function normalizeCashAccountRequest(body) {
+  const accountType = clean(body?.accountType, 24).toUpperCase();
+  const workArea = clean(body?.workArea, 24).toUpperCase();
+  const providerCode = clean(body?.providerCode, 32).toUpperCase();
+  const branchId = clean(body?.branchId, 80);
+  const displayName = clean(body?.displayName, 120);
+  if (!["CASH_DRAWER", "PROVIDER_FLOAT"].includes(accountType)) {
+    return { error: "unsupported_cash_account_type" };
+  }
+  if (!["RETAIL", "MOBILE_MONEY"].includes(workArea)) return { error: "invalid_cash_account_work_area" };
+  if (displayName.length < 3) return { error: "cash_account_display_name_required" };
+  if (accountType === "PROVIDER_FLOAT"
+    && (workArea !== "MOBILE_MONEY" || !["AIRTEL_MONEY", "MTN_MOMO"].includes(providerCode))) {
+    return { error: "provider_float_requires_matching_mobile_money_provider" };
+  }
+  if (accountType === "CASH_DRAWER" && providerCode) return { error: "cash_drawer_must_not_have_provider_code" };
+  return { value: { accountType, workArea, providerCode: providerCode || null, branchId: branchId || null, displayName } };
+}
+
+async function createCashAccount(request, env, identity, membership, context) {
+  if (!context.privileged || !["OWNER", "ADMIN"].includes(membership.role_key)) {
+    return json({ error: "owner_or_admin_required", requestId: context.requestId }, 403, context.requestId);
+  }
+  const parsed = await readJson(request, 4096);
+  if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
+  const normalized = normalizeCashAccountRequest(parsed.value);
+  if (normalized.error) return json({ error: normalized.error, requestId: context.requestId }, 400, context.requestId);
+  const input = normalized.value;
+  const branchId = input.branchId || context.scopedBranchId;
+  if (!branchId) return json({ error: "branch_selection_required", requestId: context.requestId }, 400, context.requestId);
+  const branch = await env.DB.prepare(
+    "SELECT id FROM branches WHERE company_id=?1 AND id=?2 AND status='ACTIVE' LIMIT 1"
+  ).bind(context.companyId, branchId).first();
+  if (!branch) return json({ error: "active_branch_required", requestId: context.requestId }, 404, context.requestId);
+
+  const key = idempotencyKey(request);
+  if (!key) return json({ error: "idempotency_key_required", requestId: context.requestId }, 400, context.requestId);
+  const fingerprint = await sha256(JSON.stringify({ ...input, branchId }));
+  const replay = await replayOrConflict(env.DB, context.companyId, "CASH_ACCOUNT_CREATE", key, fingerprint, context.requestId);
+  if (replay.response) return replay.response;
+
+  const accountId = crypto.randomUUID();
+  const ledgerAccountId = crypto.randomUUID();
+  const suffix = accountId.slice(0, 8).toUpperCase();
+  const accountCode = input.accountType === "PROVIDER_FLOAT"
+    ? "FLOAT-" + input.providerCode.replace("_MONEY", "") + "-" + suffix
+    : (input.workArea === "RETAIL" ? "RETAIL-CASH-" : "MM-CASH-") + suffix;
+  const ledgerCode = "ASSET-" + accountCode;
+  const resultBody = {
+    data: {
+      id: accountId, companyId: context.companyId, branchId,
+      ledgerAccountId, accountCode, ledgerAccountCode: ledgerCode,
+      accountType: input.accountType, workArea: input.workArea,
+      providerCode: input.providerCode, displayName: input.displayName,
+      currency: "UGX", status: "ACTIVE",
+    },
+  };
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        "INSERT INTO ledger_accounts (id,company_id,account_code,name,account_type,normal_balance,currency,is_system,status) VALUES (?1,?2,?3,?4,'ASSET','DEBIT','UGX',0,'ACTIVE')"
+      ).bind(ledgerAccountId, context.companyId, ledgerCode, input.displayName + " ledger"),
+      env.DB.prepare(
+        "INSERT INTO cash_accounts (id,company_id,branch_id,ledger_account_id,account_type,provider_code,account_code,display_name,currency,status,work_area) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,'UGX','ACTIVE',?9)"
+      ).bind(accountId, context.companyId, branchId, ledgerAccountId, input.accountType, input.providerCode, accountCode, input.displayName, input.workArea),
+      auditStatement(env.DB, {
+        companyId: context.companyId, actorId: identity.userId, action: "CASH_ACCOUNT_CREATED",
+        entityType: "CASH_ACCOUNT", entityId: accountId, reason: "Created " + input.workArea + " " + input.accountType,
+        requestId: context.requestId, before: null, after: resultBody.data,
+      }),
+      idempotencyStatement(env.DB, {
+        companyId: context.companyId, scope: "CASH_ACCOUNT_CREATE", key, fingerprint,
+        status: 201, body: resultBody, resourceType: "CASH_ACCOUNT", resourceId: accountId,
+      }),
+    ]);
+    return json(resultBody, 201, context.requestId);
+  } catch (error) {
+    const existing = await replayOrConflict(env.DB, context.companyId, "CASH_ACCOUNT_CREATE", key, fingerprint, context.requestId);
+    if (existing.response) return existing.response;
+    const message = String(error?.message || "");
+    if (message.includes("UNIQUE constraint failed")) return json({ error: "cash_account_code_conflict_retry", requestId: context.requestId }, 409, context.requestId);
+    console.error("[opoint] cash account creation failed", { type: error?.name || "Error" });
+    return json({ error: "cash_account_create_failed", requestId: context.requestId }, 500, context.requestId);
+  }
+}
+
 async function openCashSession(request, env, identity, membership, context) {
   const parsed = await readJson(request, 4096);
   if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
@@ -615,6 +701,9 @@ async function createCashSale(request, env, identity, membership, context) {
 
 export async function handleRetailWriteRoutes(request, env, identity, membership, context) {
   const url = new URL(request.url);
+  if (url.pathname === "/v1/cash/accounts" && request.method === "POST") {
+    return createCashAccount(request, env, identity, membership, context);
+  }
   if (url.pathname === "/v1/cash/sessions" && request.method === "POST") {
     return openCashSession(request, env, identity, membership, context);
   }
