@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties, type FormEvent } from "react";
 
 export default function OtyaOtpSignIn() {
   const [email, setEmail] = useState("");
@@ -10,7 +10,7 @@ export default function OtyaOtpSignIn() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  async function requestCode(event: React.FormEvent<HTMLFormElement>) {
+  async function requestCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
@@ -34,7 +34,7 @@ export default function OtyaOtpSignIn() {
     }
   }
 
-  async function verifyCode(event: React.FormEvent<HTMLFormElement>) {
+  async function verifyCode(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setBusy(true);
     setError("");
@@ -124,21 +124,21 @@ export default function OtyaOtpSignIn() {
   );
 }
 
-const page: React.CSSProperties = { minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#0c1422", color: "#f0f4fa" };
-const card: React.CSSProperties = { width: "100%", maxWidth: 440, border: "1px solid #243249", borderRadius: 20, padding: 30, background: "#111e30", boxShadow: "0 24px 80px #0004" };
-const brandRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 12, marginBottom: 34 };
-const mark: React.CSSProperties = { width: 42, height: 42, display: "grid", placeItems: "center", borderRadius: 13, background: "linear-gradient(145deg,#9c9aff,#6f75e9)", color: "white", fontSize: 22, fontWeight: 900 };
-const brand: React.CSSProperties = { fontSize: 18, fontWeight: 900, letterSpacing: -0.5 };
-const subtitle: React.CSSProperties = { fontSize: 9, letterSpacing: 1.4, color: "#8d9bb0", marginTop: 3 };
-const eyebrow: React.CSSProperties = { fontSize: 10, letterSpacing: 1.5, color: "#a8b8ff", fontWeight: 800, marginBottom: 10 };
-const heading: React.CSSProperties = { fontSize: 27, lineHeight: 1.2, letterSpacing: -0.8, marginBottom: 10 };
-const muted: React.CSSProperties = { color: "#8d9bb0", lineHeight: 1.65, fontSize: 13, marginBottom: 24 };
-const form: React.CSSProperties = { display: "grid", gap: 12 };
-const label: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: "#c5d0e1" };
-const input: React.CSSProperties = { width: "100%", borderRadius: 9, border: "1px solid #33445f", background: "#0c1422", color: "#f0f4fa", padding: "13px 14px", fontSize: 14, outlineColor: "#a8b8ff" };
-const primaryButton: React.CSSProperties = { border: 0, borderRadius: 9, padding: "13px 16px", background: "#8585fa", color: "#fff", fontWeight: 800, marginTop: 4, opacity: 1 };
-const secondaryButton: React.CSSProperties = { border: "1px solid #33445f", borderRadius: 9, padding: "12px 16px", background: "transparent", color: "#c5d0e1", fontWeight: 700 };
-const address: React.CSSProperties = { color: "#a8b8ff", fontSize: 12, fontWeight: 700, padding: "10px 12px", border: "1px solid #33445f", borderRadius: 8, background: "#0c1422" };
-const footnote: React.CSSProperties = { borderTop: "1px solid #243249", marginTop: 24, paddingTop: 16, color: "#62728a", fontSize: 10, lineHeight: 1.6 };
-const errorBox: React.CSSProperties = { color: "#fecaca", background: "#7f1d1d33", border: "1px solid #991b1b66", borderRadius: 8, padding: 11, fontSize: 12, marginBottom: 12 };
-const noticeBox: React.CSSProperties = { color: "#c7d2fe", background: "#6366f11c", border: "1px solid #6366f155", borderRadius: 8, padding: 11, fontSize: 12, lineHeight: 1.5, marginBottom: 12 };
+const page: CSSProperties = { minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#0c1422", color: "#f0f4fa" };
+const card: CSSProperties = { width: "100%", maxWidth: 440, border: "1px solid #243249", borderRadius: 20, padding: 30, background: "#111e30", boxShadow: "0 24px 80px #0004" };
+const brandRow: CSSProperties = { display: "flex", alignItems: "center", gap: 12, marginBottom: 34 };
+const mark: CSSProperties = { width: 42, height: 42, display: "grid", placeItems: "center", borderRadius: 13, background: "linear-gradient(145deg,#9c9aff,#6f75e9)", color: "white", fontSize: 22, fontWeight: 900 };
+const brand: CSSProperties = { fontSize: 18, fontWeight: 900, letterSpacing: -0.5 };
+const subtitle: CSSProperties = { fontSize: 9, letterSpacing: 1.4, color: "#8d9bb0", marginTop: 3 };
+const eyebrow: CSSProperties = { fontSize: 10, letterSpacing: 1.5, color: "#a8b8ff", fontWeight: 800, marginBottom: 10 };
+const heading: CSSProperties = { fontSize: 27, lineHeight: 1.2, letterSpacing: -0.8, marginBottom: 10 };
+const muted: CSSProperties = { color: "#8d9bb0", lineHeight: 1.65, fontSize: 13, marginBottom: 24 };
+const form: CSSProperties = { display: "grid", gap: 12 };
+const label: CSSProperties = { fontSize: 11, fontWeight: 700, color: "#c5d0e1" };
+const input: CSSProperties = { width: "100%", borderRadius: 9, border: "1px solid #33445f", background: "#0c1422", color: "#f0f4fa", padding: "13px 14px", fontSize: 14, outlineColor: "#a8b8ff" };
+const primaryButton: CSSProperties = { border: 0, borderRadius: 9, padding: "13px 16px", background: "#8585fa", color: "#fff", fontWeight: 800, marginTop: 4, opacity: 1 };
+const secondaryButton: CSSProperties = { border: "1px solid #33445f", borderRadius: 9, padding: "12px 16px", background: "transparent", color: "#c5d0e1", fontWeight: 700 };
+const address: CSSProperties = { color: "#a8b8ff", fontSize: 12, fontWeight: 700, padding: "10px 12px", border: "1px solid #33445f", borderRadius: 8, background: "#0c1422" };
+const footnote: CSSProperties = { borderTop: "1px solid #243249", marginTop: 24, paddingTop: 16, color: "#62728a", fontSize: 10, lineHeight: 1.6 };
+const errorBox: CSSProperties = { color: "#fecaca", background: "#7f1d1d33", border: "1px solid #991b1b66", borderRadius: 8, padding: 11, fontSize: 12, marginBottom: 12 };
+const noticeBox: CSSProperties = { color: "#c7d2fe", background: "#6366f11c", border: "1px solid #6366f155", borderRadius: 8, padding: 11, fontSize: 12, lineHeight: 1.5, marginBottom: 12 };
