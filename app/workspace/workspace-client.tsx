@@ -80,7 +80,7 @@ export default function OtyaWorkspace() {
     setError("");
     const query = "?companyId=" + encodeURIComponent(selectedCompanyId);
     const requests: Promise<unknown>[] = [
-      api<{ data?: Branch[] }>("/api/otyapoint/workforce/branches" + query).then((r) => setBranches(getData(r) || [])).catch((e) => { setBranches([]); throw e; }),
+      api<{ data?: Branch[] }>("/api/otyapoint/workforce/branches" + query).then((r) => setBranches(getData(r) || [])).catch((e) => { setBranches([]); setError(e.message); }),
       api<{ data?: Assignment[] }>("/api/otyapoint/workforce/my-assignments").then((r) => setAssignments(getData(r) || [])).catch(() => setAssignments([])),
     ];
     if (["OWNER", "ADMIN"].includes(selectedRole)) {
@@ -95,7 +95,7 @@ export default function OtyaWorkspace() {
     } else {
       setInvitations([]);
     }
-    await Promise.all(requests);
+    await Promise.allSettled(requests);
     setCompanyBusy(false);
   }, []);
 
