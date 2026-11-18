@@ -33,6 +33,7 @@ class MemoryD1 {
   }
 
   prepare(sql) {
+    const { invitation, existingMembership, existingInvitation, targetMembership, calls } = this;
     const statement = {
       sql,
       values: [],
@@ -41,32 +42,32 @@ class MemoryD1 {
         return this;
       },
       async first() {
-        this.calls.push({ kind: "first", sql: this.sql, values: [...this.values] });
+        calls.push({ kind: "first", sql: this.sql, values: [...this.values] });
         if (this.sql.includes("FROM branches WHERE company_id=?1")) {
           return this.values[1] === "branch-1" ? { id: "branch-1" } : null;
         }
         if (this.sql.includes("FROM staff_memberships WHERE company_id=?1 AND lower(trim")) {
-          return this.existingMembership;
+          return existingMembership;
         }
         if (this.sql.includes("FROM staff_memberships WHERE company_id=?1 AND (identity_subject")) {
-          return this.existingMembership;
+          return existingMembership;
         }
         if (this.sql.includes("FROM staff_memberships WHERE company_id=?1 AND id=?2")) {
-          return this.targetMembership;
+          return targetMembership;
         }
         if (this.sql.includes("FROM staff_invitations WHERE company_id=?1 AND email_normalized")) {
-          return this.existingInvitation;
+          return existingInvitation;
         }
         if (this.sql.includes("FROM staff_invitations i JOIN companies c")) {
-          return this.invitation;
+          return invitation;
         }
         if (this.sql.includes("FROM staff_invitations WHERE company_id=?1 AND id=?2")) {
-          return this.invitation;
+          return invitation;
         }
         return null;
       },
       async all() {
-        this.calls.push({ kind: "all", sql: this.sql, values: [...this.values] });
+        calls.push({ kind: "all", sql: this.sql, values: [...this.values] });
         return { results: [] };
       },
     };
