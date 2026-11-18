@@ -1,6 +1,4 @@
 import {
-  ACCESS_COOKIE,
-  REFRESH_COOKIE,
   appendClearedSessionCookies,
   getOtyaSession,
   jsonResponse,
