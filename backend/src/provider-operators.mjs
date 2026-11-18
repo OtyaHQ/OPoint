@@ -278,7 +278,7 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
   if (relationshipStatus && request.method === "POST") {
     const id = decodeURIComponent(relationshipStatus[1]);
     const current = await env.DB.prepare(
-      "SELECT id,provider_code,corporate_agent_reference,agreement_reference,onboarding_status,approved_at FROM provider_relationships WHERE company_id=?1 AND id=?2 LIMIT 1"
+      "SELECT id,provider_code,corporate_agent_reference,agreement_reference,onboarding_status,approved_at,expires_at FROM provider_relationships WHERE company_id=?1 AND id=?2 LIMIT 1"
     ).bind(companyId, id).first();
     if (!current) return reply({ error: "provider_relationship_not_found" }, 404, requestId);
     if (current.onboarding_status === "CLOSED") return reply({ error: "closed_provider_relationship_is_terminal" }, 409, requestId);
@@ -287,8 +287,19 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
     const normalized = normalizeProviderRelationshipStatus(parsed.value, current);
     if (normalized.error) return reply({ error: normalized.error }, 400, requestId);
     const next = normalized.value;
-    if (current.onboarding_status === next.onboardingStatus) return reply({ data: current, idempotentReplay: true }, 200, requestId);
-    const after = { ...current, corporate_agent_reference: next.corporateAgentReference, agreement_reference: next.agreementReference, onboarding_status: next.onboardingStatus };
+    if (current.onboarding_status === next.onboardingStatus
+        && (current.corporate_agent_reference || null) === next.corporateAgentReference
+        && (current.agreement_reference || null) === next.agreementReference
+        && (current.expires_at || null) === next.expiresAt) {
+      return reply({ data: current, idempotentReplay: true }, 200, requestId);
+    }
+    const after = {
+      ...current,
+      corporate_agent_reference: next.corporateAgentReference,
+      agreement_reference: next.agreementReference,
+      onboarding_status: next.onboardingStatus,
+      expires_at: next.expiresAt,
+    };
     const statements = [
       env.DB.prepare(
         "UPDATE provider_relationships SET corporate_agent_reference=?1,agreement_reference=?2,onboarding_status=?3,approved_at=CASE WHEN ?3='ACTIVE' THEN COALESCE(approved_at,CURRENT_TIMESTAMP) ELSE approved_at END,expires_at=?4,updated_at=CURRENT_TIMESTAMP WHERE company_id=?5 AND id=?6 AND onboarding_status=?7"
