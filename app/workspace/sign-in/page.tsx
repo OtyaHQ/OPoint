@@ -1,4 +1,4 @@
-import OtyaOtpSignIn from "./otp-sign-in";
+import OtyaOtpSignIn from "../otp-sign-in";
 
 export const dynamic = "force-dynamic";
 
