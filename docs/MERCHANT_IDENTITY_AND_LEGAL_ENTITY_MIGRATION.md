@@ -12,7 +12,7 @@ Keep these identities separate in all services and records:
 | Public umbrella brand | **Otya** | Website, ecosystem, public communications and product family. |
 | Shop and agency product / storefront brand | **OtyaPoint** | Retail, phones/accessories, electronics, mobile-money agency, bills and airtime service experience. Use as an individual profile's trade/display name only when the provider explicitly supports and approves that field. |
 | Intended parent company | **Otya Holdings Limited** | Future corporate identity only after URSB incorporation and provider acceptance. Do not enter it as an already registered merchant, settlement beneficiary, company taxpayer or legal controller while registration remains in progress. |
-| Product brands | **Otya Media**, **OtyaHub**, **Otya End**, **Otya OS**, **Next** | Product names; none is the legal merchant or account owner. |
+| Product brands | **OtyaPoint**, **Omy Play**, **OHub**, **Otya End**, **Otya OS**, **O**, **Otya ID**, **Otya Control** | Product and platform names; none is the legal merchant, taxpayer or account owner. |
 
 Do not substitute a brand for a legal name, and do not add “Limited” to the current individual merchant record. Where a provider offers separate Legal/Registered Business Name and Store/Trading Name fields, enter each according to the field label and provider instructions; obtain provider approval before publishing OtyaPoint as a trade name.
 
