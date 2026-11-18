@@ -33,22 +33,22 @@ class MemoryD1 {
   }
 
   prepare(sql) {
-    const database = this;
+    const { roleKey, branchId, calls } = this;
     const statement = {
       sql,
       values: [],
       bind(...values) { this.values = values; return this; },
       async first() {
-        database.calls.push({ kind: "first", sql: this.sql, values: [...this.values] });
+        calls.push({ kind: "first", sql: this.sql, values: [...this.values] });
         if (this.sql.includes("FROM staff_memberships sm JOIN companies c")) {
           return this.values[0] === "identity-1" && this.values[1] === "company-1"
             ? {
                 membership_id: "membership-1",
                 company_id: "company-1",
-                branch_id: database.branchId,
+                branch_id: branchId,
                 display_name: "Synthetic user",
                 email: "user@example.invalid",
-                role_key: database.roleKey,
+                role_key: roleKey,
                 status: "ACTIVE",
                 company_name: "Synthetic Otya company",
               }
@@ -62,7 +62,7 @@ class MemoryD1 {
         return null;
       },
       async all() {
-        database.calls.push({ kind: "all", sql: this.sql, values: [...this.values] });
+        calls.push({ kind: "all", sql: this.sql, values: [...this.values] });
         if (this.sql.includes("FROM staff_memberships sm LEFT JOIN employee_profiles")) {
           return { results: staffDirectoryRows };
         }
