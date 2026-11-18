@@ -218,3 +218,7 @@ BEFORE DELETE ON staff_membership_events
 BEGIN
   SELECT RAISE(ABORT, 'STAFF_MEMBERSHIP_EVENTS_APPEND_ONLY');
 END;
+
+-- The checksum covers the migration body above, excluding this ledger insert.
+INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
+VALUES ('0008_staff_invitations', '9c9d4b29b5bfffa4efad98590ef12edb3d2731f2e2aba707f49c233cab6fa850', CURRENT_TIMESTAMP);
