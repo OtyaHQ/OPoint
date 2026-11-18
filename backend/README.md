@@ -23,7 +23,7 @@ OtyaPoint is private company software for Otya's own retail and mobile-money age
 
 Forward migrations `0005_enterprise_automation` and `0006_message_capture_and_receipts` model employee profiles, company assets/SIM inventory, provider relationships and outlet accounts, provider balance observations, explicitly shared message evidence, statement imports and issued receipt history.
 
-These are schema foundations, not complete APIs or user interfaces. They do not request Android SMS inbox permissions, read notifications, initiate payments, or establish provider-confirmed status from a message. Message parsing is candidate extraction for human review only and returns `providerStatus: UNKNOWN`.
+Migrations 0005 and 0006 establish the enterprise schema. The provider relationship, outlet-account and operator-approval API is implemented as a separate reviewable Worker layer and uses those canonical tables; it does not create duplicate employee/provider entities. Provider operator approval requires the exact active branch Mobile Money assignment, active company SIM assignment when used, provider approval reference and completed training. Message parsing is candidate extraction for human review only and returns `providerStatus: UNKNOWN`. These capabilities do not request Android SMS inbox permissions, read notifications, or initiate payments.
 
 ## Local verification
 
