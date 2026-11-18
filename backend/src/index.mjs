@@ -171,10 +171,10 @@ async function handleWorkAssignmentRoutes(request, env, identity, membership, ur
 
   if (readPath) {
     const branchId = clean(url.searchParams.get("branchId"), 80) || null;
-    if (membership.branch_id && branchId && membership.branch_id !== branchId) {
+    if (!canManageWorkAssignments(membership.role_key) && membership.branch_id && branchId && membership.branch_id !== branchId) {
       return json({ error: "branch_access_denied", requestId }, 403, requestId);
     }
-    const scopedBranchId = membership.branch_id || branchId;
+    const scopedBranchId = canManageWorkAssignments(membership.role_key) ? branchId : (membership.branch_id || branchId);
     const rows = await env.DB.prepare(
       "SELECT a.id,a.staff_membership_id,sm.display_name,sm.email,sm.role_key AS membership_role,a.branch_id,b.name AS branch_name,a.work_area,a.duty_role,a.status,a.reason,a.created_by,a.created_at,a.updated_at,a.suspended_at,a.revoked_at FROM staff_work_assignments a JOIN staff_memberships sm ON sm.company_id=a.company_id AND sm.id=a.staff_membership_id JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND (?2 IS NULL OR a.branch_id=?2) ORDER BY b.name,sm.display_name,a.work_area LIMIT 500"
     ).bind(membership.company_id, scopedBranchId).all();
@@ -438,10 +438,10 @@ async function handle(request, env) {
 
   const privileged = canManageWorkAssignments(membership.role_key);
   const requestedBranchId = clean(request.headers.get("x-branch-id") || url.searchParams.get("branchId"), 80) || null;
-  if (membership.branch_id && requestedBranchId && membership.branch_id !== requestedBranchId) {
+  if (!privileged && membership.branch_id && requestedBranchId && membership.branch_id !== requestedBranchId) {
     return json({ error: "branch_access_denied", requestId }, 403, requestId);
   }
-  const scopedBranchId = membership.branch_id || requestedBranchId;
+  const scopedBranchId = privileged ? requestedBranchId : (membership.branch_id || requestedBranchId);
   if (requestedBranchId) {
     const branch = await env.DB.prepare(
       "SELECT id FROM branches WHERE company_id=?1 AND id=?2 AND status='ACTIVE' LIMIT 1"
