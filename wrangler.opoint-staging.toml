@@ -27,6 +27,7 @@ head_sampling_rate = 0.05
 binding = "DB"
 database_name = "opoint-staging-db"
 database_id = "ec080a51-cfc9-4375-8b3c-64667744b466"
+migrations_dir = "backend/schema/migrations"
 
 [[services]]
 binding = "OTYA_ID"
