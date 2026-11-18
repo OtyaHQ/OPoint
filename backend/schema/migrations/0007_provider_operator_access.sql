@@ -43,6 +43,7 @@ BEGIN
      WHERE pr.id = NEW.provider_relationship_id
        AND pr.company_id = NEW.company_id
        AND pr.onboarding_status = 'ACTIVE'
+       AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
        AND poa.id = NEW.provider_outlet_account_id
        AND poa.scope_type = 'OUTLET'
        AND poa.status = 'ACTIVE'
@@ -116,6 +117,7 @@ BEGIN
      WHERE pr.id = NEW.provider_relationship_id
        AND pr.company_id = NEW.company_id
        AND pr.onboarding_status = 'ACTIVE'
+       AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
        AND poa.id = NEW.provider_outlet_account_id
        AND poa.scope_type = 'OUTLET'
        AND poa.status = 'ACTIVE'
@@ -160,4 +162,4 @@ END;
 
 -- Migration checksum covers the DDL above and excludes this ledger insert.
 INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
-VALUES ('0007_provider_operator_access', '3ca834a01afa477202218a532aebc32814f6c7000d19ad0a1ac2fda968e8dd50', CURRENT_TIMESTAMP);
+VALUES ('0007_provider_operator_access', '9467f7e77922cf02fcd43c1fca3711953082cf57defb469eade2a48467ce79bd', CURRENT_TIMESTAMP);
