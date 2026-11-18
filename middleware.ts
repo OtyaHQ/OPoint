@@ -2,6 +2,13 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+  const isOtyaWorkspace = pathname === "/workspace" || pathname.startsWith("/workspace/");
+  const isOtyaApi = pathname === "/api/otyapoint" || pathname.startsWith("/api/otyapoint/");
+  // The new Otya ID workspace owns its session checks in server-only BFF routes.
+  // Legacy application routes remain protected by the existing Supabase flow.
+  if (isOtyaWorkspace || isOtyaApi) return NextResponse.next({ request });
+
   let response = NextResponse.next({ request });
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
