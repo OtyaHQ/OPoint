@@ -11,6 +11,7 @@ migration_paths = [
     "0008_staff_invitations.sql",
     "0009_cash_session_lifecycle.sql",
     "0010_provider_float_integrity.sql",
+    "0010_provider_float_integrity.sql",
 ]
 
 db = sqlite3.connect(":memory:")
@@ -24,6 +25,9 @@ columns = {row[1] for row in db.execute("PRAGMA table_info(sales)")}
 triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
 indexes = {row[1] for row in db.execute("PRAGMA index_list(cash_sessions)")}
 assert "cash_session_id" in columns
+assert "cash_session_id" in {row[1] for row in db.execute("PRAGMA table_info(agency_operations)")}
+assert "provider_outlet_account_id" in {row[1] for row in db.execute("PRAGMA table_info(agency_operations)")}
+
 assert "idempotency_records" in tables
 assert {
     "sale_requires_open_retail_cash_session",
@@ -34,6 +38,8 @@ assert {
     "provider_outlet_float_account_guard",
     "provider_outlet_float_account_update_guard",
     "provider_float_nonnegative_balance_guard",
+    "agency_operation_manual_operator_guard",
+    "agency_operation_cash_session_balance",
 } <= triggers
 assert "idx_cash_sessions_one_unresolved_account" in indexes
 
@@ -47,6 +53,7 @@ expected = {
     "0007_provider_operator_access": "94b6f4af7180571c2c284d3f40813a4e80fd5c88ecb32e455c84ca57979a92e1",
     "0008_staff_invitations": "9c9d4b29b5bfffa4efad98590ef12edb3d2731f2e2aba707f49c233cab6fa850",
     "0009_cash_session_lifecycle": "9969372fbf063beec9cecd0dc20681cf9ba36b93978ea0ac8c4d31a8af542504",
+    "0010_provider_float_integrity": "aac8b90990fd74f67c36245f977919b5b16fb02ed65ae30497f100949855c344",
     "0010_provider_float_integrity": "9ec442c43b49d6ae28578c5cef5a0a19624ba84a4677e8fe698594a4be6b4f05",
 }
 actual = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
