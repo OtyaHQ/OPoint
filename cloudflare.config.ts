@@ -5,6 +5,8 @@ export default defineConfig({
     name: "opoint-dashboard-staging",
     entrypoint: "vinext/server/fetch-handler",
     compatibilityDate: "2026-11-18",
+    workersDev: false,
+    previewUrls: false,
     assets: {
       htmlHandling: "none",
       notFoundHandling: "none",
