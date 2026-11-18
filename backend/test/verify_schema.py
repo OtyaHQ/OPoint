@@ -18,6 +18,14 @@ assert counts.get("table", 0) == 46, counts
 assert counts.get("view", 0) == 1, counts
 assert counts.get("index", 0) == 23, counts
 assert counts.get("trigger", 0) == 11, counts
+required_assignment_guards = {
+    "staff_work_assignment_events_no_update",
+    "staff_work_assignment_events_no_delete",
+}
+actual_triggers = {
+    row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
+}
+assert required_assignment_guards <= actual_triggers, actual_triggers
 assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 assert db.execute("SELECT name FROM sqlite_master WHERE type='view' AND name='journal_entry_balances'").fetchone()
