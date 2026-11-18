@@ -178,7 +178,8 @@ async function forwardPost(request: Request): Promise<Response> {
   }
 
   try {
-    const upstream = await callOpoint(path + "?companyId=" + encodeURIComponent(companyId), context.session.accessToken, {
+    const scopedPath = companyId ? path + "?companyId=" + encodeURIComponent(companyId) : path;
+    const upstream = await callOpoint(scopedPath, context.session.accessToken, {
       method,
       headers,
       body: JSON.stringify(payload),
