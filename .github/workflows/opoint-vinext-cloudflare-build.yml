@@ -70,13 +70,13 @@ jobs:
             for file in vite.config.ts cloudflare.config.ts; do
               if [[ -f "$file" ]]; then
                 echo "### $file"
-                echo '\`\`\`ts'
+                echo '---'
                 sed -n '1,240p' "$file"
-                echo '\`\`\`'
+                echo '---'
               fi
             done
             echo '### Package changes'
             git diff -- package.json | sed -n '1,200p'
             echo
             echo 'No Cloudflare credentials are configured in this job. No deployment, DNS change, remote D1 migration, service binding call, or secret write is performed.'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
