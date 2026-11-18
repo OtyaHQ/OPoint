@@ -57,6 +57,9 @@ jobs:
       - name: Install the isolated vinext toolchain
         run: npm install --no-audit --no-fund --no-package-lock
 
+      - name: Record exact resolved dashboard toolchain versions
+        run: npm ls --depth=0
+
       - name: Build the dashboard using vinext
         run: npm run build:vinext
 
