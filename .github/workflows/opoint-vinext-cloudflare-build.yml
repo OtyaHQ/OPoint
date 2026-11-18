@@ -1,0 +1,82 @@
+name: OtyaPoint Cloudflare Dashboard Build Spike
+
+on:
+  push:
+    branches:
+      - "experiment/opoint-vinext-cloudflare-build"
+  pull_request:
+    paths:
+      - ".github/workflows/opoint-vinext-cloudflare-build.yml"
+      - "app/**"
+      - "components/**"
+      - "lib/**"
+      - "middleware.ts"
+      - "next.config.*"
+      - "package.json"
+      - "prisma/**"
+      - "public/**"
+      - "tsconfig.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opoint-vinext-build-spike-\${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Isolated vinext Cloudflare build (no deploy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install existing dashboard dependencies
+        run: npm install --no-audit --no-fund --no-package-lock
+
+      - name: Initialize an isolated Cloudflare vinext configuration
+        run: >-
+          npx --yes vinext init
+          --platform=cloudflare
+          --cdn-cache=none
+          --data-cache=none
+          --image-optimization=none
+          --no-prerender
+          --ignore-wrangler-config
+          --name=opoint-dashboard-staging
+          --no-install
+
+      - name: Install the isolated vinext toolchain
+        run: npm install --no-audit --no-fund --no-package-lock
+
+      - name: Build the dashboard using vinext
+        run: npm run build:vinext
+
+      - name: Summarize generated configuration without publishing secrets
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## Isolated Cloudflare build spike'
+            echo
+            for file in vite.config.ts cloudflare.config.ts; do
+              if [[ -f "$file" ]]; then
+                echo "### $file"
+                echo '\`\`\`ts'
+                sed -n '1,240p' "$file"
+                echo '\`\`\`'
+              fi
+            done
+            echo '### Package changes'
+            git diff -- package.json | sed -n '1,200p'
+            echo
+            echo 'No Cloudflare credentials are configured in this job. No deployment, DNS change, remote D1 migration, service binding call, or secret write is performed.'
+          } >> "$GITHUB_STEP_SUMMARY"
