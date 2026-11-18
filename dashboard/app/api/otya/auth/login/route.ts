@@ -1,6 +1,5 @@
 import { cookies } from "next/headers";
 import {
-  clearSessionCookies,
   isSameOriginRequest,
   jsonResponse,
   readJsonLimited,
@@ -68,7 +67,10 @@ export async function POST(request: Request): Promise<Response> {
       return jsonResponse({ error: "identity_verification_failed" }, 502);
     }
     const identity = await verify.json().catch(() => ({})) as Record<string, unknown>;
-    if (identity.ok !== true || typeof identity.user_id !== "string") {
+    const expectedUserId = data.user && typeof data.user === "object" && typeof (data.user as Record<string, unknown>).id === "string"
+      ? (data.user as Record<string, unknown>).id
+      : "";
+    if (identity.ok !== true || typeof identity.user_id !== "string" || !expectedUserId || identity.user_id !== expectedUserId) {
       return jsonResponse({ error: "identity_verification_failed" }, 502);
     }
 
@@ -84,8 +86,6 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
   } catch {
-    const jar = await cookies();
-    clearSessionCookies(jar);
     return jsonResponse({ error: "authentication_service_unavailable" }, 503);
   }
 }
