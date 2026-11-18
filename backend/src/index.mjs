@@ -148,7 +148,7 @@ async function requireWorkAreaAssignment(env, membership, branchId, workArea) {
     return { ok: false, status: 403, error: "branch_access_denied" };
   }
   const assignment = await env.DB.prepare(
-    "SELECT id,company_id,staff_membership_id,branch_id,work_area,duty_role,status FROM staff_work_assignments WHERE company_id=?1 AND staff_membership_id=?2 AND branch_id=?3 AND work_area=?4 AND status='ACTIVE' LIMIT 1"
+    "SELECT a.id,a.company_id,a.staff_membership_id,a.branch_id,a.work_area,a.duty_role,a.status FROM staff_work_assignments a JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND a.staff_membership_id=?2 AND a.branch_id=?3 AND a.work_area=?4 AND a.status='ACTIVE' AND b.status='ACTIVE' LIMIT 1"
   ).bind(membership.company_id, membership.membership_id, branchId, workArea).first();
   return assignmentMatchesScope(assignment, {
     companyId: membership.company_id,
@@ -258,20 +258,20 @@ async function handleWorkAssignmentRoutes(request, env, identity, membership, ur
     return json({ error: "only_active_assignments_can_be_suspended", requestId }, 409, requestId);
   }
   const eventType = next.status === "ACTIVE" ? "RESUMED" : next.status;
-  const update = await env.DB.prepare(
-    "UPDATE staff_work_assignments SET status=?1,updated_at=CURRENT_TIMESTAMP,suspended_by=CASE WHEN ?1='SUSPENDED' THEN ?2 ELSE NULL END,suspended_at=CASE WHEN ?1='SUSPENDED' THEN CURRENT_TIMESTAMP ELSE NULL END,revoked_by=CASE WHEN ?1='REVOKED' THEN ?2 ELSE NULL END,revoked_at=CASE WHEN ?1='REVOKED' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE company_id=?3 AND id=?4 AND status=?5"
-  ).bind(next.status, identity.userId, membership.company_id, assignmentId, current.status).run();
-  if (Number(update?.meta?.changes || 0) !== 1) {
-    return json({ error: "work_assignment_changed_retry", requestId }, 409, requestId);
-  }
-  await env.DB.batch([
+  const changed = await env.DB.batch([
     env.DB.prepare(
-      "INSERT INTO staff_work_assignment_events (id,company_id,assignment_id,event_type,previous_status,new_status,actor_id,reason) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
+      "UPDATE staff_work_assignments SET status=?1,updated_at=CURRENT_TIMESTAMP,suspended_by=CASE WHEN ?1='SUSPENDED' THEN ?2 ELSE NULL END,suspended_at=CASE WHEN ?1='SUSPENDED' THEN CURRENT_TIMESTAMP ELSE NULL END,revoked_by=CASE WHEN ?1='REVOKED' THEN ?2 ELSE NULL END,revoked_at=CASE WHEN ?1='REVOKED' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE company_id=?3 AND id=?4 AND status=?5"
+    ).bind(next.status, identity.userId, membership.company_id, assignmentId, current.status),
+    env.DB.prepare(
+      "INSERT INTO staff_work_assignment_events (id,company_id,assignment_id,event_type,previous_status,new_status,actor_id,reason) SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE changes()=1"
     ).bind(crypto.randomUUID(), membership.company_id, assignmentId, eventType, current.status, next.status, identity.userId, next.reason),
     env.DB.prepare(
-      "INSERT INTO audit_events (id,company_id,actor_id,action,entity_type,entity_id,reason,request_id,before_state_json,after_state_json) VALUES (?1,?2,?3,?4,'STAFF_WORK_ASSIGNMENT',?5,?6,?7,?8,?9)"
+      "INSERT INTO audit_events (id,company_id,actor_id,action,entity_type,entity_id,reason,request_id,before_state_json,after_state_json) SELECT ?1,?2,?3,?4,'STAFF_WORK_ASSIGNMENT',?5,?6,?7,?8,?9 WHERE changes()=1"
     ).bind(crypto.randomUUID(), membership.company_id, identity.userId, `STAFF_WORK_ASSIGNMENT_${eventType}`, assignmentId, next.reason, requestId, JSON.stringify(current), JSON.stringify({ ...current, status: next.status })),
   ]);
+  if (Number(changed?.[0]?.meta?.changes || 0) !== 1) {
+    return json({ error: "work_assignment_changed_retry", requestId }, 409, requestId);
+  }
   return json({ data: { ...current, status: next.status }, requestId }, 200, requestId);
 }
 
@@ -410,7 +410,7 @@ async function handle(request, env) {
 
   if (request.method === "GET" && url.pathname === "/v1/me/work-assignments") {
     const rows = await env.DB.prepare(
-      "SELECT a.id,a.company_id,c.display_name AS company_name,a.branch_id,b.name AS branch_name,a.work_area,a.duty_role,a.status,a.created_at,a.updated_at FROM staff_work_assignments a JOIN staff_memberships sm ON sm.company_id=a.company_id AND sm.id=a.staff_membership_id JOIN companies c ON c.id=a.company_id JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE sm.identity_subject=?1 AND sm.status='ACTIVE' AND a.status='ACTIVE' ORDER BY c.display_name,b.name,a.work_area LIMIT 100"
+      "SELECT a.id,a.company_id,c.display_name AS company_name,a.branch_id,b.name AS branch_name,a.work_area,a.duty_role,a.status,a.created_at,a.updated_at FROM staff_work_assignments a JOIN staff_memberships sm ON sm.company_id=a.company_id AND sm.id=a.staff_membership_id JOIN companies c ON c.id=a.company_id JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE sm.identity_subject=?1 AND sm.status='ACTIVE' AND a.status='ACTIVE' AND b.status='ACTIVE' ORDER BY c.display_name,b.name,a.work_area LIMIT 100"
     ).bind(identity.userId).all();
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
@@ -600,7 +600,7 @@ async function handle(request, env) {
     if (!["OWNER","ADMIN","MANAGER","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
     const rows = await env.DB.prepare(
       "SELECT id,branch_id,expense_reference,category_code,description,amount,currency,status,recorded_by,approved_by,created_at FROM business_expenses WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
-    ).bind(companyId, membership.branch_id || null).all();
+    ).bind(companyId, scopedBranchId).all();
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
 
@@ -626,7 +626,7 @@ async function handle(request, env) {
     if (!["OWNER","ADMIN","ACCOUNTANT","AUDITOR","AGENT"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
     const rows = await env.DB.prepare(
       "SELECT id,branch_id,source_type,source_id,operation_type,provider_code,provider_reference,external_reference,status,amount,fee_amount,commission_amount,currency,failure_code,created_at,updated_at,resolved_at FROM payment_intents WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
-    ).bind(companyId, membership.branch_id || null).all();
+    ).bind(companyId, scopedBranchId).all();
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
 
@@ -636,7 +636,7 @@ async function handle(request, env) {
     if (!["OWNER","ADMIN","MANAGER","AGENT","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
     const rows = await env.DB.prepare(
       "SELECT id,branch_id,provider_code,operation_type,status,amount,fee_amount,commission_amount,reference,created_by,created_at,completed_at FROM agency_operations WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
-    ).bind(companyId, membership.branch_id || null).all();
+    ).bind(companyId, scopedBranchId).all();
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
 
