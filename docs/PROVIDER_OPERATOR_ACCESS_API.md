@@ -53,6 +53,10 @@ Do not enter an employee's KYC phone number as an Airtel/MTN operator account id
 
 The API rejects PINs, OTPs, passwords, API tokens, personal phone numbers, national ID and raw KYC document fields. It does not access an SMS inbox, notification feed or provider application credentials.
 
+## Device trust boundary
+
+The optional company SIM asset is not proof that the Android device running OtyaPoint is trusted. This PR does not accept a client-supplied device ID as authentication and does not yet bind an Otya ID session to a registered Android device or Android hardware-attestation result. Device enrollment, trust/revocation and step-up must be implemented at the Otya ID session boundary before device-based restrictions are claimed.
+
 ## Financial execution boundary
 
 These routes manage provider relationships, outlet accounts and operator permissions only. They do not initiate, confirm, reverse or settle transactions. Payment execution, cash movement, sales posting, journal posting, bill payments, airtime/data execution and AI execution remain disabled. A provider transaction must still be recorded as unverified until trusted provider evidence or an official statement confirms its outcome.
