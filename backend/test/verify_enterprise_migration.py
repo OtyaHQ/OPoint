@@ -204,18 +204,12 @@ db.execute(
 )
 
 
-# A provider-account permission grant is independently guarded by the same current
-# membership, branch, provider, work-area, training and SIM requirements.
-db.execute(
-    "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
-    "VALUES ('grant-operator-1','co-1','emp-1','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-1','ACTIVE','owner','Approved Airtel operator access')"
-)
+# A provider operator cannot be approved without an active Mobile Money assignment.
 try:
     db.execute(
-        "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
-        "VALUES ('grant-operator-bad','co-1','emp-2','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-2','ACTIVE','owner','Invalid branch operator grant')"
+        "UPDATE provider_operator_profiles SET approval_status='APPROVED',training_status='COMPLETED',approved_at='2026-11-18T08:00:00Z',training_completed_at='2026-11-18T08:00:00Z' WHERE id='op-2'"
     )
-    raise AssertionError("Provider account grant must not bypass the Mobile Money work assignment")
+    raise AssertionError("Provider operator approval requires a current Mobile Money work assignment")
 except sqlite3.IntegrityError:
     pass
 
@@ -226,17 +220,37 @@ db.execute(
 db.execute(
     "UPDATE provider_operator_profiles SET approval_status='APPROVED',training_status='COMPLETED',approved_at='2026-11-18T08:00:00Z',training_completed_at='2026-11-18T08:00:00Z' WHERE id='op-2'"
 )
+
+# A permission grant cannot be created even for an approved operator if the branch
+# work-area assignment has since been suspended.
+db.execute(
+    "UPDATE staff_work_assignments SET status='SUSPENDED',suspended_by='owner',suspended_at=CURRENT_TIMESTAMP WHERE id='work-mm-2'"
+)
+try:
+    db.execute(
+        "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
+        "VALUES ('grant-operator-bad','co-1','emp-2','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-2','ACTIVE','owner','Invalid branch operator grant')"
+    )
+    raise AssertionError("Provider grant must require an active Mobile Money work assignment")
+except sqlite3.IntegrityError:
+    pass
+
+db.execute(
+    "UPDATE staff_work_assignments SET status='ACTIVE',suspended_by=NULL,suspended_at=NULL WHERE id='work-mm-2'"
+)
 db.execute(
     "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
     "VALUES ('grant-operator-2','co-1','emp-2','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-2','ACTIVE','owner','Approved branch two Airtel operator access')"
 )
+
+# An already-issued grant cannot be reactivated when the branch Mobile Money assignment is suspended.
+db.execute(
+    "UPDATE employee_permission_grants SET status='SUSPENDED' WHERE id='grant-operator-2'"
+)
+db.execute(
+    "UPDATE staff_work_assignments SET status='SUSPENDED',suspended_by='owner',suspended_at=CURRENT_TIMESTAMP WHERE id='work-mm-2'"
+)
 try:
-    db.execute(
-        "UPDATE employee_permission_grants SET status='SUSPENDED' WHERE id='grant-operator-2'"
-    )
-    db.execute(
-        "UPDATE staff_work_assignments SET status='SUSPENDED',suspended_by='owner',suspended_at=CURRENT_TIMESTAMP WHERE id='work-mm-2'"
-    )
     db.execute(
         "UPDATE employee_permission_grants SET status='ACTIVE' WHERE id='grant-operator-2'"
     )
