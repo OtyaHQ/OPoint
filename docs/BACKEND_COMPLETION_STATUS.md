@@ -55,10 +55,29 @@ Supabase is not a target runtime, but its Auth/Prisma code is still called by th
 Canonical platform contract: [Otya End product backend and identity boundaries](https://github.com/OtyaHQ/OEnd/blob/product-ai-isolation-foundation-2026-11-11/docs/PRODUCT_BACKEND_AND_IDENTITY_BOUNDARIES.md).
 
 
-## Work-area and branch permissions (staging build)
+## Work-area and branch permissions (merged code; deployment gated)
 
 The new OtyaPoint API now uses branch-scoped `staff_work_assignments` for the separate **RETAIL** and **MOBILE_MONEY** work areas. A worker can hold both assignments at the same branch, with an independent `OPERATOR`, `SUPERVISOR`, `APPROVER` or `VIEWER` duty role in each area. Owner/Admin can create, suspend, resume and revoke assignments; state changes are recorded in append-only assignment events and the audit log.
 
 Non-privileged users must present a branch context and an active assignment for the requested work area. Product, category, stock, sales and purchasing views require Retail assignment; agency transaction/payment-intent views require Mobile Money assignment. Cash-account and cash-session views require an explicit work-area filter. Owner/Admin may administer across branches. General company summaries and provider-configuration status are restricted to Owner/Admin.
 
 This is a forward-only staging migration. No assignments are automatically created, no employee roles are silently expanded, and existing cash/float balances are not moved. Production access changes remain a separate release gate.
+
+
+## Enterprise workforce, provider evidence and receipts (schema foundation)
+
+The current integration branch adds two forward-only migrations after work-area migration 0004:
+
+- **0005 Enterprise operations:** departments and positions, employee profiles and branch assignments, scoped permission grants, private employee documents, company assets and SIM inventory, provider relationships, branch/outlet provider accounts, provider operator profiles, balance observations, capture records and provider statement imports/rows.
+- **0006 Message evidence and receipts:** explicitly shared provider-message captures, issued receipt snapshots and immutable receipt event history.
+
+These migrations are schema foundations only. They do **not** yet expose employee/asset/provider onboarding APIs, automated capture endpoints, receipt issuance endpoints or dashboard screens. Do not treat a table's existence as a live workflow.
+
+Provider evidence rules:
+- OtyaPoint does not request Android SMS inbox, notification-listener or provider-login access.
+- Staff may explicitly share a provider message or statement/screenshot through an approved workflow.
+- The parser extracts candidate reference, amount, transaction kind and message-claimed status only; its authoritative provider status remains `UNKNOWN`.
+- Staff-entered evidence cannot be upgraded into provider-confirmed success without an independent provider response/reconciliation.
+- Receipts must snapshot source status and evidence level; an issued receipt is retained and voided only through an authorized, audited transition.
+
+The 0005/0006 migrations are in a review branch and have not been applied to Cloudflare staging or production. Otya ID staging is still a prerequisite to any product staging deployment. Payment/provider execution remains disabled.
