@@ -136,8 +136,7 @@ export async function getOtyaWorkerBindings(): Promise<OtyaWorkerBindings | null
       "cloudflare:workers"
     );
     const env = runtime.env as OtyaWorkerBindings | undefined;
-    if (!env?.OTYA_ID?.fetch || !env?.OPOINT_API?.fetch) return null;
-    return env;
+    return env ?? null;
   } catch {
     return null;
   }
@@ -184,7 +183,7 @@ async function refreshAccessToken(
 export async function getOtyaSession(request: Request): Promise<SessionLookup> {
   const cookieHeaders = new Headers();
   const bindings = await getOtyaWorkerBindings();
-  if (!bindings) {
+  if (!bindings?.OTYA_ID?.fetch || !bindings?.OPOINT_API?.fetch) {
     return { error: "cloudflare_service_bindings_unavailable", status: 503, cookieHeaders };
   }
 
