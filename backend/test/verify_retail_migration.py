@@ -10,6 +10,7 @@ migration_paths = [
     "0007_provider_operator_access.sql",
     "0008_staff_invitations.sql",
     "0009_cash_session_lifecycle.sql",
+    "0010_provider_float_integrity.sql",
 ]
 
 db = sqlite3.connect(":memory:")
@@ -28,6 +29,11 @@ assert {
     "sale_requires_open_retail_cash_session",
     "cash_session_status_transition_guard",
     "cash_session_close_metadata_guard",
+    "cash_provider_float_insert_guard",
+    "cash_provider_float_update_guard",
+    "provider_outlet_float_account_guard",
+    "provider_outlet_float_account_update_guard",
+    "provider_float_nonnegative_balance_guard",
 } <= triggers
 assert "idx_cash_sessions_one_unresolved_account" in indexes
 
@@ -41,6 +47,7 @@ expected = {
     "0007_provider_operator_access": "94b6f4af7180571c2c284d3f40813a4e80fd5c88ecb32e455c84ca57979a92e1",
     "0008_staff_invitations": "9c9d4b29b5bfffa4efad98590ef12edb3d2731f2e2aba707f49c233cab6fa850",
     "0009_cash_session_lifecycle": "9969372fbf063beec9cecd0dc20681cf9ba36b93978ea0ac8c4d31a8af542504",
+    "0010_provider_float_integrity": "9ec442c43b49d6ae28578c5cef5a0a19624ba84a4677e8fe698594a4be6b4f05",
 }
 actual = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
 assert actual == expected, actual
@@ -109,4 +116,75 @@ try:
 except sqlite3.IntegrityError as error:
     assert "sale_requires_open_retail_cash_session" in str(error)
 
-print("Verified OtyaPoint retail cash-session migration, guards, and sale linkage.")
+# Provider float accounts are always MOBILE_MONEY assets with the matching provider.
+db.execute(
+    "INSERT INTO ledger_accounts(id,company_id,account_code,name,account_type,normal_balance) "
+    "VALUES ('la-float','co-1','FLOAT-AIRTEL-001','Airtel agent float','ASSET','DEBIT')"
+)
+db.execute(
+    "INSERT INTO cash_accounts(id,company_id,branch_id,ledger_account_id,account_type,provider_code,account_code,display_name,work_area) "
+    "VALUES ('float-1','co-1','br-1','la-float','PROVIDER_FLOAT','AIRTEL_MONEY','FLOAT-AIRTEL-001','Mbirizi Airtel float','MOBILE_MONEY')"
+)
+try:
+    db.execute(
+        "INSERT INTO cash_accounts(id,company_id,branch_id,ledger_account_id,account_type,provider_code,account_code,display_name,work_area) "
+        "VALUES ('float-bad','co-1','br-1','la-float','PROVIDER_FLOAT','MTN_MOMO','FLOAT-MTN-BAD','Invalid MTN float','RETAIL')"
+    )
+    raise AssertionError("Provider float must belong to the Mobile Money work area")
+except sqlite3.IntegrityError as error:
+    assert "PROVIDER_FLOAT_REQUIRES_MATCHED_MOBILE_MONEY_PROVIDER" in str(error)
+
+# The posting trigger must prevent an agency cash-in from taking provider float below zero.
+db.execute(
+    "INSERT INTO ledger_accounts(id,company_id,account_code,name,account_type,normal_balance) "
+    "VALUES ('la-cash-mm','co-1','CASH-MM-001','Mobile Money cash drawer','ASSET','DEBIT')"
+)
+db.execute(
+    "INSERT INTO journal_entries(id,company_id,entry_number,source_type,source_id,status,currency,description,idempotency_key,created_by) "
+    "VALUES ('float-seed-journal','co-1','JRN-FLOAT-SEED','PROVIDER_FLOAT_OPENING','float-seed','DRAFT','UGX','Opening float seed','float-seed-journal-idem','owner')"
+)
+db.executemany(
+    "INSERT INTO journal_lines(id,company_id,journal_entry_id,line_number,ledger_account_id,debit_amount,credit_amount,memo) VALUES (?,?,?,?,?,?,?,?)",
+    [
+        ("float-seed-line-1","co-1","float-seed-journal",1,"la-float",1000000,0,"Provider float opening"),
+        ("float-seed-line-2","co-1","float-seed-journal",2,"la-cash-mm",0,1000000,"Owner float funding"),
+    ],
+)
+db.execute("UPDATE journal_entries SET status='POSTED',posted_by='owner',posted_at=CURRENT_TIMESTAMP WHERE id='float-seed-journal'")
+assert db.execute(
+    "SELECT COALESCE(SUM(jl.debit_amount-jl.credit_amount),0) FROM journal_lines jl "
+    "JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE jl.ledger_account_id='la-float' AND je.status='POSTED'"
+).fetchone()[0] == 1000000
+
+def insert_float_spend(entry_id, amount):
+    db.execute(
+        "INSERT INTO journal_entries(id,company_id,entry_number,source_type,source_id,status,currency,description,idempotency_key,created_by) "
+        "VALUES (?,?,?,'AGENCY_OPERATION',?,'DRAFT','UGX','Float reduction',?,'agent')",
+        (entry_id,"co-1","JRN-"+entry_id,entry_id,entry_id+"-idem"),
+    )
+    db.executemany(
+        "INSERT INTO journal_lines(id,company_id,journal_entry_id,line_number,ledger_account_id,debit_amount,credit_amount,memo) VALUES (?,?,?,?,?,?,?,?)",
+        [
+            (entry_id+"-cash","co-1",entry_id,1,"la-cash-mm",amount,0,"Cash received"),
+            (entry_id+"-float","co-1",entry_id,2,"la-float",0,amount,"Provider float spent"),
+        ],
+    )
+    db.execute(
+        "UPDATE journal_entries SET status='POSTED',posted_by='agent',posted_at=CURRENT_TIMESTAMP WHERE id=?",
+        (entry_id,),
+    )
+
+insert_float_spend("float-spend-1", 700000)
+try:
+    insert_float_spend("float-spend-2", 400000)
+    raise AssertionError("Provider float cannot be overdrawn by posted agency operations")
+except sqlite3.IntegrityError as error:
+    assert "PROVIDER_FLOAT_BALANCE_WOULD_BE_NEGATIVE" in str(error)
+
+remaining_float = db.execute(
+    "SELECT COALESCE(SUM(jl.debit_amount-jl.credit_amount),0) FROM journal_lines jl "
+    "JOIN journal_entries je ON je.id=jl.journal_entry_id WHERE jl.ledger_account_id='la-float' AND je.status='POSTED'"
+).fetchone()[0]
+assert remaining_float == 300000
+
+print("Verified OtyaPoint Retail cash and Mobile Money provider-float integrity migrations.")
