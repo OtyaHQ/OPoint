@@ -102,3 +102,14 @@ test("provider-agent write API rejects PIN, OTP and personal phone data", async 
     assert.equal(env.DB.calls.length, 1);
   }
 });
+
+test("signed-in staff can retrieve only their active provider-account assignment view", async () => {
+  const env = makeEnv("AGENT");
+  const response = await worker.fetch(new Request(
+    "https://opoint.internal/v1/me/provider-agent-assignments",
+    { method: "GET", headers: { authorization: "Bearer synthetic-token" } },
+  ), env);
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).data, []);
+  assert.equal(env.DB.calls.filter(call => call.kind === "all").length, 1);
+});
