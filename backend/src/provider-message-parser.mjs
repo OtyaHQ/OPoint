@@ -20,7 +20,7 @@ export function parseProviderMessage(input) {
 
   const normalized = messageText.replace(/\s+/g, " ");
   const referenceMatch = normalized.match(/\b(?:transaction\s*(?:id|ref(?:erence)?|no\.?|number)?|txn\s*(?:id|ref|no\.?|number)?|ref(?:erence)?\s*(?:no\.?|number|id)?)\s*[:#= -]+([A-Z0-9][A-Z0-9-]{4,63})\b/i);
-  const amountMatch = normalized.match(/\b(?:amount|amt|total)\s*[:= -]*\s*(?:UGX|USh|Shs\.?\s*)?([0-9][0-9,]*)(?:\.00)?\s*(?:UGX|USh)?\b/i);
+  const amountMatch = normalized.match(/\b(?:amount|amt|total)\s*[:= -]*\s*(?:(?:UGX|USh|Shs\.?)\s*)?([0-9][0-9,]*)(?:\.00)?\s*(?:UGX|USh)?\b/i);
   const type = TYPES.find(([, pattern]) => pattern.test(normalized))?.[0] || "OTHER";
   const claimedStatus = /\b(successful|success|completed|approved)\b/i.test(normalized)
     ? "SUCCESS_CLAIMED_BY_MESSAGE"
