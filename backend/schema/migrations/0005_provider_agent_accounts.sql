@@ -132,6 +132,6 @@ BEGIN
   SELECT RAISE(ABORT, 'PROVIDER_AGENT_STAFF_EVENTS_APPEND_ONLY');
 END;
 
--- CHECKSUM_PLACEHOLDER
+-- Migration checksum covers the DDL above and excludes this ledger insert.
 INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
-VALUES ('0005_provider_agent_accounts', 'CHECKSUM_PLACEHOLDER', CURRENT_TIMESTAMP);
+VALUES ('0005_provider_agent_accounts', 'd97fbd385f94cd52607d2f25845dee58b80de1941aabc476d71275eeae3719c2', CURRENT_TIMESTAMP);
