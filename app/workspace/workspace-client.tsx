@@ -309,14 +309,14 @@ export default function OtyaWorkspace() {
                   {staff.map((person) => <tr key={person.membership_id}>
                     <td><strong>{person.display_name}</strong><div style={smallMuted}>{person.email}</div></td>
                     <td>{person.role_key}</td><td>{person.branch_name || "—"}</td><td>{person.membership_status}</td>
-                    <td>{person.role_key !== "OWNER" && person.membership_status !== "REVOKED" ? (
+                    <td>{person.role_key !== "OWNER" && !(role === "ADMIN" && person.role_key === "ADMIN") && person.membership_id !== membership?.membership_id && person.membership_status !== "REVOKED" ? (
                       <div style={statusControls}>
                         <input aria-label={"Reason for " + person.display_name} value={reasons[person.membership_id] || ""} onChange={(e) => setReasons((old) => ({ ...old, [person.membership_id]: e.target.value }))} placeholder="Reason (required)" style={reasonInput}/>
                         {person.membership_status !== "ACTIVE" && <button disabled={companyBusy} onClick={() => void changeStaffStatus(person, "ACTIVE")} style={smallButton}>Activate</button>}
                         {person.membership_status === "ACTIVE" && <button disabled={companyBusy} onClick={() => void changeStaffStatus(person, "SUSPENDED")} style={smallButton}>Suspend</button>}
                         <button disabled={companyBusy} onClick={() => void changeStaffStatus(person, "REVOKED")} style={dangerButton}>Revoke</button>
                       </div>
-                    ) : <span style={smallMuted}>Owner-protected / terminal</span>}</td>
+                    ) : <span style={smallMuted}>{person.role_key === "OWNER" ? "Owner-protected" : person.membership_id === membership?.membership_id ? "Self-access protected" : "Admin-protected / terminal"}</span>}</td>
                   </tr>)}
                 </tbody></table></div>
               )}
