@@ -36,7 +36,7 @@ export async function POST(request: Request): Promise<Response> {
       "https://auth/auth/login/otp/request",
       {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
+        headers: { "content-type": "application/json", accept: "application/json", "cf-connecting-ip": request.headers.get("cf-connecting-ip") || "unknown" },
         body: JSON.stringify({ email }),
         signal: AbortSignal.timeout(8_000),
       },
