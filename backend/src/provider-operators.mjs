@@ -94,7 +94,8 @@ export function normalizeProviderRelationshipStatus(body, current = {}) {
   if (onboardingStatus === "ACTIVE" && (!corporateAgentReference || !agreementReference)) {
     return { error: "active_provider_relationship_requires_corporate_and_agreement_references" };
   }
-  if (expiresAt && !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(expiresAt)) return { error: "invalid_expiry_date" };
+  if (expiresAt && (!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(expiresAt) || !Number.isFinite(Date.parse(expiresAt)))) return { error: "invalid_expiry_date" };
+  if (onboardingStatus === "ACTIVE" && expiresAt && Date.parse(expiresAt) <= Date.now()) return { error: "provider_relationship_expiry_must_be_in_future" };
   return { value: { onboardingStatus, corporateAgentReference: corporateAgentReference || null, agreementReference: agreementReference || null, expiresAt, reason } };
 }
 
@@ -153,7 +154,8 @@ export function normalizeProviderOperatorStatus(body, current = {}) {
   if (approvalStatus === "APPROVED" && (trainingStatus !== "COMPLETED" || !validProviderReference(providerOperatorReference))) {
     return { error: "operator_approval_requires_provider_reference_and_completed_training" };
   }
-  if (validUntil && !/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(validUntil)) return { error: "invalid_operator_valid_until" };
+  if (validUntil && (!/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(validUntil) || !Number.isFinite(Date.parse(validUntil)))) return { error: "invalid_operator_valid_until" };
+  if (approvalStatus === "APPROVED" && validUntil && Date.parse(validUntil) <= Date.now()) return { error: "operator_valid_until_must_be_in_future" };
   if (reason.length < 4) return { error: "reason_required" };
   return { value: { approvalStatus, trainingStatus, providerOperatorReference: providerOperatorReference || null, validUntil, reason } };
 }
@@ -196,14 +198,27 @@ async function validateAssignedSim(env, companyId, providerCode, employeeProfile
 
 async function providerOutletContext(env, companyId, outletId) {
   return env.DB.prepare(
-    "SELECT a.id,a.provider_relationship_id,a.branch_id,a.outlet_account_reference,a.account_kind,a.display_name,a.status,a.cash_account_id,r.provider_code,r.onboarding_status FROM provider_outlet_accounts a JOIN provider_relationships r ON r.company_id=a.company_id AND r.id=a.provider_relationship_id WHERE a.company_id=?1 AND a.id=?2 LIMIT 1"
+    "SELECT a.id,a.provider_relationship_id,a.branch_id,a.outlet_account_reference,a.account_kind,a.display_name,a.status,a.cash_account_id,r.provider_code,r.onboarding_status,r.expires_at FROM provider_outlet_accounts a JOIN provider_relationships r ON r.company_id=a.company_id AND r.id=a.provider_relationship_id WHERE a.company_id=?1 AND a.id=?2 LIMIT 1"
   ).bind(companyId, outletId).first();
 }
 
 export async function handleMyProviderOperatorAssignments(request, env, identity, requestId) {
   if (request.method !== "GET" || new URL(request.url).pathname !== "/v1/me/provider-operator-assignments") return null;
   const rows = await env.DB.prepare(
-    "SELECT op.id AS provider_operator_profile_id,op.provider_operator_reference,op.training_status,op.valid_until,pr.provider_code,poa.id AS provider_outlet_account_id,poa.outlet_account_reference,poa.display_name AS outlet_name,poa.branch_id,b.name AS branch_name,ea.employee_number FROM provider_operator_profiles op JOIN provider_relationships pr ON pr.company_id=op.company_id AND pr.id=op.provider_relationship_id JOIN provider_outlet_accounts poa ON poa.company_id=op.company_id AND poa.id=op.provider_outlet_account_id JOIN employee_profiles ep ON ep.company_id=op.company_id AND ep.id=op.employee_profile_id JOIN staff_memberships sm ON sm.company_id=ep.company_id AND sm.id=ep.staff_membership_id JOIN employee_assignments ea ON ea.company_id=ep.company_id AND ea.employee_profile_id=ep.id AND ea.branch_id=poa.branch_id JOIN branches b ON b.company_id=poa.company_id AND b.id=poa.branch_id JOIN staff_work_assignments wa ON wa.company_id=sm.company_id AND wa.staff_membership_id=sm.id AND wa.branch_id=poa.branch_id AND wa.work_area='MOBILE_MONEY' JOIN employee_permission_grants pg ON pg.company_id=op.company_id AND pg.employee_profile_id=ep.id AND pg.permission_key=?2 AND pg.scope_type='PROVIDER_ACCOUNT' AND pg.scope_id=poa.id WHERE sm.identity_subject=?1 AND sm.status='ACTIVE' AND ep.employment_status='ACTIVE' AND ea.status='ACTIVE' AND datetime(ea.starts_at)<=CURRENT_TIMESTAMP AND (ea.ends_at IS NULL OR datetime(ea.ends_at)>CURRENT_TIMESTAMP) AND wa.status='ACTIVE' AND wa.duty_role IN ('OPERATOR','SUPERVISOR','APPROVER') AND op.approval_status='APPROVED' AND op.training_status='COMPLETED' AND (op.valid_until IS NULL OR datetime(op.valid_until)>CURRENT_TIMESTAMP) AND pr.onboarding_status='ACTIVE' AND poa.status='ACTIVE' AND b.status='ACTIVE' AND pg.status='ACTIVE' AND datetime(pg.starts_at)<=CURRENT_TIMESTAMP AND (pg.expires_at IS NULL OR datetime(pg.expires_at)>CURRENT_TIMESTAMP) ORDER BY pr.provider_code,b.name,poa.display_name LIMIT 100"
+    "SELECT op.id AS provider_operator_profile_id,op.provider_operator_reference,op.training_status,op.valid_until,pr.provider_code,poa.id AS provider_outlet_account_id,poa.outlet_account_reference,poa.display_name AS outlet_name,poa.branch_id,b.name AS branch_name,ea.employee_number FROM provider_operator_profiles op JOIN provider_relationships pr ON pr.company_id=op.company_id AND pr.id=op.provider_relationship_id JOIN provider_outlet_accounts poa ON poa.company_id=op.company_id AND poa.id=op.provider_outlet_account_id JOIN employee_profiles ep ON ep.company_id=op.company_id AND ep.id=op.employee_profile_id JOIN staff_memberships sm ON sm.company_id=ep.company_id AND sm.id=ep.staff_membership_id JOIN employee_assignments ea ON ea.company_id=ep.company_id AND ea.employee_profile_id=ep.id AND ea.branch_id=poa.branch_id JOIN branches b ON b.company_id=poa.company_id AND b.id=poa.branch_id JOIN staff_work_assignments wa ON wa.company_id=sm.company_id AND wa.staff_membership_id=sm.id AND wa.branch_id=poa.branch_id AND wa.work_area='MOBILE_MONEY' JOIN employee_permission_grants pg ON pg.company_id=op.company_id AND pg.employee_profile_id=ep.id AND pg.permission_key=?2 AND pg.scope_type='PROVIDER_ACCOUNT' AND pg.scope_id=poa.id WHERE sm.identity_subject=?1 AND sm.status='ACTIVE' AND ep.employment_status='ACTIVE' AND ea.status='ACTIVE' AND datetime(ea.starts_at)<=CURRENT_TIMESTAMP AND (ea.ends_at IS NULL OR datetime(ea.ends_at)>CURRENT_TIMESTAMP) AND wa.status='ACTIVE' AND wa.duty_role IN ('OPERATOR','SUPERVISOR','APPROVER') AND op.approval_status='APPROVED' AND op.training_status='COMPLETED' AND (op.valid_until IS NULL OR datetime(op.valid_until)>CURRENT_TIMESTAMP) AND pr.onboarding_status='ACTIVE' AND (pr.expires_at IS NULL OR datetime(pr.expires_at)>CURRENT_TIMESTAMP) AND poa.status='ACTIVE' AND b.status='ACTIVE' AND pg.status='ACTIVE' AND datetime(pg.starts_at)<=CURRENT_TIMESTAMP AND (pg.expires_at IS NULL OR datetime(pg.expires_at)>CURRENT_TIMESTAMP)
+    AND (op.sim_asset_id IS NULL OR EXISTS (
+      SELECT 1 FROM company_assets asset
+      JOIN company_sim_details sim ON sim.company_id=asset.company_id AND sim.asset_id=asset.id
+      JOIN asset_assignments aa ON aa.company_id=asset.company_id AND aa.asset_id=asset.id
+      WHERE asset.company_id=op.company_id AND asset.id=op.sim_asset_id
+        AND asset.asset_type='SIM_CARD' AND asset.lifecycle_status='ASSIGNED'
+        AND sim.registration_status='COMPANY_REGISTERED'
+        AND aa.employee_profile_id=op.employee_profile_id AND aa.branch_id=poa.branch_id
+        AND aa.status='ISSUED' AND aa.returned_at IS NULL
+        AND ((pr.provider_code='AIRTEL_MONEY' AND sim.network_code='AIRTEL')
+          OR (pr.provider_code='MTN_MOMO' AND sim.network_code='MTN')
+          OR pr.provider_code='INTERSWITCH_QUICKTELLER')
+    )) ORDER BY pr.provider_code,b.name,poa.display_name LIMIT 100"
   ).bind(identity.userId, OPERATING_GRANT).all();
   return reply({ data: rows.results || [] }, 200, requestId);
 }
@@ -375,7 +390,7 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
     if (normalized.error) return reply({ error: normalized.error }, 400, requestId);
     const next = normalized.value;
     if (current.status === next.status) return reply({ data: current, idempotentReplay: true }, 200, requestId);
-    if (next.status === "ACTIVE" && (current.onboarding_status !== "ACTIVE" || !current.outlet_account_reference)) {
+    if (next.status === "ACTIVE" && (current.onboarding_status !== "ACTIVE" || (current.expires_at && Date.parse(current.expires_at) <= Date.now()) || !current.outlet_account_reference)) {
       return reply({ error: "active_provider_relationship_and_outlet_reference_required" }, 409, requestId);
     }
     const statements = [
@@ -414,7 +429,7 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
   if (outletOperators && request.method === "POST") {
     const id = decodeURIComponent(outletOperators[1]);
     const account = await providerOutletContext(env, companyId, id);
-    if (!account || account.status !== "ACTIVE" || account.onboarding_status !== "ACTIVE") {
+    if (!account || account.status !== "ACTIVE" || account.onboarding_status !== "ACTIVE" || (account.expires_at && Date.parse(account.expires_at) <= Date.now())) {
       return reply({ error: "active_provider_outlet_and_relationship_required" }, 409, requestId);
     }
     const parsed = await readBody(request);
@@ -455,7 +470,7 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
   if (operatorStatus && request.method === "POST") {
     const id = decodeURIComponent(operatorStatus[1]);
     const current = await env.DB.prepare(
-      "SELECT op.id,op.provider_relationship_id,op.provider_outlet_account_id,op.employee_profile_id,op.provider_operator_reference,op.sim_asset_id,op.approval_status,op.training_status,op.valid_until,poa.branch_id,poa.status AS outlet_status,pr.provider_code,pr.onboarding_status FROM provider_operator_profiles op JOIN provider_outlet_accounts poa ON poa.company_id=op.company_id AND poa.id=op.provider_outlet_account_id JOIN provider_relationships pr ON pr.company_id=op.company_id AND pr.id=op.provider_relationship_id WHERE op.company_id=?1 AND op.id=?2 LIMIT 1"
+      "SELECT op.id,op.provider_relationship_id,op.provider_outlet_account_id,op.employee_profile_id,op.provider_operator_reference,op.sim_asset_id,op.approval_status,op.training_status,op.valid_until,poa.branch_id,poa.status AS outlet_status,pr.provider_code,pr.onboarding_status,pr.expires_at FROM provider_operator_profiles op JOIN provider_outlet_accounts poa ON poa.company_id=op.company_id AND poa.id=op.provider_outlet_account_id JOIN provider_relationships pr ON pr.company_id=op.company_id AND pr.id=op.provider_relationship_id WHERE op.company_id=?1 AND op.id=?2 LIMIT 1"
     ).bind(companyId, id).first();
     if (!current) return reply({ error: "provider_operator_profile_not_found" }, 404, requestId);
     if (["REVOKED", "REJECTED"].includes(current.approval_status)) return reply({ error: "rejected_or_revoked_operator_profile_is_terminal" }, 409, requestId);
@@ -465,7 +480,7 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
     if (normalized.error) return reply({ error: normalized.error }, 400, requestId);
     const next = normalized.value;
     if (next.approvalStatus === "APPROVED") {
-      if (current.outlet_status !== "ACTIVE" || current.onboarding_status !== "ACTIVE") return reply({ error: "provider_outlet_and_relationship_must_be_active" }, 409, requestId);
+      if (current.outlet_status !== "ACTIVE" || current.onboarding_status !== "ACTIVE" || (current.expires_at && Date.parse(current.expires_at) <= Date.now())) return reply({ error: "provider_outlet_and_relationship_must_be_active" }, 409, requestId);
       const employee = await requireActiveEmployeeAtBranch(env, companyId, current.employee_profile_id, current.branch_id);
       if (!employee) return reply({ error: "active_employee_assignment_at_provider_branch_required" }, 409, requestId);
       const workDuty = await requireMobileMoneyDuty(env, companyId, employee.staff_membership_id, current.branch_id);
