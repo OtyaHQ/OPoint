@@ -472,6 +472,38 @@ async function handle(request, env) {
   const assignmentResponse = await handleWorkAssignmentRoutes(request, env, identity, membership, url, requestId);
   if (assignmentResponse) return assignmentResponse;
 
+  // Workforce directory: management-only. Return business contact and employment metadata,
+  // never identity documents, private KYC data, provider PINs, or device secrets.
+  if (request.method === "GET" && url.pathname === "/v1/staff") {
+    if (!canManageWorkAssignments(membership.role_key)) {
+      return json({ error: "staff_directory_forbidden", requestId }, 403, requestId);
+    }
+    const branchId = clean(url.searchParams.get("branchId"), 80) || null;
+    if (branchId) {
+      const branch = await env.DB.prepare(
+        "SELECT id FROM branches WHERE company_id=?1 AND id=?2 AND status='ACTIVE' LIMIT 1"
+      ).bind(companyId, branchId).first();
+      if (!branch) return json({ error: "active_branch_required", requestId }, 404, requestId);
+    }
+    const rows = await env.DB.prepare(
+      "SELECT sm.id AS membership_id,sm.display_name,sm.email,sm.role_key,sm.status AS membership_status,COALESCE(ea.branch_id,sm.branch_id) AS branch_id,b.name AS branch_name,ep.id AS employee_profile_id,ep.employee_number,ep.employment_type,ep.employment_status,ep.hire_date,ep.end_date,jp.title AS position_title,d.name AS department_name FROM staff_memberships sm LEFT JOIN employee_profiles ep ON ep.company_id=sm.company_id AND ep.staff_membership_id=sm.id LEFT JOIN employee_assignments ea ON ea.id=(SELECT ea2.id FROM employee_assignments ea2 WHERE ea2.company_id=sm.company_id AND ea2.employee_profile_id=ep.id AND ea2.status='ACTIVE' AND datetime(ea2.starts_at)<=CURRENT_TIMESTAMP AND (ea2.ends_at IS NULL OR datetime(ea2.ends_at)>CURRENT_TIMESTAMP) ORDER BY CASE WHEN ea2.assignment_type='PRIMARY' THEN 0 ELSE 1 END,ea2.starts_at DESC LIMIT 1) LEFT JOIN branches b ON b.company_id=sm.company_id AND b.id=COALESCE(ea.branch_id,sm.branch_id) LEFT JOIN job_positions jp ON jp.company_id=ea.company_id AND jp.id=ea.position_id LEFT JOIN departments d ON d.company_id=ea.company_id AND d.id=ea.department_id WHERE sm.company_id=?1 AND (?2 IS NULL OR COALESCE(ea.branch_id,sm.branch_id)=?2) ORDER BY CASE sm.status WHEN 'ACTIVE' THEN 0 WHEN 'PENDING' THEN 1 ELSE 2 END,sm.display_name LIMIT 250"
+    ).bind(companyId, branchId).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  // Branch discovery is company-scoped for privileged members and restricted
+  // to the employee's default/explicitly assigned branches for everyone else.
+  if (request.method === "GET" && url.pathname === "/v1/branches") {
+    const rows = privileged
+      ? await env.DB.prepare(
+        "SELECT id,branch_code,name,district,town_council,location_label,public_phone,status,is_primary FROM branches WHERE company_id=?1 AND status='ACTIVE' ORDER BY is_primary DESC,name LIMIT 100"
+      ).bind(companyId).all()
+      : await env.DB.prepare(
+        "SELECT b.id,b.branch_code,b.name,b.district,b.town_council,b.location_label,b.public_phone,b.status,b.is_primary FROM branches b WHERE b.company_id=?1 AND b.status='ACTIVE' AND (b.id=?2 OR EXISTS (SELECT 1 FROM staff_work_assignments a WHERE a.company_id=b.company_id AND a.branch_id=b.id AND a.staff_membership_id=?3 AND a.status='ACTIVE')) ORDER BY b.is_primary DESC,b.name LIMIT 100"
+      ).bind(companyId, membership.branch_id, membership.membership_id).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
   const privileged = canManageWorkAssignments(membership.role_key);
   const requestedBranchId = clean(request.headers.get("x-branch-id") || url.searchParams.get("branchId"), 80) || null;
   if (!privileged && membership.branch_id && requestedBranchId && membership.branch_id !== requestedBranchId) {
