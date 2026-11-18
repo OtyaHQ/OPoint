@@ -37,7 +37,7 @@ expected_migrations = {
     "0004_staff_work_assignments": "fa3666d4eb0e62322800d5b9f0e9b762d24851b282fd01a7c20a4f1eed3a9090",
     "0005_enterprise_automation": "0a18fcb1eeb7f1bc6e658dd86b4f49e808b62bbd6a1833d3404415b3dceebe3e",
     "0006_message_capture_and_receipts": "db7576a526fefd6d585fb94539281f00996929404437ecc6b5f79fef05da07c1",
-    "0007_provider_operator_access": "9467f7e77922cf02fcd43c1fca3711953082cf57defb469eade2a48467ce79bd",
+    "0007_provider_operator_access": "3e450fecd3373a96468f532ade9533076242b3e0c7019898590b5aa5e5663222",
 }
 actual_migrations = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
 assert actual_migrations == expected_migrations, actual_migrations
@@ -174,7 +174,7 @@ assert db.execute("SELECT COUNT(*) FROM provider_outlet_accounts WHERE provider_
 assert db.execute("SELECT COUNT(*) FROM provider_balance_observations WHERE provider_outlet_account_id='pa-1'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM provider_transaction_records WHERE evidence_level='PROVIDER_FEED'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_provider_operator_one_current_employee_account','idx_employee_provider_operation_grant_active')").fetchone()[0] == 2
-assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('provider_operator_active_insert_guard','provider_operator_active_update_guard')").fetchone()[0] == 2
+assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('provider_operator_active_insert_guard','provider_operator_active_update_guard','employee_provider_grant_active_insert_guard','employee_provider_grant_active_update_guard')").fetchone()[0] == 4
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 print("PASS: Otya Enterprise migrations support branch-scoped provider relationships, outlet accounts, employee operator approval, company SIM assignment, statement evidence and receipt history without payment execution.")
 
@@ -197,6 +197,22 @@ db.execute(
     "INSERT INTO issued_receipts(id,company_id,branch_id,receipt_number,receipt_kind,source_type,source_id,issue_status,currency,total_amount,receipt_snapshot_json,verification_token_hash,idempotency_key,issued_by) "
     "VALUES ('receipt-sale-1','co-1','br-1','OTYA-MBR-000001','RETAIL_SALE','SALE','sale-1','ISSUED','UGX',250000,'{}','verify-hash-sale-1','receipt-idem-sale-1','st-1')"
 )
+
+
+# A provider-account permission grant is independently guarded by the same current
+# membership, branch, provider, work-area, training and SIM requirements.
+db.execute(
+    "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
+    "VALUES ('grant-operator-1','co-1','emp-1','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-1','ACTIVE','owner','Approved Airtel operator access')"
+)
+try:
+    db.execute(
+        "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
+        "VALUES ('grant-operator-bad','co-1','emp-2','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-2','ACTIVE','owner','Invalid branch operator grant')"
+    )
+    raise AssertionError("Provider account grant must not bypass the Mobile Money work assignment")
+except sqlite3.IntegrityError:
+    pass
 
 # An agency receipt snapshots the actual recorded evidence and status. The receipt is not
 # allowed to invent a stronger verification status than the source transaction record.
