@@ -364,4 +364,4 @@ END;
 
 -- Migration checksum covers the SQL above and excludes this ledger insert.
 INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
-VALUES ('0007_provider_operator_access', '7d04e726e84e1ba9243c99a167be011056e6824527b27b6fff8284e3cad5cbe4', CURRENT_TIMESTAMP);
+VALUES ('0007_provider_operator_access', '94b6f4af7180571c2c284d3f40813a4e80fd5c88ecb32e455c84ca57979a92e1', CURRENT_TIMESTAMP);
