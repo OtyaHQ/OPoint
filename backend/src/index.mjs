@@ -12,6 +12,7 @@ import {
 import {
   handleStaffInvitationAcceptance,
   handleStaffInvitationManagement,
+  handleStaffMembershipStatusManagement,
 } from "./staff-invitations.mjs";
 
 const REQUIRED_TABLES = [
@@ -22,7 +23,7 @@ const REQUIRED_TABLES = [
   "reconciliation_sessions", "reconciliation_items", "journal_entries", "journal_lines",
   "payment_intents", "payment_attempts", "payment_reversals", "agency_operations",
   "biller_catalog", "opoint_schema_migrations", "audit_events", "integration_status",
-  "staff_work_assignments", "staff_work_assignment_events", "staff_invitations", "staff_invitation_events", "stored_files",
+  "staff_work_assignments", "staff_work_assignment_events", "staff_invitations", "staff_invitation_events", "staff_membership_events", "stored_files",
   "departments", "job_positions", "employee_profiles", "employee_assignments",
   "employee_permission_grants", "employee_documents", "company_assets", "company_sim_details",
   "asset_assignments", "provider_relationships", "provider_outlet_accounts", "provider_operator_profiles",
@@ -66,6 +67,13 @@ const REQUIRED_GUARDS = [
   "staff_invitations_acceptance_guard",
   "staff_invitation_events_no_update",
   "staff_invitation_events_no_delete",
+  "staff_memberships_owner_status_guard",
+  "staff_memberships_role_transfer_guard",
+  "staff_memberships_revoked_terminal",
+  "staff_memberships_no_delete",
+  "staff_membership_status_cascade_work_assignments",
+  "staff_membership_events_no_update",
+  "staff_membership_events_no_delete",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -487,6 +495,8 @@ async function handle(request, env) {
   if (!membership) return json({ error: "company_access_denied", requestId }, 403, requestId);
   const staffInvitationResponse = await handleStaffInvitationManagement(request, env, identity, membership, url, requestId);
   if (staffInvitationResponse) return staffInvitationResponse;
+  const staffMembershipStatusResponse = await handleStaffMembershipStatusManagement(request, env, identity, membership, url, requestId);
+  if (staffMembershipStatusResponse) return staffMembershipStatusResponse;
   const providerOperatorResponse = await handleProviderOperatorRoutes(request, env, identity, membership, url, requestId);
   if (providerOperatorResponse) return providerOperatorResponse;
   const assignmentResponse = await handleWorkAssignmentRoutes(request, env, identity, membership, url, requestId);
