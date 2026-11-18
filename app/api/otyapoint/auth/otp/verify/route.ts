@@ -24,8 +24,6 @@ export async function POST(request: Request): Promise<Response> {
   const code = typeof parsed.value.code === "string"
     ? parsed.value.code.trim().toUpperCase()
     : "";
-  const totpCode = typeof parsed.value.totpCode === "string" ? parsed.value.totpCode.trim() : "";
-  const recoveryCode = typeof parsed.value.recoveryCode === "string" ? parsed.value.recoveryCode.trim() : "";
   if (
     !email
     || email.length > 254
@@ -45,13 +43,8 @@ export async function POST(request: Request): Promise<Response> {
       "https://auth/auth/login/otp/verify",
       {
         method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({
-          email,
-          code,
-          ...(totpCode ? { totp_code: totpCode } : {}),
-          ...(recoveryCode ? { recovery_code: recoveryCode } : {}),
-        }),
+        headers: { "content-type": "application/json", accept: "application/json", "cf-connecting-ip": request.headers.get("cf-connecting-ip") || "unknown" },
+        body: JSON.stringify({ email, code }),
         signal: AbortSignal.timeout(8_000),
       },
     ));
