@@ -39,11 +39,9 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: package-lock.json
 
-      - name: Install existing dashboard dependencies
-        run: npm ci
+      - name: Install existing dashboard dependencies without creating a lockfile
+        run: npm install --ignore-scripts --no-audit --no-fund --no-package-lock
 
       - name: Check Next.js compatibility with Cloudflare vinext
         shell: bash
