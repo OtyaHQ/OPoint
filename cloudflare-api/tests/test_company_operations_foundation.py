@@ -108,6 +108,30 @@ class CompanyOperationsFoundationTests(unittest.TestCase):
                    VALUES ('wrong-branch', 'company-a', 'staff-a', 'branch-b', 'RETAIL', 'OPERATOR', 'owner-a')"""
             )
 
+    def test_suspended_assignment_cannot_be_reactivated_when_scope_is_no_longer_valid(self):
+        self.db.execute(
+            """INSERT INTO omni_staff_work_assignments
+               (id, company_id, staff_membership_id, branch_id, work_area, duty_role, assigned_by)
+               VALUES ('assign-1', 'company-a', 'staff-a', 'branch-a', 'RETAIL', 'OPERATOR', 'owner-a')"""
+        )
+        self.db.execute("UPDATE omni_staff_work_assignments SET status='SUSPENDED' WHERE id='assign-1'")
+
+        self.db.execute("UPDATE omni_staff_memberships SET status='SUSPENDED' WHERE id='staff-a'")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("UPDATE omni_staff_work_assignments SET status='ACTIVE' WHERE id='assign-1'")
+        self.db.execute("UPDATE omni_staff_memberships SET status='ACTIVE' WHERE id='staff-a'")
+
+        self.db.execute("UPDATE omni_branches SET status='CLOSED' WHERE id='branch-a'")
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.db.execute("UPDATE omni_staff_work_assignments SET status='ACTIVE' WHERE id='assign-1'")
+        self.db.execute("UPDATE omni_branches SET status='ACTIVE' WHERE id='branch-a'")
+
+        self.db.execute("UPDATE omni_staff_work_assignments SET status='ACTIVE' WHERE id='assign-1'")
+        status = self.db.execute(
+            "SELECT status FROM omni_staff_work_assignments WHERE id='assign-1'"
+        ).fetchone()[0]
+        self.assertEqual(status, "ACTIVE")
+
     def test_branch_stock_movements_are_balanced_scoped_and_append_only(self):
         self.product()
         self.db.execute(

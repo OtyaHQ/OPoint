@@ -117,6 +117,25 @@ BEGIN
   ) THEN RAISE(ABORT, 'BRANCH_NOT_AVAILABLE') END;
 END;
 
+-- Re-activating a suspended assignment must satisfy the same scope rules as
+-- creating one: the staff membership and branch have to still be ACTIVE.
+CREATE TRIGGER IF NOT EXISTS omni_staff_work_assignment_reactivate_guard
+BEFORE UPDATE OF status ON omni_staff_work_assignments
+WHEN NEW.status = 'ACTIVE' AND OLD.status <> 'ACTIVE'
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_staff_memberships s
+    WHERE s.id = NEW.staff_membership_id
+      AND s.company_id = NEW.company_id
+      AND s.status = 'ACTIVE'
+      AND (s.branch_id IS NULL OR s.branch_id = NEW.branch_id)
+  ) THEN RAISE(ABORT, 'STAFF_MEMBERSHIP_OR_BRANCH_SCOPE_INVALID') END;
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM omni_branches b
+    WHERE b.id = NEW.branch_id AND b.company_id = NEW.company_id AND b.status = 'ACTIVE'
+  ) THEN RAISE(ABORT, 'BRANCH_NOT_AVAILABLE') END;
+END;
+
 CREATE TABLE IF NOT EXISTS omni_customers (
   id TEXT PRIMARY KEY,
   company_id TEXT NOT NULL,
