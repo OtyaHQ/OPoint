@@ -75,7 +75,7 @@ jobs:
             echo '### Generated configuration files'
             find "$TARGET" -maxdepth 2 -type f | grep -E '(^|/)(wrangler\.jsonc|wrangler\.toml|cloudflare\.config\.ts|vite\.config\.[^/]+|package\.json|tsconfig\.json)$' | sort || true
             echo
-            for file in dashboard/package.json cloudflare.config.ts wrangler.jsonc wrangler.toml vite.config.ts dashboard/tsconfig.json; do
+            for file in package.json cloudflare.config.ts wrangler.jsonc wrangler.toml vite.config.ts tsconfig.json; do
               if [[ -f "$TARGET/$file" ]]; then
                 echo "### $file"
                 echo '-----'
