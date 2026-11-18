@@ -61,13 +61,13 @@ export function normalizeProviderAgentAccount(body) {
   const displayLabel = clean(body?.displayLabel, 100);
   const agentLineLast4 = body?.agentLineLast4 == null || body.agentLineLast4 === ""
     ? null
-    : clean(body.agentLineLast4, 4);
+    : clean(body.agentLineLast4, 8);
   const reason = clean(body?.reason, 300);
 
   if (!PROVIDERS.includes(providerCode)) return { error: "invalid_provider_code" };
   if (!branchId) return { error: "branch_required" };
   if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,119}$/.test(providerAgentReference)
-      || /^\\+?\\d{9,15}$/.test(providerAgentReference)) {
+      || /^\+?\d{9,15}$/.test(providerAgentReference)) {
     return { error: "invalid_provider_agent_reference_use_provider_agent_code_not_full_phone_number" };
   }
   if (displayLabel.length < 2) return { error: "display_label_required" };
