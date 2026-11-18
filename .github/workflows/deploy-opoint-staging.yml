@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type DEPLOY-STAGING to deploy the isolated OtyaPoint staging API'
+        description: "Type DEPLOY-STAGING to deploy the isolated OtyaPoint staging API"
         required: true
         type: string
 
@@ -17,16 +17,16 @@ concurrency:
 
 jobs:
   deploy-opoint-staging:
-    name: Validate and deploy OtyaPoint staging API
-    if: github.ref == 'refs/heads/main'
+    name: Validate and deploy private OtyaPoint staging API
+    if: github.ref == "refs/heads/main"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
-          node-version: '22.23.4'
+          node-version: "22.23.4"
           package-manager-cache: false
 
       - name: Require explicit staging authority
@@ -37,8 +37,8 @@ jobs:
           CLOUDFLARE_API_TOKEN_STAGING: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
         run: |
           set -euo pipefail
-          test "$CONFIRM" = 'DEPLOY-STAGING' || {
-            echo 'ERROR: staging deployment requires DEPLOY-STAGING'
+          test "$CONFIRM" = "DEPLOY-STAGING" || {
+            echo "ERROR: staging deployment requires DEPLOY-STAGING"
             exit 1
           }
           test -n "$CLOUDFLARE_ACCOUNT_ID"
@@ -51,33 +51,25 @@ jobs:
           npm --prefix backend test
           npm --prefix backend run verify:schema
 
-      - name: Dry-run the authoritative OtyaPoint staging Worker
-        env:
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.opoint-staging.toml
-
-      - name: Require isolated Otya ID staging service before product cutover
+      - name: Require the isolated Otya ID staging service before product cutover
         shell: bash
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN_STAGING: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
-          SETTINGS_FILE: ${{ runner.temp }}/otya-id-staging-settings.json
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN_STAGING" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/otya-id-staging/settings" \
-            -o "$SETTINGS_FILE"
-          node - "$SETTINGS_FILE" <<'NODE'
-          const fs = require('node:fs');
-          const response = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          if (response.success !== true || !response.result) {
-            throw new Error('Otya ID staging Worker is not deployed or cannot be read');
-          }
-          NODE
+          headers=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN_STAGING")
+          for endpoint in             "workers/scripts/otya-id-staging"             "workers/scripts/otya-id-staging/subdomain"; do
+            response="$(curl --fail --silent --show-error "${headers[@]}"               "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/$endpoint")"
+            echo "$response" | jq -e '.success == true' >/dev/null
+          done
+          curl --fail --silent --show-error "${headers[@]}"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/otya-id-staging/subdomain"             | jq -e '.result.enabled == false and .result.previews_enabled == false' >/dev/null
+
+      - name: Dry-run the private OtyaPoint API Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+        run: npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.opoint-staging.toml
 
       - name: Apply forward-only migrations to the isolated OtyaPoint staging D1
         env:
@@ -88,53 +80,45 @@ jobs:
           npx --yes wrangler@4.159.0 d1 migrations list opoint-staging-db --remote --config wrangler.opoint-staging.toml
           npx --yes wrangler@4.159.0 d1 migrations apply opoint-staging-db --remote --config wrangler.opoint-staging.toml
 
-      - name: Deploy OtyaPoint staging Worker from the authoritative backend
+      - name: Deploy OtyaPoint staging API with private service binding
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
-        run: |
-          set -euo pipefail
-          npx --yes wrangler@4.159.0 deploy --config wrangler.opoint-staging.toml
+        run: npx --yes wrangler@4.159.0 deploy --config wrangler.opoint-staging.toml
 
-      - name: Verify isolated identity and disabled financial execution
+      - name: Verify private identity binding and disabled execution features
         shell: bash
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN_STAGING: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
-          SETTINGS_FILE: ${{ runner.temp }}/opoint-api-staging-settings.json
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN_STAGING" \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/opoint-api-staging/settings" \
-            -o "$SETTINGS_FILE"
-          node - "$SETTINGS_FILE" <<'NODE'
-          const fs = require('node:fs');
-          const response = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const result = response.result;
-          const binding = result?.bindings?.find(item => item.name === 'OTYA_ID');
-          const vars = Object.fromEntries((result?.bindings || [])
-            .filter(item => item.type === 'plain_text')
-            .map(item => [item.name, item.text]));
-          if (response.success !== true || binding?.type !== 'service' || binding.service !== 'otya-id-staging') {
-            throw new Error('OtyaPoint staging is not bound to Otya ID staging');
-          }
-          for (const name of ['PAYMENT_EXECUTION_ENABLED','PROVIDER_EXECUTION_ENABLED','AI_ENABLED']) {
-            if (vars[name] !== 'false') throw new Error(name + ' must remain false in staging');
-          }
-          console.log('OtyaPoint staging identity and disabled execution flags verified.');
-          NODE
+          headers=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN_STAGING")
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/opoint-api-staging"
+          settings="$(curl --fail --silent --show-error "${headers[@]}" "$base/settings")"
+          echo "$settings" | jq -e '
+            .success == true
+            and ([.result.bindings[] | select(.name == "OTYA_ID" and .type == "service" and .service == "otya-id-staging")] | length == 1)
+            and ([.result.bindings[] | select(.type == "plain_text" and (.name == "PAYMENT_EXECUTION_ENABLED" or .name == "PROVIDER_EXECUTION_ENABLED" or .name == "AI_ENABLED") and .text == "false")] | length == 3)
+          ' >/dev/null
+          subdomain="$(curl --fail --silent --show-error "${headers[@]}" "$base/subdomain")"
+          echo "$subdomain" | jq -e '.success == true and .result.enabled == false and .result.previews_enabled == false' >/dev/null
+          echo "The staging API is bound to Otya ID staging, all financial/provider/AI execution flags remain disabled, and public hostnames are off."
 
-      - name: Smoke test deployed OtyaPoint staging API
+      - name: Verify staging D1 schema through read-only metadata query
         shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN_STAGING: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
         run: |
           set -euo pipefail
-          base="https://opoint-api-staging.petersmartlink.workers.dev"
-          health="$(curl --retry 3 --retry-delay 2 --retry-all-errors --max-time 25 -fsS "$base/health")"
-          echo "$health"
-          node -e 'const x=JSON.parse(process.argv[1]); if(x.status!=="ready" || x.schemaReady!==true) process.exit(1)' "$health"
-          capabilities="$(curl --max-time 20 -fsS "$base/v1/capabilities")"
-          node -e 'const x=JSON.parse(process.argv[1]); if(x.paymentsEnabled!==false || x.providerExecutionEnabled!==false || x.aiAssistantEnabled!==false || x.salesPostingEnabled!==false || x.journalPostingEnabled!==false || x.cashMovementEnabled!==false) process.exit(1)' "$capabilities"
-          status="$(curl --max-time 20 -sS -o /tmp/opoint-protected.json -w '%{http_code}' "$base/v1/me")"
-          cat /tmp/opoint-protected.json
-          test "$status" = "401"
+          database_id="$(sed -n 's/^[[:space:]]*database_id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' wrangler.opoint-staging.toml | head -n 1)"
+          test -n "$database_id"
+          response="$(curl --fail --silent --show-error             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN_STAGING"             -H "Content-Type: application/json"             -X POST             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/$database_id/query"             --data '{"sql":"SELECT name FROM sqlite_master WHERE type IN (\u0027table\u0027,\u0027trigger\u0027)"}')"
+          echo "$response" | jq -e '
+            .success == true
+            and ([.result[0].results[].name] as $names
+              | ["companies","branches","staff_memberships","ledger_accounts","cash_accounts","products","sales","journal_entries","journal_lines","payment_intents","payment_attempts","payment_reversals","agency_operations","staff_work_assignments","provider_operator_profiles","issued_receipts"]
+              | all(. as $expected | $names | index($expected) != null))
+          ' >/dev/null
+          echo "Expected core business tables exist in the isolated staging D1."
