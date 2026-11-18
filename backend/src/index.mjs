@@ -1,6 +1,7 @@
 import {
   assignmentMatchesScope,
   canManageWorkAssignments,
+  WORK_AREAS,
   normalizeAssignmentStatus,
   normalizeWorkAssignment,
 } from "./work-assignments.mjs";
@@ -258,21 +259,29 @@ async function handleWorkAssignmentRoutes(request, env, identity, membership, ur
     return json({ error: "only_active_assignments_can_be_suspended", requestId }, 409, requestId);
   }
   const eventType = next.status === "ACTIVE" ? "RESUMED" : next.status;
-  const changed = await env.DB.batch([
-    env.DB.prepare(
-      "UPDATE staff_work_assignments SET status=?1,updated_at=CURRENT_TIMESTAMP,suspended_by=CASE WHEN ?1='SUSPENDED' THEN ?2 ELSE NULL END,suspended_at=CASE WHEN ?1='SUSPENDED' THEN CURRENT_TIMESTAMP ELSE NULL END,revoked_by=CASE WHEN ?1='REVOKED' THEN ?2 ELSE NULL END,revoked_at=CASE WHEN ?1='REVOKED' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE company_id=?3 AND id=?4 AND status=?5"
-    ).bind(next.status, identity.userId, membership.company_id, assignmentId, current.status),
-    env.DB.prepare(
-      "INSERT INTO staff_work_assignment_events (id,company_id,assignment_id,event_type,previous_status,new_status,actor_id,reason) SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE changes()=1"
-    ).bind(crypto.randomUUID(), membership.company_id, assignmentId, eventType, current.status, next.status, identity.userId, next.reason),
-    env.DB.prepare(
-      "INSERT INTO audit_events (id,company_id,actor_id,action,entity_type,entity_id,reason,request_id,before_state_json,after_state_json) SELECT ?1,?2,?3,?4,'STAFF_WORK_ASSIGNMENT',?5,?6,?7,?8,?9 WHERE changes()=1"
-    ).bind(crypto.randomUUID(), membership.company_id, identity.userId, `STAFF_WORK_ASSIGNMENT_${eventType}`, assignmentId, next.reason, requestId, JSON.stringify(current), JSON.stringify({ ...current, status: next.status })),
-  ]);
-  if (Number(changed?.[0]?.meta?.changes || 0) !== 1) {
-    return json({ error: "work_assignment_changed_retry", requestId }, 409, requestId);
+  try {
+    const changed = await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE staff_work_assignments SET status=?1,updated_at=CURRENT_TIMESTAMP,suspended_by=CASE WHEN ?1='SUSPENDED' THEN ?2 ELSE NULL END,suspended_at=CASE WHEN ?1='SUSPENDED' THEN CURRENT_TIMESTAMP ELSE NULL END,revoked_by=CASE WHEN ?1='REVOKED' THEN ?2 ELSE NULL END,revoked_at=CASE WHEN ?1='REVOKED' THEN CURRENT_TIMESTAMP ELSE NULL END WHERE company_id=?3 AND id=?4 AND status=?5"
+      ).bind(next.status, identity.userId, membership.company_id, assignmentId, current.status),
+      env.DB.prepare(
+        "INSERT INTO staff_work_assignment_events (id,company_id,assignment_id,event_type,previous_status,new_status,actor_id,reason) SELECT ?1,?2,?3,?4,?5,?6,?7,?8 WHERE changes()=1"
+      ).bind(crypto.randomUUID(), membership.company_id, assignmentId, eventType, current.status, next.status, identity.userId, next.reason),
+      env.DB.prepare(
+        "INSERT INTO audit_events (id,company_id,actor_id,action,entity_type,entity_id,reason,request_id,before_state_json,after_state_json) SELECT ?1,?2,?3,?4,'STAFF_WORK_ASSIGNMENT',?5,?6,?7,?8,?9 WHERE changes()=1"
+      ).bind(crypto.randomUUID(), membership.company_id, identity.userId, `STAFF_WORK_ASSIGNMENT_${eventType}`, assignmentId, next.reason, requestId, JSON.stringify(current), JSON.stringify({ ...current, status: next.status })),
+    ]);
+    if (Number(changed?.[0]?.meta?.changes || 0) !== 1) {
+      return json({ error: "work_assignment_changed_retry", requestId }, 409, requestId);
+    }
+    return json({ data: { ...current, status: next.status }, requestId }, 200, requestId);
+  } catch (error) {
+    if (String(error?.message || "").includes("UNIQUE constraint failed")) {
+      return json({ error: "another_active_work_assignment_exists", requestId }, 409, requestId);
+    }
+    console.error("[opoint] work assignment status change failed", { type: error?.name || "Error" });
+    return json({ error: "work_assignment_status_change_failed", requestId }, 500, requestId);
   }
-  return json({ data: { ...current, status: next.status }, requestId }, 200, requestId);
 }
 
 async function audit(env, request, companyId, actorId, action, entityType, entityId, afterState) {
@@ -443,6 +452,46 @@ async function handle(request, env) {
     const result = await requireWorkAreaAssignment(env, membership, scopedBranchId, workArea);
     return result.ok ? result : { ...result, response: json({ error: result.error, requestId }, result.status, requestId) };
   };
+
+  const cashAreaMatch = url.pathname.match(/^\/v1\/cash\/accounts\/([A-Za-z0-9._:-]{1,80})\/work-area$/);
+  if (request.method === "POST" && cashAreaMatch) {
+    if (!privileged) return json({ error: "owner_or_admin_required", requestId }, 403, requestId);
+    const accountId = decodeURIComponent(cashAreaMatch[1]);
+    const parsed = await readJson(request);
+    if (parsed.error) return json({ error: parsed.error, requestId }, parsed.status, requestId);
+    const requestedWorkArea = clean(parsed.value.workArea, 24).toUpperCase();
+    const reason = clean(parsed.value.reason, 300);
+    if (!WORK_AREAS.includes(requestedWorkArea)) return json({ error: "invalid_work_area", requestId }, 400, requestId);
+    if (reason.length < 4) return json({ error: "reason_required", requestId }, 400, requestId);
+    const account = await env.DB.prepare(
+      "SELECT id,branch_id,account_type,provider_code,work_area FROM cash_accounts WHERE company_id=?1 AND id=?2 LIMIT 1"
+    ).bind(companyId, accountId).first();
+    if (!account) return json({ error: "cash_account_not_found", requestId }, 404, requestId);
+    if (account.work_area === requestedWorkArea) {
+      return json({ data: account, idempotentReplay: true, requestId }, 200, requestId);
+    }
+    const providerFloat = ["MOBILE_MONEY","PROVIDER_FLOAT"].includes(account.account_type)
+      || ["MTN_MOMO","AIRTEL_MONEY"].includes(account.provider_code);
+    if (providerFloat && requestedWorkArea !== "MOBILE_MONEY") {
+      return json({ error: "provider_float_must_remain_mobile_money", requestId }, 409, requestId);
+    }
+    const changed = await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE cash_accounts SET work_area=?1,updated_at=CURRENT_TIMESTAMP WHERE company_id=?2 AND id=?3 AND work_area=?4"
+      ).bind(requestedWorkArea, companyId, accountId, account.work_area),
+      env.DB.prepare(
+        "INSERT INTO audit_events (id,company_id,actor_id,action,entity_type,entity_id,reason,request_id,before_state_json,after_state_json) SELECT ?1,?2,?3,'CASH_ACCOUNT_WORK_AREA_CHANGED','CASH_ACCOUNT',?4,?5,?6,?7,?8 WHERE changes()=1"
+      ).bind(crypto.randomUUID(), companyId, identity.userId, accountId, reason, requestId, JSON.stringify(account), JSON.stringify({ ...account, work_area: requestedWorkArea })),
+    ]);
+    if (Number(changed?.[0]?.meta?.changes || 0) !== 1) {
+      return json({ error: "cash_account_changed_retry", requestId }, 409, requestId);
+    }
+    return json({
+      data: { ...account, work_area: requestedWorkArea },
+      notice: "Work-area classification changed; no balance or ledger entry was altered.",
+      requestId,
+    }, 200, requestId);
+  }
 
   if (request.method === "GET" && url.pathname === "/v1/products") {
     const area = await requireArea("RETAIL");
