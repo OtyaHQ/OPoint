@@ -1,0 +1,36 @@
+# Canonical OtyaPoint production API.
+# Private Worker: exposed only through the Otya Core same-origin service binding.
+name = "otyapoint-api"
+main = "backend/src/index.mjs"
+compatibility_date = "2026-11-18"
+workers_dev = false
+keep_vars = false
+
+[vars]
+ENVIRONMENT = "production"
+PRODUCT_CODE = "OPOINT"
+PAYMENT_EXECUTION_ENABLED = "false"
+PROVIDER_EXECUTION_ENABLED = "false"
+AI_ENABLED = "false"
+
+[observability]
+enabled = true
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = true
+head_sampling_rate = 0.05
+
+[[d1_databases]]
+binding = "DB"
+database_name = "otyapoint-prod-db"
+database_id = "2f4bd0e0-cca1-414b-a086-ed86f3d8407f"
+migrations_dir = "backend/schema/migrations"
+
+[[services]]
+binding = "OTYA_ID"
+service = "otya-auth"
