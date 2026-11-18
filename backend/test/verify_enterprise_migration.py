@@ -6,6 +6,7 @@ bootstrap = (ROOT / "schema" / "bootstrap.sql").read_text(encoding="utf-8")
 work_assignments_migration = (ROOT / "schema" / "migrations" / "0004_staff_work_assignments.sql").read_text(encoding="utf-8")
 migration = (ROOT / "schema" / "migrations" / "0005_enterprise_automation.sql").read_text(encoding="utf-8")
 receipts_migration = (ROOT / "schema" / "migrations" / "0006_message_capture_and_receipts.sql").read_text(encoding="utf-8")
+provider_operator_access_migration = (ROOT / "schema" / "migrations" / "0007_provider_operator_access.sql").read_text(encoding="utf-8")
 
 db = sqlite3.connect(":memory:")
 db.execute("PRAGMA foreign_keys = ON")
@@ -13,6 +14,7 @@ db.executescript(bootstrap)
 db.executescript(work_assignments_migration)
 db.executescript(migration)
 db.executescript(receipts_migration)
+db.executescript(provider_operator_access_migration)
 
 required = {
     "departments", "job_positions", "employee_profiles", "employee_assignments",
@@ -35,6 +37,7 @@ expected_migrations = {
     "0004_staff_work_assignments": "fa3666d4eb0e62322800d5b9f0e9b762d24851b282fd01a7c20a4f1eed3a9090",
     "0005_enterprise_automation": "0a18fcb1eeb7f1bc6e658dd86b4f49e808b62bbd6a1833d3404415b3dceebe3e",
     "0006_message_capture_and_receipts": "db7576a526fefd6d585fb94539281f00996929404437ecc6b5f79fef05da07c1",
+    "0007_provider_operator_access": "3ca834a01afa477202218a532aebc32814f6c7000d19ad0a1ac2fda968e8dd50",
 }
 actual_migrations = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
 assert actual_migrations == expected_migrations, actual_migrations
@@ -104,8 +107,13 @@ except sqlite3.IntegrityError:
     pass
 
 db.execute(
-    "INSERT INTO provider_operator_profiles(id,company_id,provider_relationship_id,provider_outlet_account_id,employee_profile_id,provider_operator_reference,sim_asset_id,approval_status) "
-    "VALUES ('op-1','co-1','pr-airtel','pa-1','emp-1','AIRTEL-TELLER-001','sim-asset-1','APPROVED')"
+    "INSERT INTO staff_work_assignments(id,company_id,staff_membership_id,branch_id,work_area,duty_role,status,idempotency_key,request_fingerprint,reason,created_by) "
+    "VALUES ('work-mm-1','co-1','st-1','br-1','MOBILE_MONEY','OPERATOR','ACTIVE','work-mm-idem-1','work-mm-fp-1','Agency operator assignment','owner')"
+)
+
+db.execute(
+    "INSERT INTO provider_operator_profiles(id,company_id,provider_relationship_id,provider_outlet_account_id,employee_profile_id,provider_operator_reference,sim_asset_id,approval_status,training_status,approved_at,training_completed_at) "
+    "VALUES ('op-1','co-1','pr-airtel','pa-1','emp-1','AIRTEL-TELLER-001','sim-asset-1','APPROVED','COMPLETED','2026-11-18T08:00:00Z','2026-11-18T08:00:00Z')"
 )
 db.execute(
     "INSERT INTO provider_balance_observations(id,company_id,provider_outlet_account_id,balance_kind,amount,observed_at,source_kind,recorded_by,idempotency_key) "
@@ -165,8 +173,10 @@ for table, row_id in [("provider_balance_observations","bal-1"),("provider_trans
 assert db.execute("SELECT COUNT(*) FROM provider_outlet_accounts WHERE provider_relationship_id='pr-airtel' AND scope_type='OUTLET'").fetchone()[0] == 2
 assert db.execute("SELECT COUNT(*) FROM provider_balance_observations WHERE provider_outlet_account_id='pa-1'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM provider_transaction_records WHERE evidence_level='PROVIDER_FEED'").fetchone()[0] == 1
+assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_provider_operator_one_current_employee_account','idx_employee_provider_operation_grant_active')").fetchone()[0] == 2
+assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('provider_operator_active_insert_guard','provider_operator_active_update_guard')").fetchone()[0] == 2
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
-print("PASS: Otya Enterprise migration supports company/provider parent IDs, separate outlet accounts, teller assignments, company SIMs/assets, balance snapshots, scans and statement imports without payment execution.")
+print("PASS: Otya Enterprise migrations support branch-scoped provider relationships, outlet accounts, employee operator approval, company SIM assignment, statement evidence and receipt history without payment execution.")
 
 
 # Explicitly shared provider messages are accepted without reading the phone's SMS inbox.
