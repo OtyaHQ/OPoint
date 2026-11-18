@@ -69,6 +69,22 @@ async function resolveSecret(value) {
   }
 }
 
+
+function membershipEventInsert(env, { companyId, membershipId, eventType, previousStatus, newStatus, actorId, reason }) {
+  return env.DB.prepare(
+    "INSERT INTO staff_membership_events (id,company_id,staff_membership_id,event_type,previous_status,new_status,actor_id,reason) VALUES (?1,?2,?3,?4,?5,?6,?7,?8)"
+  ).bind(
+    crypto.randomUUID(),
+    companyId,
+    membershipId,
+    eventType,
+    previousStatus ?? null,
+    newStatus,
+    actorId,
+    reason ?? null,
+  );
+}
+
 function auditInsert(env, { companyId, actorId, action, entityId, reason, requestId, after }) {
   return env.DB.prepare(
     "INSERT INTO audit_events (id,company_id,actor_id,action,entity_type,entity_id,reason,request_id,before_state_json,after_state_json) VALUES (?1,?2,?3,?4,'STAFF_INVITATION',?5,?6,?7,NULL,?8)"
@@ -233,7 +249,7 @@ export async function handleStaffInvitationAcceptance(request, env, identity, ur
   try {
     await env.DB.batch([
       env.DB.prepare(
-        "INSERT INTO staff_memberships (id,company_id,branch_id,identity_subject,display_name,email,role_key,status,created_by) VALUES (?1,?2,?3,?4,?5,?6,?7,'PENDING',?8)"
+        "INSERT INTO staff_memberships (id,company_id,branch_id,identity_subject,display_name,email,role_key,status,created_by,last_updated_by) VALUES (?1,?2,?3,?4,?5,?6,?7,'PENDING',?8,?9)"
       ).bind(
         membershipId,
         invitation.company_id,
@@ -243,7 +259,17 @@ export async function handleStaffInvitationAcceptance(request, env, identity, ur
         email,
         invitation.role_key,
         "staff-invitation:" + invitation.id,
+        identity.userId,
       ),
+      membershipEventInsert(env, {
+        companyId: invitation.company_id,
+        membershipId,
+        eventType: "INVITATION_ACCEPTED",
+        previousStatus: null,
+        newStatus: "PENDING",
+        actorId: identity.userId,
+        reason: "Verified account redeemed email-bound staff invitation",
+      }),
       env.DB.prepare(
         "UPDATE staff_invitations SET status='ACCEPTED',accepted_membership_id=?1,accepted_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE company_id=?2 AND id=?3 AND status='PENDING'"
       ).bind(membershipId, invitation.company_id, invitation.id),
@@ -483,4 +509,98 @@ export async function handleStaffInvitationManagement(request, env, identity, me
     }),
   ]);
   return response({ data: { id: invitationId, status: "REVOKED" }, requestId }, 200, requestId);
+}
+
+
+export async function handleStaffMembershipStatusManagement(request, env, identity, membership, url, requestId) {
+  const match = url.pathname.match(/^\/v1\/staff\/([A-Za-z0-9._:-]{1,80})\/status$/);
+  if (!match || request.method !== "POST") return null;
+  if (!["OWNER", "ADMIN"].includes(membership.role_key)) {
+    return response({ error: "staff_membership_management_forbidden", requestId }, 403, requestId);
+  }
+
+  const parsed = await readBody(request, 4096);
+  if (parsed.error) return response({ error: parsed.error, requestId }, parsed.status, requestId);
+  const status = clean(parsed.value.status, 24).toUpperCase();
+  const reason = clean(parsed.value.reason, 300);
+  if (!["ACTIVE", "SUSPENDED", "REVOKED"].includes(status)) {
+    return response({ error: "invalid_staff_membership_status", requestId }, 400, requestId);
+  }
+  if (reason.length < 4) return response({ error: "reason_required", requestId }, 400, requestId);
+
+  const targetId = decodeURIComponent(match[1]);
+  const current = await env.DB.prepare(
+    "SELECT id,identity_subject,role_key,status FROM staff_memberships WHERE company_id=?1 AND id=?2 LIMIT 1"
+  ).bind(membership.company_id, targetId).first();
+  if (!current) return response({ error: "staff_membership_not_found", requestId }, 404, requestId);
+  if (current.role_key === "OWNER") {
+    return response({ error: "owner_transfer_requires_separate_controlled_process", requestId }, 403, requestId);
+  }
+  if (current.identity_subject === identity.userId) {
+    return response({ error: "self_membership_change_forbidden", requestId }, 409, requestId);
+  }
+  if (current.role_key === "ADMIN" && membership.role_key !== "OWNER") {
+    return response({ error: "owner_required_to_manage_admin", requestId }, 403, requestId);
+  }
+  if (current.status === status) {
+    return response({ data: { id: current.id, status }, requestId }, 200, requestId);
+  }
+  if (current.status === "REVOKED") {
+    return response({ error: "staff_membership_revoked_terminal", requestId }, 409, requestId);
+  }
+
+  const allowedTransitions = {
+    PENDING: new Set(["ACTIVE", "SUSPENDED", "REVOKED"]),
+    ACTIVE: new Set(["SUSPENDED", "REVOKED"]),
+    SUSPENDED: new Set(["ACTIVE", "REVOKED"]),
+  };
+  if (!allowedTransitions[current.status]?.has(status)) {
+    return response({ error: "invalid_staff_membership_transition", requestId }, 409, requestId);
+  }
+
+  const eventType = status === "REVOKED"
+    ? "REVOKED"
+    : status === "SUSPENDED"
+      ? "SUSPENDED"
+      : current.status === "PENDING" ? "ACTIVATED" : "RESUMED";
+  try {
+    await env.DB.batch([
+      env.DB.prepare(
+        "UPDATE staff_memberships SET status=?1,last_updated_by=?2,updated_at=CURRENT_TIMESTAMP WHERE company_id=?3 AND id=?4 AND status=?5"
+      ).bind(status, identity.userId, membership.company_id, targetId, current.status),
+      membershipEventInsert(env, {
+        companyId: membership.company_id,
+        membershipId: targetId,
+        eventType,
+        previousStatus: current.status,
+        newStatus: status,
+        actorId: identity.userId,
+        reason,
+      }),
+      auditInsert(env, {
+        companyId: membership.company_id,
+        actorId: identity.userId,
+        action: "STAFF_MEMBERSHIP_STATUS_CHANGED",
+        entityId: targetId,
+        reason,
+        requestId,
+        after: { status, roleKey: current.role_key, assignmentCascade: status === "SUSPENDED" || status === "REVOKED" },
+      }),
+    ]);
+    return response({
+      data: {
+        id: targetId,
+        status,
+        workAssignments: status === "SUSPENDED"
+          ? "ACTIVE assignments were automatically suspended; manual review is required before resumption."
+          : status === "REVOKED"
+            ? "Active and suspended assignments were automatically revoked."
+            : "Membership activated; previous assignments were not automatically restored.",
+      },
+      requestId,
+    }, 200, requestId);
+  } catch (error) {
+    console.error("[opoint] staff membership status change failed", { type: error?.name || "Error" });
+    return response({ error: "staff_membership_status_change_failed", requestId }, 500, requestId);
+  }
 }
