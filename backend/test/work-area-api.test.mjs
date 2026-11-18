@@ -13,7 +13,7 @@ class MemoryD1 {
     const statement = {
       sql,
       values: [],
-      bind: (...values) { this.values = values; return this; },
+      bind(...values) { this.values = values; return this; },
       async first() {
         if (this.sql.includes("FROM staff_memberships sm JOIN companies c")) {
           return this.values[0] === "identity-1" && this.values[1] === "company-1"
