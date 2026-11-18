@@ -37,7 +37,7 @@ expected_migrations = {
     "0004_staff_work_assignments": "fa3666d4eb0e62322800d5b9f0e9b762d24851b282fd01a7c20a4f1eed3a9090",
     "0005_enterprise_automation": "0a18fcb1eeb7f1bc6e658dd86b4f49e808b62bbd6a1833d3404415b3dceebe3e",
     "0006_message_capture_and_receipts": "db7576a526fefd6d585fb94539281f00996929404437ecc6b5f79fef05da07c1",
-    "0007_provider_operator_access": "7d04e726e84e1ba9243c99a167be011056e6824527b27b6fff8284e3cad5cbe4",
+    "0007_provider_operator_access": "94b6f4af7180571c2c284d3f40813a4e80fd5c88ecb32e455c84ca57979a92e1",
 }
 actual_migrations = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
 assert actual_migrations == expected_migrations, actual_migrations
@@ -179,7 +179,7 @@ assert db.execute("SELECT COUNT(*) FROM provider_outlet_accounts WHERE provider_
 assert db.execute("SELECT COUNT(*) FROM provider_balance_observations WHERE provider_outlet_account_id='pa-1'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM provider_transaction_records WHERE evidence_level='PROVIDER_FEED'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name IN ('idx_provider_operator_one_current_employee_account','idx_employee_provider_operation_grant_active')").fetchone()[0] == 2
-assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('provider_operator_active_insert_guard','provider_operator_active_update_guard','employee_provider_grant_active_insert_guard','employee_provider_grant_active_update_guard')").fetchone()[0] == 4
+assert db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name IN ('provider_operator_active_insert_guard','provider_operator_active_update_guard','employee_provider_grant_active_insert_guard','employee_provider_grant_active_update_guard')").fetchone()[0] == 6
 assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 print("PASS: Otya Enterprise migrations support branch-scoped provider relationships, outlet accounts, employee operator approval, company SIM assignment, statement evidence and receipt history without payment execution.")
 
@@ -221,40 +221,66 @@ db.execute(
     "UPDATE provider_operator_profiles SET approval_status='APPROVED',training_status='COMPLETED',approved_at='2026-11-18T08:00:00Z',training_completed_at='2026-11-18T08:00:00Z' WHERE id='op-2'"
 )
 
-# A permission grant cannot be created even for an approved operator if the branch
-# work-area assignment has since been suspended.
+# Suspending the work assignment automatically removes the provider approval.
 db.execute(
     "UPDATE staff_work_assignments SET status='SUSPENDED',suspended_by='owner',suspended_at=CURRENT_TIMESTAMP WHERE id='work-mm-2'"
 )
+assert db.execute("SELECT approval_status FROM provider_operator_profiles WHERE id='op-2'").fetchone()[0] == "SUSPENDED"
+
+# A grant cannot be created while the assignment and operator approval are suspended.
 try:
     db.execute(
         "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
         "VALUES ('grant-operator-bad','co-1','emp-2','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-2','ACTIVE','owner','Invalid branch operator grant')"
     )
-    raise AssertionError("Provider grant must require an active Mobile Money work assignment")
+    raise AssertionError("Provider grant must require an active Mobile Money assignment and approved operator profile")
 except sqlite3.IntegrityError:
     pass
 
+# Resuming a work assignment never silently restores provider approval.
 db.execute(
     "UPDATE staff_work_assignments SET status='ACTIVE',suspended_by=NULL,suspended_at=NULL WHERE id='work-mm-2'"
+)
+assert db.execute("SELECT approval_status FROM provider_operator_profiles WHERE id='op-2'").fetchone()[0] == "SUSPENDED"
+
+# A fresh provider approval is required before an outlet-scoped grant can be reissued.
+db.execute(
+    "UPDATE provider_operator_profiles SET approval_status='APPROVED',training_status='COMPLETED',approved_at='2026-11-18T08:00:00Z',training_completed_at='2026-11-18T08:00:00Z' WHERE id='op-2'"
 )
 db.execute(
     "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
     "VALUES ('grant-operator-2','co-1','emp-2','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-2','ACTIVE','owner','Approved branch two Airtel operator access')"
 )
 
-# An already-issued grant cannot be reactivated when the branch Mobile Money assignment is suspended.
-db.execute(
-    "UPDATE employee_permission_grants SET status='SUSPENDED' WHERE id='grant-operator-2'"
-)
+# Subsequent work suspension automatically suspends both the operator and its live grant.
 db.execute(
     "UPDATE staff_work_assignments SET status='SUSPENDED',suspended_by='owner',suspended_at=CURRENT_TIMESTAMP WHERE id='work-mm-2'"
 )
+assert db.execute("SELECT approval_status FROM provider_operator_profiles WHERE id='op-2'").fetchone()[0] == "SUSPENDED"
+assert db.execute("SELECT status FROM employee_permission_grants WHERE id='grant-operator-2'").fetchone()[0] == "SUSPENDED"
 try:
     db.execute(
         "UPDATE employee_permission_grants SET status='ACTIVE' WHERE id='grant-operator-2'"
     )
-    raise AssertionError("A scoped grant must not reactivate after its Mobile Money work assignment is suspended")
+    raise AssertionError("A scoped grant must not reactivate when its Mobile Money assignment is suspended")
+except sqlite3.IntegrityError:
+    pass
+
+# Revocation is stronger than suspension: it permanently revokes the operator and grant.
+db.execute(
+    "INSERT INTO employee_permission_grants(id,company_id,employee_profile_id,permission_key,scope_type,scope_id,status,granted_by,reason) "
+    "VALUES ('grant-operator-1','co-1','emp-1','MOBILE_MONEY:OPERATE','PROVIDER_ACCOUNT','pa-1','ACTIVE','owner','Approved branch one Airtel operator access')"
+)
+db.execute(
+    "UPDATE staff_work_assignments SET status='REVOKED',revoked_by='owner',revoked_at=CURRENT_TIMESTAMP WHERE id='work-mm-1'"
+)
+assert db.execute("SELECT approval_status FROM provider_operator_profiles WHERE id='op-1'").fetchone()[0] == "REVOKED"
+assert db.execute("SELECT status FROM employee_permission_grants WHERE id='grant-operator-1'").fetchone()[0] == "REVOKED"
+try:
+    db.execute(
+        "UPDATE staff_work_assignments SET status='ACTIVE',revoked_by=NULL,revoked_at=NULL WHERE id='work-mm-1'"
+    )
+    raise AssertionError("A revoked work assignment must remain terminal")
 except sqlite3.IntegrityError:
     pass
 
