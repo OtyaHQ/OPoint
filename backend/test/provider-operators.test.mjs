@@ -9,7 +9,7 @@ import {
 } from "../src/provider-operators.mjs";
 
 test("normalizes Airtel, MTN and InterSwitch provider relationships separately", () => {
-  for (const providerCode of ["AIRTEL_MONEY", "MTN_MOMO", "INTERSWITCH_QUICKTELLER"]) {
+  for (const providerCode of ["AIRTEL_MONEY", "MTN_MOMO"]) {
     const value = normalizeProviderRelationship({
       providerCode,
       legalEntityName: "Otya Holdings Limited",
@@ -52,6 +52,16 @@ test("active provider relationship and operator approval reject expired dates", 
     validUntil: "2000-01-01",
     reason: "Operator approval expired",
   }, {}).error, "operator_valid_until_must_be_in_future");
+});
+
+test("InterSwitch and Quickteller are not mobile-money operator account types", () => {
+  for (const providerCode of ["INTERSWITCH", "QUICKTELLER", "INTERSWITCH_QUICKTELLER"]) {
+    assert.equal(normalizeProviderRelationship({
+      providerCode,
+      legalEntityName: "Otya Holdings Limited",
+      reason: "Separate bill payment integration",
+    }).error, "unsupported_provider");
+  }
 });
 
 test("provider relationship cannot be activated without corporate and agreement references", () => {
