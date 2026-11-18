@@ -7,7 +7,7 @@ This implementation uses the OtyaPoint enterprise schema introduced by migration
 - **Otya ID / staff membership** identifies the person and their company membership.
 - **Employee profile and employee assignment** record the company employment record and branch appointment.
 - **Staff work assignment** grants the separate branch-scoped `MOBILE_MONEY` work area.
-- **Provider relationship** records Otya's relationship with Airtel Money, MTN MoMo or InterSwitch/Quickteller.
+- **Provider relationship** in this operator workflow records the company's Airtel Money or MTN MoMo agency relationship.
 - **Provider outlet account** records the exact provider account for a branch, for example an `AGENT_FLOAT` account.
 - **Company SIM asset** records company-owned SIM inventory and its assignment to an employee. Its registered MSISDN is not the employee's KYC identity contact.
 - **Provider operator profile** connects an employee to one provider relationship and one outlet account, with a provider operator reference, training and approval status.
