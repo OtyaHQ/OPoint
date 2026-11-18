@@ -71,7 +71,7 @@ async function forwardGet(request: Request): Promise<Response> {
   const target = new URL(path, "https://opoint.internal");
   if (branchId) {
     if (!idIsSafe(branchId)) return jsonResponse({ error: "invalid_branch" }, 400);
-    if (view === "staff" || view === "branches" || view === "assignments") {
+    if (view === "staff" || view === "branches" || view === "assignments" || view === "invitations") {
       target.searchParams.set("branchId", branchId);
     }
   }
