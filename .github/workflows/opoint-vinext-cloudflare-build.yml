@@ -39,25 +39,10 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
-      - name: Install existing dashboard dependencies
+      - name: Install pinned dashboard and vinext dependencies
         run: npm install --no-audit --no-fund --no-package-lock
 
-      - name: Initialize an isolated Cloudflare vinext configuration
-        run: >-
-          npx --yes vinext init
-          --platform=cloudflare
-          --cdn-cache=none
-          --data-cache=none
-          --image-optimization=none
-          --no-prerender
-          --ignore-wrangler-config
-          --name=opoint-dashboard-staging
-          --no-install
-
-      - name: Install the isolated vinext toolchain
-        run: npm install --no-audit --no-fund --no-package-lock
-
-      - name: Record exact resolved dashboard toolchain versions
+      - name: Verify exact dashboard toolchain versions
         run: npm ls --depth=0
 
       - name: Build the dashboard using vinext
@@ -78,8 +63,8 @@ jobs:
                 echo '---'
               fi
             done
-            echo '### Package changes'
-            git diff -- package.json | sed -n '1,200p'
+            echo '### Pinned package.json toolchain'
+            node -e 'const p=require("./package.json"); for (const n of ["next","react","react-dom","vinext","react-server-dom-webpack","@vinext/cloudflare","vite","@vitejs/plugin-react","@vitejs/plugin-rsc","@cloudflare/vite-plugin","cf"]) console.log(`${n}: ${p.dependencies?.[n] ?? p.devDependencies?.[n] ?? "missing"}`)'
             echo
             echo 'No Cloudflare credentials are configured in this job. No deployment, DNS change, remote D1 migration, service binding call, or secret write is performed.'
           } | tee -a "$GITHUB_STEP_SUMMARY"
