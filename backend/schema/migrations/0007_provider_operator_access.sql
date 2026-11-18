@@ -307,6 +307,52 @@ BEGIN
   ) THEN RAISE(ABORT, 'MOBILE_MONEY_GRANT_REQUIRES_CURRENT_APPROVED_PROVIDER_OPERATOR') END;
 END;
 
+-- Losing a branch's Mobile Money work assignment immediately removes all
+-- provider-specific operator authority for that employee at that branch.
+-- Re-enabling the work assignment does not silently restore provider approval;
+-- a manager must explicitly review and re-approve the operator profile.
+CREATE TRIGGER IF NOT EXISTS mobile_money_assignment_deactivation_revokes_provider_access
+AFTER UPDATE OF status ON staff_work_assignments
+WHEN OLD.work_area = 'MOBILE_MONEY'
+ AND OLD.status = 'ACTIVE'
+ AND NEW.status IN ('SUSPENDED','REVOKED')
+BEGIN
+  UPDATE provider_operator_profiles
+     SET approval_status = CASE WHEN NEW.status = 'REVOKED' THEN 'REVOKED' ELSE 'SUSPENDED' END,
+         updated_at = CURRENT_TIMESTAMP
+   WHERE company_id = NEW.company_id
+     AND employee_profile_id IN (
+       SELECT id FROM employee_profiles
+        WHERE company_id = NEW.company_id
+          AND staff_membership_id = NEW.staff_membership_id
+     )
+     AND provider_outlet_account_id IN (
+       SELECT id FROM provider_outlet_accounts
+        WHERE company_id = NEW.company_id
+          AND branch_id = NEW.branch_id
+          AND scope_type = 'OUTLET'
+     )
+     AND approval_status IN ('PENDING','APPROVED','SUSPENDED');
+
+  UPDATE employee_permission_grants
+     SET status = CASE WHEN NEW.status = 'REVOKED' THEN 'REVOKED' ELSE 'SUSPENDED' END
+   WHERE company_id = NEW.company_id
+     AND employee_profile_id IN (
+       SELECT id FROM employee_profiles
+        WHERE company_id = NEW.company_id
+          AND staff_membership_id = NEW.staff_membership_id
+     )
+     AND permission_key = 'MOBILE_MONEY:OPERATE'
+     AND scope_type = 'PROVIDER_ACCOUNT'
+     AND scope_id IN (
+       SELECT id FROM provider_outlet_accounts
+        WHERE company_id = NEW.company_id
+          AND branch_id = NEW.branch_id
+          AND scope_type = 'OUTLET'
+     )
+     AND status IN ('ACTIVE','SUSPENDED');
+END;
+
 -- Migration checksum covers the SQL above and excludes this ledger insert.
 INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
 VALUES ('0007_provider_operator_access', '7d04e726e84e1ba9243c99a167be011056e6824527b27b6fff8284e3cad5cbe4', CURRENT_TIMESTAMP);
