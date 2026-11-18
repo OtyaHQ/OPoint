@@ -17,7 +17,7 @@ class MemoryD1 {
       async first() {
         if (this.sql.includes("FROM staff_memberships sm JOIN companies c")) {
           return this.values[0] === "identity-1" && this.values[1] === "company-1"
-            ? this.membership
+            ? this.db.membership
             : null;
         }
         if (this.sql.includes("FROM branches WHERE company_id=?1 AND id=?2")) {
