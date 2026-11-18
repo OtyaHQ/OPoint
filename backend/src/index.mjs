@@ -388,7 +388,7 @@ async function handle(request, env) {
       const migrationNames = new Set((migrations.results || []).map(row => row.version));
       const missingTables = REQUIRED_TABLES.filter(name => !names.has(name));
       const missingGuards = REQUIRED_GUARDS.filter(name => !names.has(name));
-      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments"];
+      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_provider_agent_accounts"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
       return json({ service: "opoint-api-staging", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
@@ -429,6 +429,13 @@ async function handle(request, env) {
   if (request.method === "GET" && url.pathname === "/v1/me/work-assignments") {
     const rows = await env.DB.prepare(
       "SELECT a.id,a.company_id,c.display_name AS company_name,a.branch_id,b.name AS branch_name,a.work_area,a.duty_role,a.status,a.created_at,a.updated_at FROM staff_work_assignments a JOIN staff_memberships sm ON sm.company_id=a.company_id AND sm.id=a.staff_membership_id JOIN companies c ON c.id=a.company_id JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE sm.identity_subject=?1 AND sm.status='ACTIVE' AND a.status='ACTIVE' AND b.status='ACTIVE' ORDER BY c.display_name,b.name,a.work_area LIMIT 100"
+    ).bind(identity.userId).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/me/provider-agent-assignments") {
+    const rows = await env.DB.prepare(
+      "SELECT paa.id AS provider_agent_account_id,paa.company_id,c.display_name AS company_name,paa.branch_id,b.name AS branch_name,paa.provider_code,paa.provider_agent_reference,paa.display_label,paa.agent_line_last4,a.id AS staff_assignment_id,a.duty_role,a.status,a.created_at FROM provider_agent_staff_assignments a JOIN staff_memberships sm ON sm.company_id=a.company_id AND sm.id=a.staff_membership_id JOIN provider_agent_accounts paa ON paa.company_id=a.company_id AND paa.id=a.provider_agent_account_id JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id JOIN companies c ON c.id=a.company_id JOIN staff_work_assignments wa ON wa.company_id=a.company_id AND wa.staff_membership_id=a.staff_membership_id AND wa.branch_id=a.branch_id AND wa.work_area='MOBILE_MONEY' AND wa.status='ACTIVE' WHERE sm.identity_subject=?1 AND sm.status='ACTIVE' AND a.status='ACTIVE' AND paa.status='ACTIVE' AND b.status='ACTIVE' ORDER BY c.display_name,b.name,paa.provider_code,paa.display_label LIMIT 100"
     ).bind(identity.userId).all();
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
