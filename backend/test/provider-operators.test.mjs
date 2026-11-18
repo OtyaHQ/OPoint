@@ -35,6 +35,25 @@ test("partial relationship and operator updates preserve previously recorded exp
   assert.equal(operator.value.validUntil, "2027-06-30");
 });
 
+test("active provider relationship and operator approval reject expired dates", () => {
+  assert.equal(normalizeProviderRelationshipStatus({
+    onboardingStatus: "ACTIVE",
+    expiresAt: "2000-01-01",
+    reason: "Provider agreement expired",
+  }, {
+    corporate_agent_reference: "CORP-AGENT-001",
+    agreement_reference: "AGREEMENT-2026-001",
+  }).error, "provider_relationship_expiry_must_be_in_future");
+
+  assert.equal(normalizeProviderOperatorStatus({
+    approvalStatus: "APPROVED",
+    trainingStatus: "COMPLETED",
+    providerOperatorReference: "AIRTEL-OP-001",
+    validUntil: "2000-01-01",
+    reason: "Operator approval expired",
+  }, {}).error, "operator_valid_until_must_be_in_future");
+});
+
 test("provider relationship cannot be activated without corporate and agreement references", () => {
   assert.equal(
     normalizeProviderRelationshipStatus({ onboardingStatus: "ACTIVE", reason: "Approve provider" }, {}).error,
