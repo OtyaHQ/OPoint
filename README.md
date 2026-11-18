@@ -1,45 +1,83 @@
 # OPoint
 
-**OPoint** is the shop and business-operations product in the Otya ecosystem. It is designed to bring retail, inventory, staff operations, cash controls and future mobile-money agency workflows into one clear experience.
+**Business operations, retail and financial services — by Otya.**
+
+OPoint is the business product in the Otya ecosystem. It brings retail operations, inventory, cash management, mobile-money agency workflows, bill payments, staff operations and financial reporting into one secure application.
+
+OPoint is a product within the Otya ecosystem. Otya Holdings Limited is the intended parent entity; do not present it as incorporated until registration is complete. Otya is the ecosystem brand; OPoint is the business application.
+
+## Product principles
+
+- Financial correctness before convenience.
+- Server-authoritative balances and transaction states.
+- Every financial action is authenticated, authorised, idempotent and auditable.
+- Provider timeouts remain unresolved until a trusted status check or callback resolves them.
+- Shop cash, customer collections and provider float are separate records.
+- Business data is company-scoped and never shared with Omy Play.
+- The mobile app remains useful on unstable networks, but offline drafts are not treated as settled financial transactions.
+- Configuration is managed by secure backend controls; native capabilities and security fixes still require an app update.
 
 ## Product scope
 
-- Retail catalogue, stock and cash-sale operations.
-- Staff access with company and role-based authorization.
-- Shop cash, agency cash and provider float kept as separate financial records.
-- Commission, transaction history and reconciliation foundations.
-- Clear operational reporting and audited corrections.
+- Retail POS, products, stock, suppliers, purchases, sales, receipts, returns and refunds.
+- Business branches, staff, permissions, shift handover and approvals.
+- Cashbook, cash drawer, provider float, commissions and reconciliation.
+- Mobile-money agency flows for supported providers.
+- Airtime, data and bill-payment workflows.
+- Payment provider integrations and verified webhook processing.
+- Financial journal, audit history, reporting and export.
+- Notifications, real-time operational updates and incident alerts.
 
-OPoint is a product name, not a statement that every listed capability is currently available. The customer-facing dashboard is not yet certified against the replacement backend. Do not use this repository as proof that a customer-facing API or live payment integration is active.
+Provider integrations are independent and must not be conflated: Quickteller Business and InterSwitch Marketplace Routing are separate products. MTN MoMo, Airtel Money and EFRIS also require their own credentials, contracts, environment configuration and approval.
 
-## Architecture principles
+## Technology ownership
 
-- Otya account identity is shared across the ecosystem; OPoint controls its own business authorization.
-- Shop and agency records remain isolated from other Otya products.
-- Server-side authorization determines staff identity, role and business scope.
-- Financial changes are idempotent, auditable and reconciled.
-- Provider timeouts and unknown outcomes remain unresolved until trusted status is confirmed.
-- Backups and private business files must remain private.
-- Production deployments, migrations and payment activation require review, recovery evidence and explicit release approval.
+| Capability | Primary owner |
+|---|---|
+| API and business rules | Cloudflare Workers |
+| Financial and business records | OPoint Cloudflare D1 |
+| Private documents and receipts | OPoint Cloudflare R2 |
+| Background event delivery | Cloudflare Queues |
+| Authenticated live sessions | Cloudflare Durable Objects / WebSockets |
+| Push delivery and mobile integrity | OPoint's dedicated Firebase project |
+| Transactional email | Resend through Otya ID / approved OPoint services |
+| Source control and release gates | OtyaHQ GitHub organization |
 
-## Current public readiness
+Firebase is a supporting mobile platform, not the financial ledger. Firestore and Firebase Storage are not required for the initial OPoint financial backend.
 
-- Backend foundations and automated checks are maintained in this repository.
-- Dashboard-to-backend integration is not yet certified for daily operations.
-- No first shop owner, product catalogue, staff membership or sale has been provisioned in the replacement business system.
-- Mobile-money and bill-payment write operations are not approved for live money movement.
-- InterSwitch Marketplace Routing, Quickteller Business, Airtel Money and MTN Mobile Money are separate integrations. Listing them does not imply approval or live connectivity.
+## Identity and security
 
-## Development
+Otya ID provides shared account identity and OTP. OPoint owns company membership, branch scope, role permissions and financial authorisation. Telegram may be used as an OTP delivery channel where configured, but Telegram Login is not an authentication method.
 
-Use the repository's checked-in package scripts and tests for local development. Use synthetic data only. Do not point local tools at production resources or commit operational configuration.
+Never commit API tokens, service-account keys, provider credentials, signing keys, PINs or production data. Keep secrets in Cloudflare Secrets Store. Do not expose raw provider payloads or sensitive customer references in logs.
 
-## Public documentation and security
+## Financial safety rules
 
-Public product and developer information belongs in the OtyaHub documentation surface. Keep private deployment details, infrastructure identifiers, recovery material, account data, provider credentials and administrative procedures out of public documentation and issue reports.
+- Store UGX values as integer whole-shilling amounts. Do not use floating-point arithmetic for money.
+- Post balanced double-entry journal records atomically with the financial state change.
+- Never edit posted journal entries; correct them through controlled reversals.
+- Require an idempotency key for every money-moving request and provider event.
+- Verify webhook signatures before processing and de-duplicate by provider event ID.
+- A timeout is not a failure. Keep the state pending/unknown and query the provider before retrying.
+- A notification is never proof of payment completion. The app fetches the authoritative state from OPoint.
+- Apply company and branch scope on the server on every tenant-owned query.
+- Keep sandbox and production credentials, URLs, queues and provider configurations separate.
 
-Report security vulnerabilities privately using [SECURITY.md](SECURITY.md).
+## Development status
 
----
+This repository is being rebuilt as a clean company-owned product foundation. Existing code and resources are treated as migration references, not proof of production readiness.
 
-**OPoint · Otya**
+No live customer money movement is authorised by this repository. Use synthetic records and provider sandboxes until the financial, security, provider and reconciliation release gates pass.
+
+## Repository layout
+
+- `cloudflare-api/` — existing API code under audit and rebuild.
+- `apps/mobile/` — planned Flutter Android application.
+- `docs/` — architecture, provider contracts, security and operational runbooks.
+- `foundation/` — clean schema and migration baseline, developed separately from legacy migrations.
+
+## Engineering release gates
+
+A release must pass schema/migration validation, API and authorization tests, financial invariant tests, provider sandbox scenarios, webhook replay and signature tests, failure/retry tests, mobile analysis/build checks, dependency/security scans, backup/restore evidence and a reviewed deployment plan.
+
+See [Architecture](docs/ARCHITECTURE.md), [Firebase setup](docs/FIREBASE_SETUP.md) and [Security](SECURITY.md).

@@ -1,0 +1,103 @@
+name: Deploy isolated OtyaPoint staging API
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY-STAGING to redeploy the isolated OtyaPoint staging API'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opoint-api-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy-opoint-staging:
+    name: Validate and redeploy OtyaPoint staging API
+    if: github.ref == 'refs/heads/opoint-rebuild-foundation'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22.23.4'
+          package-manager-cache: false
+
+      - name: Require explicit staging authority
+        shell: bash
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN_STAGING: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM" = 'DEPLOY-STAGING' || {
+            echo 'ERROR: staging deployment requires DEPLOY-STAGING'
+            exit 1
+          }
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+          test -n "$CLOUDFLARE_API_TOKEN_STAGING"
+
+      - name: Run staging Worker contract tests
+        run: |
+          set -euo pipefail
+          node --check cloudflare-api/staging/src/index.mjs
+          node --test cloudflare-api/staging/tests/contract.test.mjs
+
+      - name: Dry-run OtyaPoint staging Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.159.0 deploy --dry-run --config cloudflare-api/staging/wrangler.toml
+
+      - name: Require deployed Otya ID staging service before product cutover
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN_STAGING: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          SETTINGS_FILE: ${{ runner.temp }}/otya-id-staging-settings.json
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN_STAGING"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/otya-id-staging/settings"             -o "$SETTINGS_FILE"
+          node - "$SETTINGS_FILE" <<'NODE'
+          const fs = require('node:fs');
+          const response = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          if (response.success !== true || !response.result) {
+            throw new Error('Otya ID staging Worker is not deployed or cannot be read');
+          }
+          NODE
+
+      - name: Deploy OtyaPoint staging Worker with isolated identity binding
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.159.0 deploy --config cloudflare-api/staging/wrangler.toml
+
+      - name: Verify deployed OtyaPoint identity binding
+        shell: bash
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN_STAGING: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          SETTINGS_FILE: ${{ runner.temp }}/opoint-api-staging-settings.json
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN_STAGING"             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/opoint-api-staging/settings"             -o "$SETTINGS_FILE"
+          node - "$SETTINGS_FILE" <<'NODE'
+          const fs = require('node:fs');
+          const response = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const binding = response.result?.bindings?.find(item => item.name === 'OTYA_ID');
+          if (response.success !== true || binding?.type !== 'service' || binding.service !== 'otya-id-staging') {
+            throw new Error('OtyaPoint staging is not bound to Otya ID staging');
+          }
+          console.log('OtyaPoint staging identity binding verified.');
+          NODE

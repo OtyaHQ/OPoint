@@ -1,0 +1,27 @@
+name: Opoint Cloudflare staging API checks
+
+on:
+  push:
+    branches:
+      - opoint-rebuild-foundation
+    paths:
+      - "cloudflare-api/staging/**"
+      - ".github/workflows/opoint-staging-api.yml"
+  pull_request:
+    paths:
+      - "cloudflare-api/staging/**"
+      - ".github/workflows/opoint-staging-api.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run backend contract tests
+        run: node --test cloudflare-api/staging/tests/*.test.mjs

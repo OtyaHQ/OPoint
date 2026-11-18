@@ -1,0 +1,34 @@
+# Isolated Opoint staging Worker. Not a production manifest.
+name = "opoint-api-staging"
+main = "src/index.mjs"
+compatibility_date = "2026-11-11"
+workers_dev = false
+keep_vars = true
+
+[vars]
+ENVIRONMENT = "staging"
+PRODUCT_CODE = "OPOINT"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "opoint-staging-db"
+database_id = "ec080a51-cfc9-4375-8b3c-64667744b466"
+
+# Use the isolated Otya ID staging Worker; never call production identity from staging.
+[[services]]
+binding = "OTYA_ID"
+service = "otya-id-staging"
+
+[observability]
+enabled = true
+redact_query_string = true
+
+[observability.logs]
+enabled = true
+invocation_logs = true
+persist = true
+head_sampling_rate = 1
+
+[observability.traces]
+enabled = false
+head_sampling_rate = 0
