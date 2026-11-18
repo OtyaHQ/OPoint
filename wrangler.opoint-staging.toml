@@ -1,7 +1,9 @@
 name = "opoint-api-staging"
 main = "backend/src/index.mjs"
 compatibility_date = "2026-11-11"
-workers_dev = true
+# The dashboard reaches this API only through a Cloudflare service binding.
+# Do not expose a public workers.dev endpoint or custom domain.
+workers_dev = false
 keep_vars = false
 
 [vars]
