@@ -124,3 +124,97 @@ BEFORE DELETE ON staff_invitation_events
 BEGIN
   SELECT RAISE(ABORT, 'STAFF_INVITATION_EVENTS_APPEND_ONLY');
 END;
+
+
+-- A staff identity is activated only after explicit Owner/Admin review.
+ALTER TABLE staff_memberships ADD COLUMN last_updated_by TEXT;
+
+CREATE TABLE IF NOT EXISTS staff_membership_events (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL,
+  staff_membership_id TEXT NOT NULL,
+  event_type TEXT NOT NULL
+    CHECK (event_type IN ('INVITATION_ACCEPTED','ACTIVATED','SUSPENDED','RESUMED','REVOKED')),
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  reason TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(company_id, staff_membership_id)
+    REFERENCES staff_memberships(company_id, id) ON DELETE RESTRICT
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_membership_events_timeline
+  ON staff_membership_events(company_id, staff_membership_id, created_at, id);
+
+CREATE TRIGGER IF NOT EXISTS staff_memberships_owner_status_guard
+BEFORE UPDATE OF status ON staff_memberships
+WHEN OLD.role_key = 'OWNER' AND NEW.status <> OLD.status
+BEGIN
+  SELECT RAISE(ABORT, 'OWNER_MEMBERSHIP_TRANSFER_REQUIRED');
+END;
+
+CREATE TRIGGER IF NOT EXISTS staff_memberships_role_transfer_guard
+BEFORE UPDATE OF role_key ON staff_memberships
+WHEN NEW.role_key <> OLD.role_key
+  AND (NEW.role_key = 'OWNER' OR OLD.role_key = 'OWNER')
+BEGIN
+  SELECT RAISE(ABORT, 'OWNER_MEMBERSHIP_TRANSFER_REQUIRED');
+END;
+
+CREATE TRIGGER IF NOT EXISTS staff_memberships_revoked_terminal
+BEFORE UPDATE OF status ON staff_memberships
+WHEN OLD.status = 'REVOKED' AND NEW.status <> 'REVOKED'
+BEGIN
+  SELECT RAISE(ABORT, 'STAFF_MEMBERSHIP_REVOKED_TERMINAL');
+END;
+
+CREATE TRIGGER IF NOT EXISTS staff_memberships_no_delete
+BEFORE DELETE ON staff_memberships
+BEGIN
+  SELECT RAISE(ABORT, 'STAFF_MEMBERSHIPS_CANNOT_DELETE');
+END;
+
+CREATE TRIGGER IF NOT EXISTS staff_membership_status_cascade_work_assignments
+AFTER UPDATE OF status ON staff_memberships
+WHEN NEW.status IN ('SUSPENDED','REVOKED') AND NEW.status <> OLD.status
+BEGIN
+  INSERT INTO staff_work_assignment_events
+    (id,company_id,assignment_id,event_type,previous_status,new_status,actor_id,reason)
+  SELECT lower(hex(randomblob(16))), a.company_id, a.id,
+         CASE WHEN NEW.status='REVOKED' THEN 'REVOKED' ELSE 'SUSPENDED' END,
+         a.status, NEW.status, COALESCE(NEW.last_updated_by,'system:membership-status-cascade'),
+         CASE WHEN NEW.status='REVOKED'
+           THEN 'Staff membership revoked; all active/suspended work assignments revoked'
+           ELSE 'Staff membership suspended; all active work assignments suspended'
+         END
+    FROM staff_work_assignments a
+   WHERE a.company_id=NEW.company_id
+     AND a.staff_membership_id=NEW.id
+     AND a.status IN ('ACTIVE','SUSPENDED')
+     AND (NEW.status='REVOKED' OR a.status='ACTIVE');
+
+  UPDATE staff_work_assignments
+     SET status=NEW.status,
+         suspended_by=CASE WHEN NEW.status='SUSPENDED' THEN COALESCE(NEW.last_updated_by,'system:membership-status-cascade') ELSE suspended_by END,
+         suspended_at=CASE WHEN NEW.status='SUSPENDED' THEN CURRENT_TIMESTAMP ELSE suspended_at END,
+         revoked_by=CASE WHEN NEW.status='REVOKED' THEN COALESCE(NEW.last_updated_by,'system:membership-status-cascade') ELSE revoked_by END,
+         revoked_at=CASE WHEN NEW.status='REVOKED' THEN CURRENT_TIMESTAMP ELSE revoked_at END,
+         updated_at=CURRENT_TIMESTAMP
+   WHERE company_id=NEW.company_id
+     AND staff_membership_id=NEW.id
+     AND status IN ('ACTIVE','SUSPENDED')
+     AND (NEW.status='REVOKED' OR status='ACTIVE');
+END;
+
+CREATE TRIGGER IF NOT EXISTS staff_membership_events_no_update
+BEFORE UPDATE ON staff_membership_events
+BEGIN
+  SELECT RAISE(ABORT, 'STAFF_MEMBERSHIP_EVENTS_APPEND_ONLY');
+END;
+
+CREATE TRIGGER IF NOT EXISTS staff_membership_events_no_delete
+BEFORE DELETE ON staff_membership_events
+BEGIN
+  SELECT RAISE(ABORT, 'STAFF_MEMBERSHIP_EVENTS_APPEND_ONLY');
+END;
