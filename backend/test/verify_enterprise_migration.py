@@ -401,6 +401,12 @@ except sqlite3.IntegrityError:
 assert db.execute("SELECT COUNT(*) FROM provider_message_captures WHERE source_kind='USER_SHARED_MESSAGE'").fetchone()[0] == 1
 assert db.execute("SELECT COUNT(*) FROM issued_receipts").fetchone()[0] == 2
 
+# The Owner record is protected from ordinary staff lifecycle changes.
+db.execute(
+    "INSERT INTO staff_memberships(id,company_id,branch_id,identity_subject,display_name,email,role_key,status) "
+    "VALUES ('st-owner','co-1','br-1','subject-owner','Company Owner','owner@example.invalid','OWNER','ACTIVE')"
+)
+
 # Suspending/revoking the staff membership cascades into every branch work assignment.
 db.execute(
     "INSERT INTO staff_memberships(id,company_id,branch_id,identity_subject,display_name,email,role_key,status) "
@@ -441,12 +447,12 @@ try:
 except sqlite3.IntegrityError:
     pass
 try:
-    db.execute("UPDATE staff_memberships SET status='SUSPENDED' WHERE id='st-1'")
+    db.execute("UPDATE staff_memberships SET status='SUSPENDED' WHERE id='st-owner'")
     raise AssertionError("Owner membership cannot be suspended through staff lifecycle")
 except sqlite3.IntegrityError:
     pass
 try:
-    db.execute("UPDATE staff_memberships SET role_key='ADMIN' WHERE id='st-1'")
+    db.execute("UPDATE staff_memberships SET role_key='ADMIN' WHERE id='st-owner'")
     raise AssertionError("Owner role changes require a separate controlled transfer")
 except sqlite3.IntegrityError:
     pass
