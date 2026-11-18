@@ -47,8 +47,9 @@ test("dashboard release is manual, identity-gated, uses Vinext, and remains priv
   assert.match(dashboardDeploy, /github\.ref == "refs\/heads\/main"/);
   assert.match(dashboardDeploy, /DEPLOY-STAGING/);
   assert.match(dashboardDeploy, /CLOUDFLARE_API_TOKEN_STAGING/);
-  assert.match(dashboardDeploy, /workers\/scripts\/otya-id-staging/);
-  assert.match(dashboardDeploy, /workers\/scripts\/opoint-api-staging/);
+  assert.match(dashboardDeploy, /for worker in otya-id-staging opoint-api-staging; do/);
+  assert.match(dashboardDeploy, /workers\/scripts\/\$worker/);
+  assert.match(dashboardDeploy, /workers\/scripts\/opoint-api-staging\/settings/);
   assert.match(dashboardDeploy, /npx @vinext\/cloudflare deploy --env staging --dry-run/);
   assert.match(dashboardDeploy, /npx @vinext\/cloudflare deploy --env staging/);
   assert.match(dashboardDeploy, /workers\/scripts\/opoint-dashboard-staging\/subdomain/);
