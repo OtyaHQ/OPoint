@@ -1,6 +1,6 @@
 import { isPrivilegedCompanyRole } from "./work-assignments.mjs";
 
-const PROVIDERS = Object.freeze(["AIRTEL_MONEY", "MTN_MOMO", "INTERSWITCH_QUICKTELLER"]);
+const PROVIDERS = Object.freeze(["AIRTEL_MONEY", "MTN_MOMO"]);
 const OUTLET_KINDS = Object.freeze(["AGENT_FLOAT", "MERCHANT_TILL", "PAYPOINT", "COMMISSION", "SETTLEMENT", "OTHER"]);
 const RELATIONSHIP_STATES = Object.freeze(["APPLICATION", "DUE_DILIGENCE", "PENDING_APPROVAL", "ACTIVE", "SUSPENDED", "CLOSED"]);
 const OUTLET_STATES = Object.freeze(["ACTIVE", "SUSPENDED", "CLOSED"]);
@@ -186,8 +186,7 @@ async function requireMobileMoneyDuty(env, companyId, staffMembershipId, branchI
 
 async function validateAssignedSim(env, companyId, providerCode, employeeProfileId, branchId, simAssetId) {
   if (!simAssetId) return { ok: true };
-  const network = providerCode === "AIRTEL_MONEY" ? "AIRTEL"
-    : providerCode === "MTN_MOMO" ? "MTN" : null;
+  const network = providerCode === "AIRTEL_MONEY" ? "AIRTEL" : "MTN";
   const sim = await env.DB.prepare(
     "SELECT asset.id,sim.network_code FROM company_assets asset JOIN company_sim_details sim ON sim.company_id=asset.company_id AND sim.asset_id=asset.id JOIN asset_assignments aa ON aa.company_id=asset.company_id AND aa.asset_id=asset.id WHERE asset.company_id=?1 AND asset.id=?2 AND asset.asset_type='SIM_CARD' AND asset.lifecycle_status='ASSIGNED' AND sim.registration_status='COMPANY_REGISTERED' AND aa.employee_profile_id=?3 AND aa.branch_id=?4 AND aa.status='ISSUED' AND aa.returned_at IS NULL LIMIT 1"
   ).bind(companyId, simAssetId, employeeProfileId, branchId).first();
