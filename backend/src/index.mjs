@@ -9,6 +9,10 @@ import {
   handleMyProviderOperatorAssignments,
   handleProviderOperatorRoutes,
 } from "./provider-operators.mjs";
+import {
+  handleStaffInvitationAcceptance,
+  handleStaffInvitationManagement,
+} from "./staff-invitations.mjs";
 
 const REQUIRED_TABLES = [
   "companies", "branches", "staff_memberships", "company_creation_requests",
@@ -18,7 +22,7 @@ const REQUIRED_TABLES = [
   "reconciliation_sessions", "reconciliation_items", "journal_entries", "journal_lines",
   "payment_intents", "payment_attempts", "payment_reversals", "agency_operations",
   "biller_catalog", "opoint_schema_migrations", "audit_events", "integration_status",
-  "staff_work_assignments", "staff_work_assignment_events", "stored_files",
+  "staff_work_assignments", "staff_work_assignment_events", "staff_invitations", "staff_invitation_events", "stored_files",
   "departments", "job_positions", "employee_profiles", "employee_assignments",
   "employee_permission_grants", "employee_documents", "company_assets", "company_sim_details",
   "asset_assignments", "provider_relationships", "provider_outlet_accounts", "provider_operator_profiles",
@@ -56,6 +60,12 @@ const REQUIRED_GUARDS = [
   "employee_provider_grant_active_update_guard",
   "mobile_money_assignment_deactivation_revokes_provider_access",
   "staff_work_assignment_revoked_terminal",
+  "staff_invitations_terminal_status_guard",
+  "staff_invitations_core_fields_immutable",
+  "staff_invitations_delivery_transition_guard",
+  "staff_invitations_acceptance_guard",
+  "staff_invitation_events_no_update",
+  "staff_invitation_events_no_delete",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -154,6 +164,7 @@ async function verifyIdentity(request, env) {
       identity: {
         userId: data.user_id,
         email: typeof data.email === "string" ? data.email.toLowerCase() : null,
+        emailVerified: data.email_verified === true || data.email_verified === 1 || data.email_verified === "true",
       },
     };
   } catch {
@@ -414,7 +425,7 @@ async function handle(request, env) {
       const migrationNames = new Set((migrations.results || []).map(row => row.version));
       const missingTables = REQUIRED_TABLES.filter(name => !names.has(name));
       const missingGuards = REQUIRED_GUARDS.filter(name => !names.has(name));
-      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access"];
+      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access", "0008_staff_invitations"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
       return json({ service: "opoint-api-staging", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
@@ -450,6 +461,9 @@ async function handle(request, env) {
   const myProviderOperatorAssignments = await handleMyProviderOperatorAssignments(request, env, identity, requestId);
   if (myProviderOperatorAssignments) return myProviderOperatorAssignments;
 
+  const invitationAcceptanceResponse = await handleStaffInvitationAcceptance(request, env, identity, url, requestId);
+  if (invitationAcceptanceResponse) return invitationAcceptanceResponse;
+
   if (request.method === "GET" && url.pathname === "/v1/me") {
     const memberships = await companyMemberships(env, identity.userId);
     return json({ data: { userId: identity.userId, email: identity.email, memberships }, requestId }, 200, requestId);
@@ -471,6 +485,8 @@ async function handle(request, env) {
   const companyId = clean(request.headers.get("x-company-id") || url.searchParams.get("companyId"), 80);
   const membership = await requireMembership(env, identity.userId, companyId);
   if (!membership) return json({ error: "company_access_denied", requestId }, 403, requestId);
+  const staffInvitationResponse = await handleStaffInvitationManagement(request, env, identity, membership, url, requestId);
+  if (staffInvitationResponse) return staffInvitationResponse;
   const providerOperatorResponse = await handleProviderOperatorRoutes(request, env, identity, membership, url, requestId);
   if (providerOperatorResponse) return providerOperatorResponse;
   const assignmentResponse = await handleWorkAssignmentRoutes(request, env, identity, membership, url, requestId);
