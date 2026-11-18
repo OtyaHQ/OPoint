@@ -436,7 +436,7 @@ async function handle(request, env) {
       const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access", "0008_staff_invitations"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
-      return json({ service: "opoint-api-staging", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
+      return json({ service: "otyapoint-api", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
     } catch {
       return json({ service: "opoint-api-staging", status: "database_unavailable", requestId }, 503, requestId);
     }
@@ -444,7 +444,7 @@ async function handle(request, env) {
 
   if (request.method === "GET" && url.pathname === "/v1/capabilities") {
     return json({
-      product: "Opoint",
+      product: "OtyaPoint",
       paymentsEnabled: false,
       providerExecutionEnabled: false,
       aiAssistantEnabled: false,
