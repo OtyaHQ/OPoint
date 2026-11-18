@@ -53,3 +53,12 @@ Supabase is not a target runtime, but its Auth/Prisma code is still called by th
 - AI is read-only, product-scoped and disabled until its own acceptance gates pass.
 
 Canonical platform contract: [Otya End product backend and identity boundaries](https://github.com/OtyaHQ/OEnd/blob/product-ai-isolation-foundation-2026-11-11/docs/PRODUCT_BACKEND_AND_IDENTITY_BOUNDARIES.md).
+
+
+## Work-area and branch permissions (staging build)
+
+The new OtyaPoint API now uses branch-scoped `staff_work_assignments` for the separate **RETAIL** and **MOBILE_MONEY** work areas. A worker can hold both assignments at the same branch, with an independent `OPERATOR`, `SUPERVISOR`, `APPROVER` or `VIEWER` duty role in each area. Owner/Admin can create, suspend, resume and revoke assignments; state changes are recorded in append-only assignment events and the audit log.
+
+Non-privileged users must present a branch context and an active assignment for the requested work area. Product, category, stock, sales and purchasing views require Retail assignment; agency transaction/payment-intent views require Mobile Money assignment. Cash-account and cash-session views require an explicit work-area filter. Owner/Admin may administer across branches. General company summaries and provider-configuration status are restricted to Owner/Admin.
+
+This is a forward-only staging migration. No assignments are automatically created, no employee roles are silently expanded, and existing cash/float balances are not moved. Production access changes remain a separate release gate.
