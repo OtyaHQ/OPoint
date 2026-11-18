@@ -111,24 +111,22 @@ export function calculateCashDifference(expected, counted) {
   return { ok: true, difference: counted - expected };
 }
 
-async function requireRetail(request, membership, context, allowedRoles, allowedDutyRoles = ["OPERATOR", "SUPERVISOR", "APPROVER"]) {
+async function requireWorkArea(request, membership, context, workArea, allowedRoles, allowedDutyRoles = ["OPERATOR", "SUPERVISOR", "APPROVER"]) {
   if (!allowedRoles.includes(membership.role_key)) {
-    return { response: json({ error: "retail_role_required", requestId: context.requestId }, 403, context.requestId) };
+    return { response: json({ error: workArea.toLowerCase() + "_role_required", requestId: context.requestId }, 403, context.requestId) };
   }
   if (!context.scopedBranchId) {
     return { response: json({ error: "branch_selection_required", requestId: context.requestId }, 400, context.requestId) };
   }
-  const area = await context.requireArea("RETAIL");
+  const area = await context.requireArea(workArea);
   if (area.response) return { response: area.response };
   if (!retailPermission(area, context.privileged, allowedDutyRoles)) {
-    return { response: json({ error: "retail_duty_role_insufficient", requestId: context.requestId }, 403, context.requestId) };
+    return { response: json({ error: workArea.toLowerCase() + "_duty_role_insufficient", requestId: context.requestId }, 403, context.requestId) };
   }
   return { area };
 }
 
 async function openCashSession(request, env, identity, membership, context) {
-  const access = await requireRetail(request, membership, context, ["OWNER", "ADMIN", "MANAGER", "CASHIER"]);
-  if (access.response) return access.response;
   const parsed = await readJson(request, 4096);
   if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
   const accountId = clean(parsed.value.cashAccountId, 80);
@@ -148,9 +146,14 @@ async function openCashSession(request, env, identity, membership, context) {
     "SELECT id,branch_id,ledger_account_id,account_type,work_area,display_name,status FROM cash_accounts WHERE company_id=?1 AND id=?2 LIMIT 1"
   ).bind(context.companyId, accountId).first();
   if (!account || account.status !== "ACTIVE" || account.branch_id !== context.scopedBranchId
-    || account.account_type !== "CASH_DRAWER" || account.work_area !== "RETAIL") {
-    return json({ error: "active_retail_cash_drawer_required", requestId: context.requestId }, 409, context.requestId);
+    || account.account_type !== "CASH_DRAWER" || !["RETAIL", "MOBILE_MONEY"].includes(account.work_area)) {
+    return json({ error: "active_work_area_cash_drawer_required", requestId: context.requestId }, 409, context.requestId);
   }
+  const allowedRoles = account.work_area === "RETAIL"
+    ? ["OWNER", "ADMIN", "MANAGER", "CASHIER"]
+    : ["OWNER", "ADMIN", "MANAGER", "AGENT"];
+  const access = await requireWorkArea(request, membership, context, account.work_area, allowedRoles);
+  if (access.response) return access.response;
   const unresolved = await env.DB.prepare(
     "SELECT id,status FROM cash_sessions WHERE company_id=?1 AND cash_account_id=?2 AND status IN ('OPEN','SUBMITTED','DISPUTED') LIMIT 1"
   ).bind(context.companyId, accountId).first();
@@ -161,7 +164,7 @@ async function openCashSession(request, env, identity, membership, context) {
     data: {
       id: sessionId, branchId: context.scopedBranchId, cashAccountId: accountId,
       cashAccountName: account.display_name, openingAmount, expectedClosingAmount: openingAmount,
-      currency: "UGX", status: "OPEN", openedBy: identity.userId,
+      currency: "UGX", workArea: account.work_area, status: "OPEN", openedBy: identity.userId,
     },
   };
   try {
@@ -193,8 +196,6 @@ async function openCashSession(request, env, identity, membership, context) {
 }
 
 async function submitCashSession(request, env, identity, membership, context, sessionId) {
-  const access = await requireRetail(request, membership, context, ["OWNER", "ADMIN", "MANAGER", "CASHIER"]);
-  if (access.response) return access.response;
   const parsed = await readJson(request, 4096);
   if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
   const countedAmount = parsed.value.countedClosingAmount;
@@ -209,9 +210,14 @@ async function submitCashSession(request, env, identity, membership, context, se
   if (replay.response) return replay.response;
 
   const session = await env.DB.prepare(
-    "SELECT id,branch_id,cash_account_id,opened_by,expected_closing_amount,status FROM cash_sessions WHERE company_id=?1 AND id=?2 LIMIT 1"
+    "SELECT cs.id,cs.branch_id,cs.cash_account_id,cs.opened_by,cs.expected_closing_amount,cs.status,ca.work_area FROM cash_sessions cs JOIN cash_accounts ca ON ca.company_id=cs.company_id AND ca.id=cs.cash_account_id WHERE cs.company_id=?1 AND cs.id=?2 LIMIT 1"
   ).bind(context.companyId, sessionId).first();
   if (!session || session.branch_id !== context.scopedBranchId) return json({ error: "cash_session_not_found", requestId: context.requestId }, 404, context.requestId);
+  const allowedRoles = session.work_area === "MOBILE_MONEY"
+    ? ["OWNER", "ADMIN", "MANAGER", "AGENT"]
+    : ["OWNER", "ADMIN", "MANAGER", "CASHIER"];
+  const access = await requireWorkArea(request, membership, context, session.work_area, allowedRoles);
+  if (access.response) return access.response;
   if (session.opened_by !== identity.userId && !context.privileged) return json({ error: "cash_session_operator_mismatch", requestId: context.requestId }, 403, context.requestId);
   if (session.status !== "OPEN") return json({ error: "cash_session_not_open", requestId: context.requestId }, 409, context.requestId);
   const diff = calculateCashDifference(Number(session.expected_closing_amount), countedAmount);
@@ -249,8 +255,6 @@ async function reviewCashSession(request, env, identity, membership, context, se
   if (!["OWNER", "ADMIN", "MANAGER"].includes(membership.role_key)) {
     return json({ error: "cash_session_review_forbidden", requestId: context.requestId }, 403, context.requestId);
   }
-  const access = await requireRetail(request, membership, context, ["OWNER", "ADMIN", "MANAGER"], ["SUPERVISOR", "APPROVER"]);
-  if (access.response) return access.response;
   const parsed = await readJson(request, 4096);
   if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
   const action = clean(parsed.value.action, 24).toLowerCase();
@@ -270,9 +274,11 @@ async function reviewCashSession(request, env, identity, membership, context, se
   if (replay.response) return replay.response;
 
   const session = await env.DB.prepare(
-    "SELECT id,branch_id,opened_by,expected_closing_amount,counted_closing_amount,difference_amount,status FROM cash_sessions WHERE company_id=?1 AND id=?2 LIMIT 1"
+    "SELECT cs.id,cs.branch_id,cs.cash_account_id,cs.opened_by,cs.expected_closing_amount,cs.counted_closing_amount,cs.difference_amount,cs.status,ca.work_area FROM cash_sessions cs JOIN cash_accounts ca ON ca.company_id=cs.company_id AND ca.id=cs.cash_account_id WHERE cs.company_id=?1 AND cs.id=?2 LIMIT 1"
   ).bind(context.companyId, sessionId).first();
   if (!session || session.branch_id !== context.scopedBranchId) return json({ error: "cash_session_not_found", requestId: context.requestId }, 404, context.requestId);
+  const access = await requireWorkArea(request, membership, context, session.work_area, ["OWNER", "ADMIN", "MANAGER"], ["SUPERVISOR", "APPROVER"]);
+  if (access.response) return access.response;
   let nextStatus;
   if (action === "approve" && session.status === "SUBMITTED") {
     if (Number(session.difference_amount) !== 0) return json({ error: "cash_difference_requires_dispute", requestId: context.requestId }, 409, context.requestId);
@@ -319,7 +325,7 @@ async function reviewCashSession(request, env, identity, membership, context, se
 }
 
 async function recordOpeningStock(request, env, identity, membership, context) {
-  const access = await requireRetail(request, membership, context, ["OWNER", "ADMIN", "MANAGER"], ["SUPERVISOR", "APPROVER"]);
+  const access = await requireWorkArea(request, membership, context, "RETAIL", ["OWNER", "ADMIN", "MANAGER"], ["SUPERVISOR", "APPROVER"]);
   if (access.response) return access.response;
   const parsed = await readJson(request, 4096);
   if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
@@ -418,7 +424,7 @@ async function recordOpeningStock(request, env, identity, membership, context) {
 }
 
 async function createCashSale(request, env, identity, membership, context) {
-  const access = await requireRetail(request, membership, context, ["OWNER", "ADMIN", "MANAGER", "CASHIER"]);
+  const access = await requireWorkArea(request, membership, context, "RETAIL", ["OWNER", "ADMIN", "MANAGER", "CASHIER"]);
   if (access.response) return access.response;
   const parsed = await readJson(request, 12_000);
   if (parsed.error) return json({ error: parsed.error, requestId: context.requestId }, parsed.status, context.requestId);
