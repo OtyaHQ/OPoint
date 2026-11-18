@@ -38,7 +38,7 @@ expected = {
     "0004_staff_work_assignments": "fa3666d4eb0e62322800d5b9f0e9b762d24851b282fd01a7c20a4f1eed3a9090",
     "0005_enterprise_automation": "0a18fcb1eeb7f1bc6e658dd86b4f49e808b62bbd6a1833d3404415b3dceebe3e",
     "0006_message_capture_and_receipts": "db7576a526fefd6d585fb94539281f00996929404437ecc6b5f79fef05da07c1",
-    "0007_provider_operator_access": "94b6f4af7180571c2c284d3f40813a4e80ca57979a92e1",
+    "0007_provider_operator_access": "94b6f4af7180571c2c284d3f40813a4e80fd5c88ecb32e455c84ca57979a92e1",
     "0008_staff_invitations": "9c9d4b29b5bfffa4efad98590ef12edb3d2731f2e2aba707f49c233cab6fa850",
     "0009_cash_session_lifecycle": "9969372fbf063beec9cecd0dc20681cf9ba36b93978ea0ac8c4d31a8af542504",
 }
