@@ -160,6 +160,149 @@ BEGIN
   ) THEN RAISE(ABORT, 'PROVIDER_OPERATOR_SIM_ASSIGNMENT_OR_NETWORK_MISMATCH') END;
 END;
 
--- Migration checksum covers the DDL above and excludes this ledger insert.
+
+-- A scoped Mobile Money permission grant is never an independent source of authority.
+-- The exact outlet, provider relationship, operator approval, employee assignment,
+-- work-area assignment, training, provider agreement and assigned SIM must all be current.
+CREATE TRIGGER IF NOT EXISTS employee_provider_grant_active_insert_guard
+BEFORE INSERT ON employee_permission_grants
+WHEN NEW.permission_key = 'MOBILE_MONEY:OPERATE'
+ AND NEW.scope_type = 'PROVIDER_ACCOUNT'
+ AND NEW.status = 'ACTIVE'
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1
+      FROM provider_outlet_accounts poa
+      JOIN provider_relationships pr
+        ON pr.company_id = poa.company_id AND pr.id = poa.provider_relationship_id
+      JOIN provider_operator_profiles op
+        ON op.company_id = poa.company_id
+       AND op.provider_outlet_account_id = poa.id
+       AND op.employee_profile_id = NEW.employee_profile_id
+      JOIN employee_profiles ep
+        ON ep.company_id = op.company_id AND ep.id = op.employee_profile_id
+      JOIN staff_memberships sm
+        ON sm.company_id = ep.company_id AND sm.id = ep.staff_membership_id
+      JOIN employee_assignments ea
+        ON ea.company_id = ep.company_id
+       AND ea.employee_profile_id = ep.id
+       AND ea.branch_id = poa.branch_id
+      JOIN staff_work_assignments wa
+        ON wa.company_id = sm.company_id
+       AND wa.staff_membership_id = sm.id
+       AND wa.branch_id = poa.branch_id
+       AND wa.work_area = 'MOBILE_MONEY'
+     WHERE poa.company_id = NEW.company_id
+       AND poa.id = NEW.scope_id
+       AND poa.scope_type = 'OUTLET'
+       AND poa.status = 'ACTIVE'
+       AND pr.onboarding_status = 'ACTIVE'
+       AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
+       AND op.approval_status = 'APPROVED'
+       AND op.training_status = 'COMPLETED'
+       AND (op.valid_until IS NULL OR datetime(op.valid_until) > CURRENT_TIMESTAMP)
+       AND ep.employment_status = 'ACTIVE'
+       AND sm.status = 'ACTIVE'
+       AND ea.status = 'ACTIVE'
+       AND datetime(ea.starts_at) <= CURRENT_TIMESTAMP
+       AND (ea.ends_at IS NULL OR datetime(ea.ends_at) > CURRENT_TIMESTAMP)
+       AND wa.status = 'ACTIVE'
+       AND wa.duty_role IN ('OPERATOR','SUPERVISOR','APPROVER')
+       AND datetime(NEW.starts_at) <= CURRENT_TIMESTAMP
+       AND (NEW.expires_at IS NULL OR datetime(NEW.expires_at) > CURRENT_TIMESTAMP)
+       AND (op.sim_asset_id IS NULL OR EXISTS (
+         SELECT 1
+           FROM company_assets asset
+           JOIN company_sim_details sim
+             ON sim.company_id = asset.company_id AND sim.asset_id = asset.id
+           JOIN asset_assignments aa
+             ON aa.company_id = asset.company_id AND aa.asset_id = asset.id
+          WHERE asset.company_id = op.company_id
+            AND asset.id = op.sim_asset_id
+            AND asset.asset_type = 'SIM_CARD'
+            AND asset.lifecycle_status = 'ASSIGNED'
+            AND sim.registration_status = 'COMPANY_REGISTERED'
+            AND aa.employee_profile_id = op.employee_profile_id
+            AND aa.branch_id = poa.branch_id
+            AND aa.status = 'ISSUED'
+            AND aa.returned_at IS NULL
+            AND ((pr.provider_code = 'AIRTEL_MONEY' AND sim.network_code = 'AIRTEL')
+              OR (pr.provider_code = 'MTN_MOMO' AND sim.network_code = 'MTN')
+              OR pr.provider_code = 'INTERSWITCH_QUICKTELLER')
+       ))
+  ) THEN RAISE(ABORT, 'MOBILE_MONEY_GRANT_REQUIRES_CURRENT_APPROVED_PROVIDER_OPERATOR') END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS employee_provider_grant_active_update_guard
+BEFORE UPDATE OF company_id, employee_profile_id, permission_key, scope_type, scope_id, starts_at, expires_at, status
+ON employee_permission_grants
+WHEN NEW.permission_key = 'MOBILE_MONEY:OPERATE'
+ AND NEW.scope_type = 'PROVIDER_ACCOUNT'
+ AND NEW.status = 'ACTIVE'
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1
+      FROM provider_outlet_accounts poa
+      JOIN provider_relationships pr
+        ON pr.company_id = poa.company_id AND pr.id = poa.provider_relationship_id
+      JOIN provider_operator_profiles op
+        ON op.company_id = poa.company_id
+       AND op.provider_outlet_account_id = poa.id
+       AND op.employee_profile_id = NEW.employee_profile_id
+      JOIN employee_profiles ep
+        ON ep.company_id = op.company_id AND ep.id = op.employee_profile_id
+      JOIN staff_memberships sm
+        ON sm.company_id = ep.company_id AND sm.id = ep.staff_membership_id
+      JOIN employee_assignments ea
+        ON ea.company_id = ep.company_id
+       AND ea.employee_profile_id = ep.id
+       AND ea.branch_id = poa.branch_id
+      JOIN staff_work_assignments wa
+        ON wa.company_id = sm.company_id
+       AND wa.staff_membership_id = sm.id
+       AND wa.branch_id = poa.branch_id
+       AND wa.work_area = 'MOBILE_MONEY'
+     WHERE poa.company_id = NEW.company_id
+       AND poa.id = NEW.scope_id
+       AND poa.scope_type = 'OUTLET'
+       AND poa.status = 'ACTIVE'
+       AND pr.onboarding_status = 'ACTIVE'
+       AND (pr.expires_at IS NULL OR datetime(pr.expires_at) > CURRENT_TIMESTAMP)
+       AND op.approval_status = 'APPROVED'
+       AND op.training_status = 'COMPLETED'
+       AND (op.valid_until IS NULL OR datetime(op.valid_until) > CURRENT_TIMESTAMP)
+       AND ep.employment_status = 'ACTIVE'
+       AND sm.status = 'ACTIVE'
+       AND ea.status = 'ACTIVE'
+       AND datetime(ea.starts_at) <= CURRENT_TIMESTAMP
+       AND (ea.ends_at IS NULL OR datetime(ea.ends_at) > CURRENT_TIMESTAMP)
+       AND wa.status = 'ACTIVE'
+       AND wa.duty_role IN ('OPERATOR','SUPERVISOR','APPROVER')
+       AND datetime(NEW.starts_at) <= CURRENT_TIMESTAMP
+       AND (NEW.expires_at IS NULL OR datetime(NEW.expires_at) > CURRENT_TIMESTAMP)
+       AND (op.sim_asset_id IS NULL OR EXISTS (
+         SELECT 1
+           FROM company_assets asset
+           JOIN company_sim_details sim
+             ON sim.company_id = asset.company_id AND sim.asset_id = asset.id
+           JOIN asset_assignments aa
+             ON aa.company_id = asset.company_id AND aa.asset_id = asset.id
+          WHERE asset.company_id = op.company_id
+            AND asset.id = op.sim_asset_id
+            AND asset.asset_type = 'SIM_CARD'
+            AND asset.lifecycle_status = 'ASSIGNED'
+            AND sim.registration_status = 'COMPANY_REGISTERED'
+            AND aa.employee_profile_id = op.employee_profile_id
+            AND aa.branch_id = poa.branch_id
+            AND aa.status = 'ISSUED'
+            AND aa.returned_at IS NULL
+            AND ((pr.provider_code = 'AIRTEL_MONEY' AND sim.network_code = 'AIRTEL')
+              OR (pr.provider_code = 'MTN_MOMO' AND sim.network_code = 'MTN')
+              OR pr.provider_code = 'INTERSWITCH_QUICKTELLER')
+       ))
+  ) THEN RAISE(ABORT, 'MOBILE_MONEY_GRANT_REQUIRES_CURRENT_APPROVED_PROVIDER_OPERATOR') END;
+END;
+
+-- Migration checksum covers the SQL above and excludes this ledger insert.
 INSERT INTO opoint_schema_migrations (version, checksum_sha256, applied_at)
-VALUES ('0007_provider_operator_access', '9467f7e77922cf02fcd43c1fca3711953082cf57defb469eade2a48467ce79bd', CURRENT_TIMESTAMP);
+VALUES ('0007_provider_operator_access', '3e450fecd3373a96468f532ade9533076242b3e0c7019898590b5aa5e5663222', CURRENT_TIMESTAMP);
