@@ -5,6 +5,10 @@ import {
   normalizeAssignmentStatus,
   normalizeWorkAssignment,
 } from "./work-assignments.mjs";
+import {
+  handleMyProviderOperatorAssignments,
+  handleProviderOperatorRoutes,
+} from "./provider-operators.mjs";
 
 const REQUIRED_TABLES = [
   "companies", "branches", "staff_memberships", "company_creation_requests",
@@ -46,6 +50,8 @@ const REQUIRED_GUARDS = [
   "issued_receipts_record_void",
   "provider_message_captures_no_delete",
   "provider_message_captures_review_only",
+  "provider_operator_active_insert_guard",
+  "provider_operator_active_update_guard",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -404,7 +410,7 @@ async function handle(request, env) {
       const migrationNames = new Set((migrations.results || []).map(row => row.version));
       const missingTables = REQUIRED_TABLES.filter(name => !names.has(name));
       const missingGuards = REQUIRED_GUARDS.filter(name => !names.has(name));
-      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts"];
+      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
       return json({ service: "opoint-api-staging", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
@@ -437,6 +443,9 @@ async function handle(request, env) {
   if (verified.response) return verified.response;
   const identity = verified.identity;
 
+  const myProviderOperatorAssignments = await handleMyProviderOperatorAssignments(request, env, identity, requestId);
+  if (myProviderOperatorAssignments) return myProviderOperatorAssignments;
+
   if (request.method === "GET" && url.pathname === "/v1/me") {
     const memberships = await companyMemberships(env, identity.userId);
     return json({ data: { userId: identity.userId, email: identity.email, memberships }, requestId }, 200, requestId);
@@ -458,6 +467,8 @@ async function handle(request, env) {
   const companyId = clean(request.headers.get("x-company-id") || url.searchParams.get("companyId"), 80);
   const membership = await requireMembership(env, identity.userId, companyId);
   if (!membership) return json({ error: "company_access_denied", requestId }, 403, requestId);
+  const providerOperatorResponse = await handleProviderOperatorRoutes(request, env, identity, membership, url, requestId);
+  if (providerOperatorResponse) return providerOperatorResponse;
   const assignmentResponse = await handleWorkAssignmentRoutes(request, env, identity, membership, url, requestId);
   if (assignmentResponse) return assignmentResponse;
 
