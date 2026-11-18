@@ -66,8 +66,9 @@ export function normalizeProviderAgentAccount(body) {
 
   if (!PROVIDERS.includes(providerCode)) return { error: "invalid_provider_code" };
   if (!branchId) return { error: "branch_required" };
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,119}$/.test(providerAgentReference)) {
-    return { error: "invalid_provider_agent_reference" };
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/-]{2,119}$/.test(providerAgentReference)
+      || /^\\+?\\d{9,15}$/.test(providerAgentReference)) {
+    return { error: "invalid_provider_agent_reference_use_provider_agent_code_not_full_phone_number" };
   }
   if (displayLabel.length < 2) return { error: "display_label_required" };
   if (agentLineLast4 !== null && !/^\d{4}$/.test(agentLineLast4)) return { error: "agent_line_last4_must_be_four_digits" };
@@ -83,7 +84,7 @@ export function normalizeProviderAccountStatus(body) {
   const reason = clean(body?.reason, 300);
   if (!STATUSES.includes(status)) return { error: "invalid_provider_account_status" };
   if (reason.length < 4) return { error: "reason_required" };
-  if (status === "ACTIVE" && providerApprovalReference.length < 4) {
+  if (status === "ACTIVE" && !/^[A-Za-z0-9][A-Za-z0-9._:/-]{3,119}$/.test(providerApprovalReference)) {
     return { error: "provider_approval_reference_required" };
   }
   return { value: { status, providerApprovalReference: providerApprovalReference || null, reason } };
@@ -189,7 +190,7 @@ export async function handleProviderAgentRoutes(request, env, identity, membersh
     if (normalized.error) return response({ error: normalized.error }, 400, requestId);
     const next = normalized.value;
     const current = await env.DB.prepare(
-      "SELECT id,branch_id,provider_code,status,provider_approval_reference,provider_approved_at FROM provider_agent_accounts WHERE company_id=?1 AND id=?2 LIMIT 1"
+      "SELECT a.id,a.branch_id,a.provider_code,a.status,a.provider_approval_reference,a.provider_approved_at FROM provider_agent_accounts a JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND a.id=?2 AND b.status='ACTIVE' LIMIT 1"
     ).bind(companyId, accountId).first();
     if (!current) return response({ error: "provider_agent_account_not_found" }, 404, requestId);
     if (current.status === next.status) return response({ data: current, idempotentReplay: true }, 200, requestId);
@@ -241,7 +242,7 @@ export async function handleProviderAgentRoutes(request, env, identity, membersh
     const fingerprint = await sha256(JSON.stringify(input));
     const [account, staff] = await Promise.all([
       env.DB.prepare(
-        "SELECT id,branch_id,status FROM provider_agent_accounts WHERE company_id=?1 AND id=?2 LIMIT 1"
+        "SELECT a.id,a.branch_id,a.status FROM provider_agent_accounts a JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND a.id=?2 AND b.status='ACTIVE' LIMIT 1"
       ).bind(companyId, accountId).first(),
       env.DB.prepare(
         "SELECT id,role_key,status FROM staff_memberships WHERE company_id=?1 AND id=?2 LIMIT 1"
@@ -252,7 +253,7 @@ export async function handleProviderAgentRoutes(request, env, identity, membersh
     if (["OWNER", "ADMIN"].includes(staff.role_key)) return response({ error: "privileged_members_do_not_need_provider_assignments" }, 400, requestId);
 
     const workAssignment = await env.DB.prepare(
-      "SELECT duty_role FROM staff_work_assignments WHERE company_id=?1 AND staff_membership_id=?2 AND branch_id=?3 AND work_area='MOBILE_MONEY' AND status='ACTIVE' LIMIT 1"
+      "SELECT a.duty_role FROM staff_work_assignments a JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND a.staff_membership_id=?2 AND a.branch_id=?3 AND a.work_area='MOBILE_MONEY' AND a.status='ACTIVE' AND b.status='ACTIVE' LIMIT 1"
     ).bind(companyId, input.staffMembershipId, account.branch_id).first();
     if (!workAssignment) return response({ error: "mobile_money_work_assignment_required" }, 409, requestId);
     if (!providerDutyAllowed(workAssignment.duty_role, input.dutyRole)) {
@@ -309,6 +310,23 @@ export async function handleProviderAgentRoutes(request, env, identity, membersh
     if (current.status === "REVOKED") return response({ error: "revoked_staff_assignment_is_terminal" }, 409, requestId);
     if (status === "ACTIVE" && current.status !== "SUSPENDED") return response({ error: "only_suspended_assignments_can_be_resumed" }, 409, requestId);
     if (status === "SUSPENDED" && current.status !== "ACTIVE") return response({ error: "only_active_assignments_can_be_suspended" }, 409, requestId);
+    if (status === "ACTIVE") {
+      const [account, staff, workAssignment] = await Promise.all([
+        env.DB.prepare(
+          "SELECT a.id FROM provider_agent_accounts a JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND a.id=?2 AND a.status='ACTIVE' AND b.status='ACTIVE' LIMIT 1"
+        ).bind(companyId, accountId).first(),
+        env.DB.prepare(
+          "SELECT id FROM staff_memberships WHERE company_id=?1 AND id=?2 AND status='ACTIVE' LIMIT 1"
+        ).bind(companyId, current.staff_membership_id).first(),
+        env.DB.prepare(
+          "SELECT a.duty_role FROM staff_work_assignments a JOIN branches b ON b.company_id=a.company_id AND b.id=a.branch_id WHERE a.company_id=?1 AND a.staff_membership_id=?2 AND a.branch_id=?3 AND a.work_area='MOBILE_MONEY' AND a.status='ACTIVE' AND b.status='ACTIVE' LIMIT 1"
+        ).bind(companyId, current.staff_membership_id, current.branch_id).first(),
+      ]);
+      if (!account || !staff) return response({ error: "active_provider_account_and_staff_required_to_resume" }, 409, requestId);
+      if (!workAssignment || !providerDutyAllowed(workAssignment.duty_role, current.duty_role)) {
+        return response({ error: "active_mobile_money_work_assignment_required_to_resume" }, 409, requestId);
+      }
+    }
     try {
       const eventType = status === "ACTIVE" ? "RESUMED" : status;
       const changed = await env.DB.batch([
