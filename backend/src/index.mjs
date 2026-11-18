@@ -21,6 +21,8 @@ const REQUIRED_GUARDS = [
   "trg_journal_entry_update_posted_guard",
   "trg_journal_entry_delete_posted_guard",
   "trg_stock_movement_balance_guard",
+  "staff_work_assignment_events_no_update",
+  "staff_work_assignment_events_no_delete",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
