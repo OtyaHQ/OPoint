@@ -28,6 +28,28 @@ test("accepts separate MTN and Airtel provider account identifiers", () => {
   assert.equal(airtel.value.providerCode, "AIRTEL_MONEY");
 });
 
+test("rejects full phone-number-like provider references and malformed last-four suffixes", () => {
+  for (const providerAgentReference of ["0700123456", "+256700123456", "256700123456"]) {
+    assert.equal(normalizeProviderAgentAccount({
+      providerCode: "MTN_MOMO",
+      branchId: "branch-1",
+      providerAgentReference,
+      displayLabel: "Main outlet",
+      reason: "Provider account registration",
+    }).error, "invalid_provider_agent_reference_use_provider_agent_code_not_full_phone_number");
+  }
+  for (const agentLineLast4 of ["123", "12345", "12a4", "+123"]) {
+    assert.equal(normalizeProviderAgentAccount({
+      providerCode: "MTN_MOMO",
+      branchId: "branch-1",
+      providerAgentReference: "MTN-AGENT-0001",
+      displayLabel: "Main outlet",
+      agentLineLast4,
+      reason: "Provider account registration",
+    }).error, "agent_line_last4_must_be_four_digits");
+  }
+});
+
 test("rejects raw credentials, phone numbers and KYC fields", () => {
   for (const extra of [
     { pin: "1234" },
