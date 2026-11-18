@@ -396,21 +396,22 @@ test("Ordinary membership controls cannot change Owner or self access", async ()
 
   const selfEnv = makeEnv({
     targetMembership: {
-      id: "membership-owner",
-      identity_subject: "owner-identity",
-      role_key: "OWNER",
+      id: "membership-agent",
+      identity_subject: "agent-identity",
+      role_key: "AGENT",
       status: "ACTIVE",
     },
   }).env;
   const selfResult = await handleStaffMembershipStatusManagement(
-    apiRequest("/v1/staff/membership-owner/status", {
+    apiRequest("/v1/staff/membership-agent/status", {
       status: "SUSPENDED",
       reason: "Self test",
     }),
-    selfEnv, { userId: "owner-identity" }, OWNER,
-    requestUrl("/v1/staff/membership-owner/status"), "request-14",
+    selfEnv, { userId: "agent-identity" }, ADMIN,
+    requestUrl("/v1/staff/membership-agent/status"), "request-14",
   );
-  assert.equal(selfResult.status, 403);
+  assert.equal(selfResult.status, 409);
+  assert.equal((await selfResult.json()).error, "self_membership_change_forbidden");
 });
 
 test("Revoked memberships cannot be reactivated", async () => {
