@@ -1,13 +1,6 @@
 name: Deploy Opoint production API
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "backend/**"
-      - "wrangler.toml"
-      - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
     inputs:
       confirm_deploy:
@@ -56,7 +49,7 @@ jobs:
   deploy:
     name: Deploy private opoint Worker
     needs: validate
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.confirm_deploy == 'DEPLOY')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.confirm_deploy == 'DEPLOY'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
