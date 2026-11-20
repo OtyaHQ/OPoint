@@ -12,7 +12,7 @@ npx --yes "wrangler@${WRANGLER_VERSION}" d1 migrations apply DB --local --config
 npx --yes "wrangler@${WRANGLER_VERSION}" d1 execute DB --local --config wrangler.local.toml --file=cloudflare-api/dev/seed-local-owner.sql
 
 cat <<'NOTICE'
-OtyaPoint local development is starting.
+Opoint local development is starting.
 - Local API: http://127.0.0.1:8787
 - Synthetic test token: otya-local-test-token
 - Synthetic identity: owner@local.invalid
