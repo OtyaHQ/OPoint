@@ -8,6 +8,7 @@ workers_dev = false
 keep_vars = false
 
 [vars]
+APP_ENV = "local"
 ENVIRONMENT = "local"
 
 [observability]
