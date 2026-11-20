@@ -8,11 +8,11 @@ The private company-operations backend for **Opoint**. It owns retail, inventory
 |---|---|
 | Product API Worker | `opoint` |
 | Worker exposure | Private; no `workers.dev` hostname or public API route |
-| D1 schema/database | Current Opoint production schema on the existing database resource |
+| D1 schema/database | `opoint-prod-db` |
 | Shared identity | Otya ID through the production `otya-auth` service binding |
 | Source repository | `OtyaHQ/OPoint` |
 
-The production database has the ten current forward migrations, including provider-float integrity guards. Company, branch, staff, stock, sale, journal, payment-intent and agency-operation records remain empty until the real owner completes onboarding and enters genuine business information. No sample company, fake staff, imaginary float, sales or provider transactions are inserted.
+The production database `opoint-prod-db` has the ten current forward migrations, including provider-float integrity guards. Company, branch, staff, stock, sale, journal, payment-intent and agency-operation records remain empty until the real owner completes onboarding and enters genuine business information. No sample company, fake staff, imaginary float, sales or provider transactions are inserted.
 
 ## Implemented capabilities
 
