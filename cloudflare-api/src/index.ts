@@ -225,9 +225,9 @@ export default {
         const objectNames = new Set(integrityObjects.results.map(row => row.name));
         const ready = expectedTables.every(name => tableNames.has(name))
           && expectedObjects.every(name => objectNames.has(name));
-        return json({ service: "opoint", status: ready ? "ok" : "schema_not_ready", schemaReady: ready, requestId: rid }, ready ? 200 : 503);
+        return json({ service: env.APP_ENV === "local" ? "opoint-local" : "opoint", status: ready ? "ok" : "schema_not_ready", schemaReady: ready, requestId: rid }, ready ? 200 : 503);
       } catch {
-        return json({ service: "opoint", status: "database_unavailable", requestId: rid }, 503);
+        return json({ service: env.APP_ENV === "local" ? "opoint-local" : "opoint", status: "database_unavailable", requestId: rid }, 503);
       }
     }
     if (request.method === "OPTIONS") return json({ error: "cors_not_enabled" }, 405);
