@@ -84,7 +84,7 @@ function makeEnv(workArea) {
   }] : [];
   return {
     DB: new MemoryD1({ membership: activeMembership, assignments, activeBranches: ["branch-1", "branch-2"] }),
-    OTYA_ID: {
+    OID: {
       async fetch() {
         return Response.json({
           ok: true,
