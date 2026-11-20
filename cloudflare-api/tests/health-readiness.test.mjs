@@ -86,7 +86,7 @@ test("health reports ready only when all current schema tables and integrity obj
   const response = await health(env);
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
-    service: "otyapoint-api",
+    service: "opoint",
     status: "ok",
     schemaReady: true,
     requestId: "health-test-request",
