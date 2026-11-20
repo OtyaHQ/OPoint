@@ -1,0 +1,64 @@
+name: OtyaPoint Dashboard Cloudflare Compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "chore/dashboard-vinext-compat-audit"
+  pull_request:
+    paths:
+      - ".github/workflows/opoint-vinext-compatibility.yml"
+      - "app/**"
+      - "components/**"
+      - "lib/**"
+      - "middleware.ts"
+      - "next.config.*"
+      - "package.json"
+      - "package-lock.json"
+      - "prisma/**"
+      - "public/**"
+      - "tsconfig.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opoint-vinext-compatibility-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: Read-only vinext compatibility check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+
+      - name: Install existing dashboard dependencies without creating a lockfile
+        run: npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+
+      - name: Check Next.js compatibility with Cloudflare vinext
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes vinext check 2>&1 | tee vinext-compatibility-report.log
+
+      - name: Add compatibility report to job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '## vinext compatibility output'
+            echo
+            if [[ -f vinext-compatibility-report.log ]]; then
+              sed -n '1,240p' vinext-compatibility-report.log
+            else
+              echo 'The checker did not produce a report file.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
