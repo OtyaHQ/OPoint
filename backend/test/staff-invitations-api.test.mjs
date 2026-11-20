@@ -96,8 +96,8 @@ function makeEnv(options = {}) {
   const calls = [];
   const env = {
     DB: new MemoryD1(options),
-    OTYAPOINT_INVITE_SERVICE_TOKEN: "test-only-high-entropy-service-token-32bytes",
-    OTYA_ID: {
+    OPOINT_INVITE_SERVICE_TOKEN: "test-only-high-entropy-service-token-32bytes",
+    OID: {
       async fetch(request) {
         const body = await request.clone().json();
         calls.push({
@@ -143,7 +143,7 @@ test("Owner creates an email-bound invite without exposing its one-time token", 
   assert.equal(body.data.status, "PENDING");
   assert.equal(JSON.stringify(body).includes(calls[0].body.token), false);
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "https://auth/internal/notifications/otyapoint/staff-invitation");
+  assert.equal(calls[0].url, "https://oid/internal/notifications/opoint/staff-invitation");
   assert.equal(calls[0].headers["x-otya-service"], "otyapoint");
   assert.equal(calls[0].body.role, "AGENT");
   assert.match(calls[0].body.token, /^[a-f0-9]{64}$/);
@@ -203,7 +203,7 @@ test("Non-privileged staff cannot list or create company invitations", async () 
 
 test("Invitation fails closed when the private email service secret is unavailable", async () => {
   const { env, calls } = makeEnv();
-  env.OTYAPOINT_INVITE_SERVICE_TOKEN = undefined;
+  env.OPOINT_INVITE_SERVICE_TOKEN = undefined;
   const result = await handleStaffInvitationManagement(
     apiRequest("/v1/staff/invitations", {
       email: "no-secret@example.invalid",
