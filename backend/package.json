@@ -1,5 +1,5 @@
 {
-  "name": "@otya/opoint-backend",
+  "name": "@otya/opoint",
   "private": true,
   "type": "module",
   "scripts": {
