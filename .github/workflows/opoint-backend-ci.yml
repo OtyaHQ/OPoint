@@ -4,7 +4,7 @@ on:
     paths:
       - "backend/**"
       - "wrangler.opoint-staging.toml"
-      - "wrangler.opoint-production.toml"
+      - "wrangler.toml"
       - ".github/workflows/opoint-backend-ci.yml"
   push:
     branches: [main, opoint-rebuild-foundation]
@@ -30,4 +30,4 @@ jobs:
         run: npm --prefix backend run verify:schema
 
       - name: Production Worker configuration dry run
-        run: npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.opoint-production.toml
+        run: npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.toml
