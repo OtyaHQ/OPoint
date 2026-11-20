@@ -164,9 +164,9 @@ async function readJson(request, maxBytes = 16_384) {
 async function verifyIdentity(request, env) {
   const authorization = request.headers.get("authorization") || "";
   if (!authorization.startsWith("Bearer ") || authorization.length > 8192) return { response: json({ error: "unauthorized" }, 401) };
-  if (!env.OTYA_ID?.fetch) return { response: json({ error: "identity_service_unavailable" }, 503) };
+  if (!env.OID?.fetch) return { response: json({ error: "identity_service_unavailable" }, 503) };
   try {
-    const response = await env.OTYA_ID.fetch(new Request("https://auth/auth/verify", {
+    const response = await env.OID.fetch(new Request("https://oid/auth/verify", {
       method: "GET",
       headers: { authorization, accept: "application/json" },
       signal: AbortSignal.timeout(8000),
