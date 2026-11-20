@@ -27,7 +27,7 @@ The separately prepared backend source package contains a Worker entry point, mi
 
 ## Not yet certified
 
-The backend source package has not yet been committed into this repository branch or deployed as a Cloudflare staging Worker. No Worker binding or production route has been changed. The legacy `otyapoint-api` / old database remain preserved and are not the target of this rebuild.
+The backend source package has not yet been committed into this repository branch or deployed as a Cloudflare staging Worker. No Worker binding or production route has been changed. The legacy `opoint` / old database remain preserved and are not the target of this rebuild.
 
 The next release gate is to version the backend source, deploy only to `opoint-api-staging`, run health/schema/auth/tenant-isolation smoke tests, verify logs and rollback, and then prepare a reviewed pull request. Production cutover and provider execution require separate approval and compliance validation.
 
