@@ -14,7 +14,7 @@ test("returns the synthetic owner only for the local test bearer token", async (
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), {
     ok: true,
-    user_id: "synthetic-otyapoint-local-owner",
+    user_id: "synthetic-opoint-local-owner",
     email: "owner@local.invalid",
   });
 });
