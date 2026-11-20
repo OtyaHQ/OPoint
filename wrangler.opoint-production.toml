@@ -33,3 +33,8 @@ database_id = "06ded416-1ae9-4f28-b50a-d408317ad60c"
 [[services]]
 binding = "OID"
 service = "oid"
+
+[[secrets_store_secrets]]
+binding = "OPOINT_INVITE_SERVICE_TOKEN"
+store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
+secret_name = "OPOINT_INVITE_SERVICE_TOKEN"
