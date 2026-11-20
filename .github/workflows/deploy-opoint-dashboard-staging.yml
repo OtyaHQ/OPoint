@@ -1,0 +1,97 @@
+name: Deploy private OtyaPoint staging dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DEPLOY-STAGING to deploy the private OtyaPoint dashboard Worker"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: opoint-dashboard-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Validate prerequisites and deploy private dashboard
+    if: github.ref == "refs/heads/main"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22.23.4"
+          package-manager-cache: false
+
+      - name: Require explicit staging authority
+        shell: bash
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          test "$CONFIRM" = "DEPLOY-STAGING" || {
+            echo "ERROR: staging deployment requires DEPLOY-STAGING"
+            exit 1
+          }
+          test -n "$CLOUDFLARE_API_TOKEN"
+          test -n "$CLOUDFLARE_ACCOUNT_ID"
+
+      - name: Require private Otya ID and OtyaPoint API Workers
+        shell: bash
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          headers=(-H "Authorization: Bearer $CF_TOKEN")
+          for worker in otya-id-staging opoint-api-staging; do
+            base="https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/$worker"
+            curl --fail --silent --show-error "${headers[@]}" "$base" | jq -e '.success == true' >/dev/null
+            curl --fail --silent --show-error "${headers[@]}" "$base/subdomain"               | jq -e '.success == true and .result.enabled == false and .result.previews_enabled == false' >/dev/null
+          done
+          api_settings="$(curl --fail --silent --show-error "${headers[@]}"             "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/opoint-api-staging/settings")"
+          echo "$api_settings" | jq -e '
+            .success == true
+            and ([.result.bindings[] | select(.name == "OTYA_ID" and .type == "service" and .service == "otya-id-staging")] | length == 1)
+            and ([.result.bindings[] | select(.type == "plain_text" and (.name == "PAYMENT_EXECUTION_ENABLED" or .name == "PROVIDER_EXECUTION_ENABLED" or .name == "AI_ENABLED") and .text == "false")] | length == 3)
+          ' >/dev/null
+          echo "Identity/API prerequisites are present, isolated, private, and have execution flags disabled."
+
+      - name: Install pinned dashboard toolchain
+        run: npm install --no-audit --no-fund --no-package-lock
+
+      - name: Verify private staging configuration
+        run: node --test cloudflare-api/tests/staging-config-boundary.test.mjs
+
+      - name: Build the dashboard
+        run: npm run build:vinext
+
+      - name: Dry-run Vinext Cloudflare deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx @vinext/cloudflare deploy --env staging --dry-run
+
+      - name: Deploy the private staging dashboard Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx @vinext/cloudflare deploy --env staging
+
+      - name: Verify the dashboard has no public workers.dev or preview hostname
+        shell: bash
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error             -H "Authorization: Bearer $CF_TOKEN"             "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT_ID/workers/scripts/opoint-dashboard-staging/subdomain"             | jq -e '.success == true and .result.enabled == false and .result.previews_enabled == false' >/dev/null
+          echo "Private staging dashboard deployed; no public URL or custom domain has been attached."

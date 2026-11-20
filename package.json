@@ -22,24 +22,36 @@
     "test:agency-list": "node --test cloudflare-api/tests/agency-list.test.mjs cloudflare-api/tests/agency-readiness.test.mjs",
     "test:agency-readiness": "node --test cloudflare-api/tests/agency-readiness.test.mjs",
     "test:legacy-products-bridge": "node --test tests/legacy-products-bridge.test.mjs",
-    "test:quickteller": "node --test cloudflare-api/tests/quickteller-business-sandbox.test.mjs cloudflare-api/tests/quickteller-auth-route.test.mjs"
+    "test:quickteller": "node --test cloudflare-api/tests/quickteller-business-sandbox.test.mjs cloudflare-api/tests/quickteller-auth-route.test.mjs",
+    "dev:vinext": "vite dev --port 3001",
+    "build:vinext": "vite build",
+    "start:vinext": "vite preview"
   },
   "dependencies": {
-    "@prisma/client": "^6.2.0",
-    "lucide-react": "^0.468.0",
-    "next": "^15.1.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "^2.49.1"
+    "@prisma/client": "6.19.3",
+    "lucide-react": "0.468.0",
+    "next": "15.5.29",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "@supabase/ssr": "0.6.1",
+    "@supabase/supabase-js": "2.119.0",
+    "vinext": "1.4.6",
+    "react-server-dom-webpack": "19.3.1",
+    "@vinext/cloudflare": "1.4.0"
   },
   "devDependencies": {
-    "@types/node": "^22.10.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "eslint": "^9.17.0",
-    "eslint-config-next": "^15.1.0",
-    "prisma": "^6.2.0",
-    "typescript": "^5.7.2"
-  }
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "15.5.29",
+    "prisma": "6.19.3",
+    "typescript": "5.9.3",
+    "vite": "8.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "@vitejs/plugin-rsc": "0.5.39",
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.17",
+    "cf": "1.0.0-rc.1"
+  },
+  "type": "module"
 }
