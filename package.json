@@ -22,7 +22,10 @@
     "test:agency-list": "node --test cloudflare-api/tests/agency-list.test.mjs cloudflare-api/tests/agency-readiness.test.mjs",
     "test:agency-readiness": "node --test cloudflare-api/tests/agency-readiness.test.mjs",
     "test:legacy-products-bridge": "node --test tests/legacy-products-bridge.test.mjs",
-    "test:quickteller": "node --test cloudflare-api/tests/quickteller-business-sandbox.test.mjs cloudflare-api/tests/quickteller-auth-route.test.mjs"
+    "test:quickteller": "node --test cloudflare-api/tests/quickteller-business-sandbox.test.mjs cloudflare-api/tests/quickteller-auth-route.test.mjs",
+    "dashboard:dev": "npm --prefix dashboard run dev",
+    "dashboard:build": "npm --prefix dashboard run build",
+    "dashboard:check": "npm --prefix dashboard run check"
   },
   "dependencies": {
     "@prisma/client": "^6.2.0",
