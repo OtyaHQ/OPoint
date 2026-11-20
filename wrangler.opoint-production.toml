@@ -27,8 +27,8 @@ head_sampling_rate = 0.05
 
 [[d1_databases]]
 binding = "DB"
-database_name = "otyapoint-prod-db"
-database_id = "2f4bd0e0-cca1-414b-a086-ed86f3d8407f"
+database_name = "opoint-prod-db"
+database_id = "06ded416-1ae9-4f28-b50a-d408317ad60c"
 
 [[services]]
 binding = "OTYA_ID"
