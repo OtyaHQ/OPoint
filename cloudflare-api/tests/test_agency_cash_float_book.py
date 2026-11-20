@@ -18,7 +18,7 @@ class AgencyCashFloatBookTests(unittest.TestCase):
         self.db.execute("PRAGMA foreign_keys = ON")
         migrations = sorted(MIGRATIONS_DIR.glob("*.sql"))
         self.assertTrue(migrations, "No D1 migrations were found")
-        self.assertEqual(migrations[-1].name, "0009_agency_cash_float_book.sql")
+        self.assertIn("0009_agency_cash_float_book.sql", [migration.name for migration in migrations])
         for migration in migrations:
             self.db.executescript(
                 "BEGIN;\n"

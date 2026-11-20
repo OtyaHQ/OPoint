@@ -1,5 +1,7 @@
 import { QuicktellerBusinessSandboxClient, QuicktellerBusinessError } from "./providers/quickteller-business-sandbox";
 import { saleRequestFingerprint } from "./sale-fingerprint.mjs";
+import { handleEnterpriseIntake } from "./enterprise-intake";
+import { handleSessionRoutes } from "./session";
 
 interface D1Result<T> { results: T[] }
 interface D1Statement {
@@ -12,8 +14,17 @@ interface D1Database {
   prepare(query: string): D1Statement;
   batch<T = unknown>(statements: D1Statement[]): Promise<T[]>;
 }
+interface R2Bucket {
+  put(key: string, value: ArrayBuffer | ArrayBufferView, options?: {
+    httpMetadata?: { contentType?: string; contentDisposition?: string };
+    customMetadata?: Record<string, string>;
+  }): Promise<unknown>;
+  get(key: string): Promise<{ body: ReadableStream<Uint8Array>; httpMetadata?: { contentType?: string; contentDisposition?: string }; size: number } | null>;
+  delete(key: string): Promise<void>;
+}
 export interface Env {
   DB: D1Database;
+  PRIVATE_FILES?: R2Bucket;
   AUTH?: { fetch(request: Request): Promise<Response> };
   OTYAPOINT_BOOTSTRAP_SECRET?: string | { get(): Promise<string> };
   OTYAPOINT_INVITE_SERVICE_TOKEN?: string | { get(): Promise<string> };
@@ -133,14 +144,36 @@ async function deliverStaffInvitation(
   }
 }
 
+function readCookie(request: Request, name: string): string | null {
+  const header = request.headers.get("cookie") || "";
+  for (const part of header.split(";")) {
+    const index = part.indexOf("=");
+    if (index >= 0 && part.slice(0, index).trim() === name) {
+      const value = part.slice(index + 1).trim();
+      return value.length <= 8192 ? value : null;
+    }
+  }
+  return null;
+}
+
 async function authenticate(request: Request, env: Env): Promise<Staff | Response> {
   const header = request.headers.get("authorization") || "";
-  if (!header.startsWith("Bearer ") || header.length > 8192) return json({ error: "unauthorized" }, 401);
+  const cookieToken = readCookie(request, "__Host-otya_access");
+  const accessToken = header.startsWith("Bearer ") ? header.slice(7) : cookieToken;
+  if (!accessToken || accessToken.length > 8192) return json({ error: "unauthorized" }, 401);
+  if (!header.startsWith("Bearer ") && !["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) {
+    const origin = request.headers.get("origin");
+    try {
+      if (!origin || new URL(origin).origin !== new URL(request.url).origin) return json({ error: "same_origin_request_required" }, 403);
+    } catch {
+      return json({ error: "same_origin_request_required" }, 403);
+    }
+  }
   if (!env.AUTH) return json({ error: "auth_service_unavailable" }, 503);
   try {
     const verifiedResponse = await env.AUTH.fetch(new Request("https://auth/auth/verify", {
       method: "GET",
-      headers: { Authorization: header, Accept: "application/json" },
+      headers: { Authorization: "Bearer " + accessToken, Accept: "application/json" },
       signal: AbortSignal.timeout(8000)
     }));
     if (!verifiedResponse.ok) return json({ error: "unauthorized" }, 401);
@@ -194,7 +227,17 @@ export default {
           "omni_stock_movements", "omni_agency_transactions", "omni_ledger_entries",
           "omni_reconciliation_sessions", "omni_audit_events", "omni_staff_memberships",
           "omni_staff_invitations", "omni_agency_accounts", "omni_agency_operations",
-          "omni_agency_account_movements",
+          "omni_agency_account_movements", "omni_enterprise_outlets", "omni_enterprise_departments",
+          "omni_enterprise_employees", "omni_employee_outlet_assignments", "omni_permission_catalog",
+          "omni_staff_permission_grants", "omni_provider_relationships", "omni_provider_outlet_accounts",
+          "omni_provider_operator_profiles", "omni_company_sim_cards", "omni_company_devices",
+          "omni_sim_assignments", "omni_device_assignments", "omni_outlet_operating_accounts",
+          "omni_outlet_account_movements", "omni_evidence_files", "omni_evidence_ingestion_items",
+          "omni_provider_transaction_records", "omni_transaction_verification_events",
+          "omni_provider_balance_observations", "omni_outlet_stock_balances", "omni_outlet_stock_movements",
+          "omni_receipt_documents", "omni_approval_requests", "omni_approval_decisions",
+          "omni_attendance_events", "omni_leave_requests", "omni_corporate_documents",
+          "omni_enterprise_company_profiles",
         ];
         const expectedObjects = [
           "idx_omni_sales_company_idempotency",
@@ -220,6 +263,31 @@ export default {
           "omni_agency_operations_no_delete",
           "omni_agency_account_movements_no_update",
           "omni_agency_account_movements_no_delete",
+          "omni_outlet_account_movement_guard",
+          "omni_outlet_account_movement_apply",
+          "omni_outlet_account_movements_no_update",
+          "omni_outlet_account_movements_no_delete",
+          "omni_provider_transaction_records_no_update",
+          "omni_provider_transaction_records_no_delete",
+          "omni_txn_verification_events_no_update",
+          "omni_txn_verification_events_no_delete",
+          "omni_outlet_stock_movements_no_update",
+          "omni_outlet_stock_movements_no_delete",
+          "omni_employee_outlet_assignment_guard",
+          "omni_provider_outlet_account_guard",
+          "omni_provider_operator_profile_guard",
+          "omni_sim_assignment_guard",
+          "omni_device_assignment_guard",
+          "omni_outlet_operating_account_guard",
+          "omni_evidence_ingestion_scope_guard",
+          "omni_provider_transaction_scope_guard",
+          "omni_provider_balance_observation_scope_guard",
+          "omni_outlet_stock_movement_scope_guard",
+          "omni_outlet_stock_movement_apply",
+          "omni_provider_balance_observations_no_update",
+          "omni_provider_balance_observations_no_delete",
+          "omni_outlet_stock_balance_scope_guard",
+          "omni_outlet_stock_balance_identity_immutable",
         ];
         const tableNames = new Set(tables.results.map(row => row.name));
         const objectNames = new Set(integrityObjects.results.map(row => row.name));
@@ -231,6 +299,9 @@ export default {
       }
     }
     if (request.method === "OPTIONS") return json({ error: "cors_not_enabled" }, 405);
+
+    const sessionResponse = await handleSessionRoutes(request, env, rid);
+    if (sessionResponse) return sessionResponse;
 
     // One-time owner bootstrap. This path is disabled until a high-entropy
     // secret is provisioned directly in the isolated Cloudflare Worker.
@@ -353,6 +424,9 @@ export default {
 
     const staff = await authenticate(request, env);
     if (isResponse(staff)) return staff;
+
+    const enterpriseResponse = await handleEnterpriseIntake(request, env, staff, rid, canManage(staff));
+    if (enterpriseResponse) return enterpriseResponse;
 
     try {
       // Provider credential checks are restricted to the one-time-provisioned owner.

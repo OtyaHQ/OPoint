@@ -10,13 +10,27 @@ import { saleRequestFingerprint } from "../src/sale-fingerprint.mjs";
 const workerSource = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
 const compiled = ts.transpileModule(workerSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
-}).outputText.replace('./providers/quickteller-business-sandbox', './quickteller-business-sandbox.mjs');
+}).outputText
+  .replace('./providers/quickteller-business-sandbox', './quickteller-business-sandbox.mjs')
+  .replace('./enterprise-intake', './enterprise-intake.mjs')
+  .replace('./session', './session.mjs');
 const tempDir = mkdtempSync(join(tmpdir(), "omnipoint-route-test-"));
 const providerSource = readFileSync(new URL("../src/providers/quickteller-business-sandbox.ts", import.meta.url), "utf8");
 const compiledProvider = ts.transpileModule(providerSource, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
 }).outputText;
 writeFileSync(join(tempDir, "quickteller-business-sandbox.mjs"), compiledProvider);
+for (const [sourceName, outputName] of [
+  ["enterprise-intake.ts", "enterprise-intake.mjs"],
+  ["session.ts", "session.mjs"]
+]) {
+  const source = readFileSync(new URL("../src/" + sourceName, import.meta.url), "utf8");
+  const compiledModule = ts.transpileModule(source, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext }
+  }).outputText;
+  writeFileSync(join(tempDir, outputName), compiledModule);
+}
+copyFileSync(new URL("../src/transaction-message-parser.mjs", import.meta.url), join(tempDir, "transaction-message-parser.mjs"));
 writeFileSync(join(tempDir, "index.mjs"), compiled);
 copyFileSync(new URL("../src/sale-fingerprint.mjs", import.meta.url), join(tempDir, "sale-fingerprint.mjs"));
 const workerModule = await import(pathToFileURL(join(tempDir, "index.mjs")).href);
