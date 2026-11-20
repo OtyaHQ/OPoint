@@ -349,12 +349,12 @@ export async function handleProviderOperatorRoutes(request, env, identity, membe
         "SELECT id FROM branches WHERE company_id=?1 AND id=?2 AND status='ACTIVE' LIMIT 1"
       ).bind(companyId, input.branchId).first(),
       input.cashAccountId ? env.DB.prepare(
-        "SELECT id,branch_id,account_type,provider_code FROM cash_accounts WHERE company_id=?1 AND id=?2 LIMIT 1"
+        "SELECT id,branch_id,account_type,provider_code,work_area FROM cash_accounts WHERE company_id=?1 AND id=?2 LIMIT 1"
       ).bind(companyId, input.cashAccountId).first() : Promise.resolve(null),
     ]);
     if (!relationship || relationship.onboarding_status === "CLOSED") return reply({ error: "provider_relationship_not_available" }, 409, requestId);
     if (!branch) return reply({ error: "active_branch_required" }, 409, requestId);
-    if (input.cashAccountId && (!cash || cash.branch_id !== input.branchId || !["MOBILE_MONEY", "PROVIDER_FLOAT"].includes(cash.account_type))) {
+    if (input.cashAccountId && (!cash || cash.branch_id !== input.branchId || cash.account_type !== "PROVIDER_FLOAT" || cash.work_area !== "MOBILE_MONEY")) {
       return reply({ error: "cash_account_must_be_mobile_money_float_at_same_branch" }, 409, requestId);
     }
     if (cash && ((relationship.provider_code === "AIRTEL_MONEY" && cash.provider_code !== "AIRTEL_MONEY")

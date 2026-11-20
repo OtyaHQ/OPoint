@@ -14,9 +14,10 @@ import {
   handleStaffInvitationManagement,
   handleStaffMembershipStatusManagement,
 } from "./staff-invitations.mjs";
+import { handleRetailWriteRoutes } from "./retail-operations.mjs";
 
 const REQUIRED_TABLES = [
-  "companies", "branches", "staff_memberships", "company_creation_requests",
+  "companies", "branches", "staff_memberships", "company_creation_requests", "idempotency_records",
   "inventory_locations", "ledger_accounts", "cash_accounts", "products", "product_categories",
   "customers", "suppliers", "stock_movements", "sales", "sale_lines", "sale_payments",
   "cash_sessions", "purchase_orders", "purchase_order_lines", "business_expenses",
@@ -74,6 +75,13 @@ const REQUIRED_GUARDS = [
   "staff_membership_status_cascade_work_assignments",
   "staff_membership_events_no_update",
   "staff_membership_events_no_delete",
+  "sale_requires_open_retail_cash_session",
+  "cash_session_status_transition_guard",
+  "cash_session_close_metadata_guard",
+  "cash_provider_float_insert_guard", "cash_provider_float_update_guard",
+  "provider_outlet_float_account_guard", "provider_outlet_float_account_update_guard",
+  "agency_operation_manual_operator_guard", "agency_operation_cash_session_balance",
+  "provider_float_nonnegative_balance_guard",
 ];
 
 const json = (body, status = 200, requestId = undefined) => new Response(JSON.stringify(body), {
@@ -433,12 +441,12 @@ async function handle(request, env) {
       const migrationNames = new Set((migrations.results || []).map(row => row.version));
       const missingTables = REQUIRED_TABLES.filter(name => !names.has(name));
       const missingGuards = REQUIRED_GUARDS.filter(name => !names.has(name));
-      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access", "0008_staff_invitations"];
+      const requiredMigrations = ["0001_opoint_core", "0002_operational_hardening", "0003_financial_integrity_guards", "0004_staff_work_assignments", "0005_enterprise_automation", "0006_message_capture_and_receipts", "0007_provider_operator_access", "0008_staff_invitations", "0009_cash_session_lifecycle", "0010_provider_float_integrity"];
       const missingMigrations = requiredMigrations.filter(name => !migrationNames.has(name));
       const ready = missingTables.length === 0 && missingGuards.length === 0 && missingMigrations.length === 0;
-      return json({ service: "opoint-api-staging", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
+      return json({ service: "Opoint", status: ready ? "ready" : "schema_not_ready", schemaReady: ready, requestId }, ready ? 200 : 503, requestId);
     } catch {
-      return json({ service: "opoint-api-staging", status: "database_unavailable", requestId }, 503, requestId);
+      return json({ service: "Opoint", status: "database_unavailable", requestId }, 503, requestId);
     }
   }
 
@@ -448,9 +456,10 @@ async function handle(request, env) {
       paymentsEnabled: false,
       providerExecutionEnabled: false,
       aiAssistantEnabled: false,
-      salesPostingEnabled: false,
-      journalPostingEnabled: false,
-      cashMovementEnabled: false,
+      salesPostingEnabled: true,
+      journalPostingEnabled: true,
+      cashMovementEnabled: true,
+      openingStockEnabled: true,
       agencyOperationsEnabled: false,
       billPaymentsEnabled: false,
       airtimeAndDataEnabled: false,
@@ -550,6 +559,11 @@ async function handle(request, env) {
     const result = await requireWorkAreaAssignment(env, membership, scopedBranchId, workArea);
     return result.ok ? result : { ...result, response: json({ error: result.error, requestId }, result.status, requestId) };
   };
+
+  const retailWriteResponse = await handleRetailWriteRoutes(request, env, identity, membership, {
+    companyId, scopedBranchId, privileged, requireArea, requestId,
+  });
+  if (retailWriteResponse) return retailWriteResponse;
 
   const cashAreaMatch = url.pathname.match(/^\/v1\/cash\/accounts\/([A-Za-z0-9._:-]{1,80})\/work-area$/);
   if (request.method === "POST" && cashAreaMatch) {
@@ -786,7 +800,7 @@ async function handle(request, env) {
     if (area.response) return area.response;
     if (!["OWNER","ADMIN","MANAGER","AGENT","ACCOUNTANT","AUDITOR"].includes(membership.role_key)) return json({ error: "forbidden", requestId }, 403, requestId);
     const rows = await env.DB.prepare(
-      "SELECT id,branch_id,provider_code,operation_type,status,amount,fee_amount,commission_amount,reference,created_by,created_at,completed_at FROM agency_operations WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
+      "SELECT id,branch_id,provider_code,operation_type,status,amount,commission_amount,provider_reference,customer_reference_last4,recording_mode,actor_id,created_at FROM agency_operations WHERE company_id=?1 AND (?2 IS NULL OR branch_id=?2) ORDER BY created_at DESC LIMIT 100"
     ).bind(companyId, scopedBranchId).all();
     return json({ data: rows.results || [], requestId }, 200, requestId);
   }
