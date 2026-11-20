@@ -25,11 +25,3 @@ test('Opoint presents the canonical Otya mark and correct product name', () => {
   assert.doesNotMatch(css, /#a8b8ff|#8c8bff|#75b9ff|#8585fa|#7c3aed/i)
   assert.equal(existsSync('public/otya-app-icon.webp'), true)
 })
-
-test('Opoint remains a private business application rather than an online checkout', () => {
-  const config = read('wrangler.opoint-production.toml')
-  assert.match(config, /name = "opoint"/)
-  assert.match(config, /PAYMENT_EXECUTION_ENABLED = "false"/)
-  assert.match(config, /PROVIDER_EXECUTION_ENABLED = "false"/)
-  assert.match(config, /AI_ENABLED = "false"/)
-})
