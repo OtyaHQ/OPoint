@@ -9,7 +9,7 @@ The private company-operations backend for **Opoint**. It owns retail, inventory
 | Product API Worker | `opoint` |
 | Worker exposure | Private; no `workers.dev` hostname or public API route |
 | D1 schema/database | `opoint-prod-db` |
-| Shared identity | Otya ID through the production `otya-auth` service binding |
+| Shared identity | Otya ID through the production `oid` service binding |
 | Source repository | `OtyaHQ/OPoint` |
 
 The production database `opoint-prod-db` has the ten current forward migrations, including provider-float integrity guards. Company, branch, staff, stock, sale, journal, payment-intent and agency-operation records remain empty until the real owner completes onboarding and enters genuine business information. No sample company, fake staff, imaginary float, sales or provider transactions are inserted.
@@ -26,7 +26,7 @@ The production database `opoint-prod-db` has the ten current forward migrations,
 
 ## Identity and permissions
 
-Otya ID authenticates the person. Opoint resolves the authenticated identity to an active company membership and enforces role, branch and work-area scope on the server. Browser-supplied roles and employee identifiers are not authoritative. No duplicate Opoint identity database is created.
+OID authenticates the person. Opoint resolves the authenticated identity to an active company membership and enforces role, branch and work-area scope on the server. Browser-supplied roles and employee identifiers are not authoritative. No duplicate Opoint identity database is created.
 
 ## Provider boundaries
 
@@ -42,4 +42,4 @@ npm --prefix backend test
 npm --prefix backend run verify:schema
 ```
 
-The private Worker can be deployed without exposing a public endpoint. Opoint's company onboarding and browser session bridge must pass their acceptance checks before the Core gateway exposes it to the owner dashboard.
+The private Worker can be deployed without exposing a public endpoint. Opoint's company onboarding and browser session bridge must pass their acceptance checks before the OEnd gateway exposes it to the owner dashboard.
