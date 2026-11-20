@@ -48,7 +48,7 @@ function makeEnv(roleKey) {
   const DB = new MemoryD1(roleKey);
   return {
     DB,
-    OTYA_ID: {
+    OID: {
       async fetch() {
         return Response.json({ ok: true, user_id: "identity-1", email: "owner@example.invalid" });
       },
