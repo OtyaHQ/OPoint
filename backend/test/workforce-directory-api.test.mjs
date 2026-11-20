@@ -93,7 +93,7 @@ class MemoryD1 {
 function makeEnv(roleKey, branchId = null) {
   return {
     DB: new MemoryD1(roleKey, branchId),
-    OTYA_ID: {
+    OID: {
       async fetch() {
         return Response.json({
           ok: true,
