@@ -144,7 +144,7 @@ test("Owner creates an email-bound invite without exposing its one-time token", 
   assert.equal(JSON.stringify(body).includes(calls[0].body.token), false);
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "https://oid/internal/notifications/opoint/staff-invitation");
-  assert.equal(calls[0].headers["x-otya-service"], "otyapoint");
+  assert.equal(calls[0].headers["x-otya-service"], "opoint");
   assert.equal(calls[0].body.role, "AGENT");
   assert.match(calls[0].body.token, /^[a-f0-9]{64}$/);
   const insert = env.DB.batches[0].find(row => row.sql.includes("INSERT INTO staff_invitations"));
