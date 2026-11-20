@@ -1,4 +1,4 @@
-name: Verify OtyaPoint
+name: Verify Opoint
 
 on:
   pull_request:
