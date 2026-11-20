@@ -1,6 +1,6 @@
-# Canonical OtyaPoint production API.
+# Canonical Opoint production API.
 # Private Worker: exposed only through the Otya Core same-origin service binding.
-name = "otyapoint-api"
+name = "opoint"
 main = "backend/src/index.mjs"
 compatibility_date = "2026-11-18"
 workers_dev = false
