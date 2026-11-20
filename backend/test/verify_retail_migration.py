@@ -11,7 +11,6 @@ migration_paths = [
     "0008_staff_invitations.sql",
     "0009_cash_session_lifecycle.sql",
     "0010_provider_float_integrity.sql",
-    "0010_provider_float_integrity.sql",
 ]
 
 db = sqlite3.connect(":memory:")
@@ -53,8 +52,7 @@ expected = {
     "0007_provider_operator_access": "94b6f4af7180571c2c284d3f40813a4e80fd5c88ecb32e455c84ca57979a92e1",
     "0008_staff_invitations": "9c9d4b29b5bfffa4efad98590ef12edb3d2731f2e2aba707f49c233cab6fa850",
     "0009_cash_session_lifecycle": "9969372fbf063beec9cecd0dc20681cf9ba36b93978ea0ac8c4d31a8af542504",
-    "0010_provider_float_integrity": "aac8b90990fd74f67c36245f977919b5b16fb02ed65ae30497f100949855c344",
-    "0010_provider_float_integrity": "9ec442c43b49d6ae28578c5cef5a0a19624ba84a4677e8fe698594a4be6b4f05",
+    "0010_provider_float_integrity": "bdeacbdff987842c06750d420896181e1a0e0ee2d1b33f7d50990ddc86e37857",
 }
 actual = dict(db.execute("SELECT version, checksum_sha256 FROM opoint_schema_migrations"))
 assert actual == expected, actual
