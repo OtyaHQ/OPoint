@@ -7,7 +7,7 @@ const INVITATION_ROLES = new Set([
   "AUDITOR",
 ]);
 const INVITATION_TTL_MS = 48 * 60 * 60 * 1000;
-const INVITATION_EMAIL_PATH = "/internal/notifications/otyapoint/staff-invitation";
+const INVITATION_EMAIL_PATH = "/internal/notifications/opoint/staff-invitation";
 
 function response(body, status = 200, requestId) {
   return new Response(JSON.stringify(body), {
@@ -143,21 +143,21 @@ async function markDelivery(env, invitation, actorId, requestId, status, reason)
 }
 
 async function deliverInvitation(requestEnv, invitation, token, expiresAt) {
-  const serviceToken = await resolveSecret(requestEnv.OTYAPOINT_INVITE_SERVICE_TOKEN);
+  const serviceToken = await resolveSecret(requestEnv.OPOINT_INVITE_SERVICE_TOKEN);
   if (serviceToken.length < 32 || serviceToken.length > 512) {
     return { ok: false, code: "invitation_email_not_configured" };
   }
-  if (!requestEnv.OTYA_ID?.fetch) {
+  if (!requestEnv.OID?.fetch) {
     return { ok: false, code: "identity_service_unavailable" };
   }
   try {
-    const result = await requestEnv.OTYA_ID.fetch(new Request(
-      "https://auth" + INVITATION_EMAIL_PATH,
+    const result = await requestEnv.OID.fetch(new Request(
+      "https://oid" + INVITATION_EMAIL_PATH,
       {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "x-otya-service": "otyapoint",
+          "x-otya-service": "opoint",
           "x-otya-service-token": serviceToken,
         },
         body: JSON.stringify({
