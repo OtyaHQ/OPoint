@@ -462,8 +462,8 @@ export default function WorkforcePortal() {
       <main className="login-shell">
         <section className="login-card onboarding-card">
           <div className="brand">
-            <div className="brand-mark">O</div>
-            <div><div className="brand-name">Opoint</div><div className="brand-sub">WORKFORCE ONBOARDING</div></div>
+            <div className="brand-mark"><img src="https://assets.otya.site/brand/otya/v4/otya-master-icon-512.webp" alt="Otya" width={38} height={38} /></div>
+            <div><div className="brand-name">Opoint</div><div className="brand-sub">BY OTYA · WORKFORCE ONBOARDING</div></div>
           </div>
           <p className="eyebrow">ACCOUNT CONNECTED</p>
           <h1>Complete your company access</h1>
@@ -518,8 +518,8 @@ export default function WorkforcePortal() {
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">O</div>
-          <div><div className="brand-name">Opoint</div><div className="brand-sub">WORKFORCE OPERATIONS</div></div>
+          <div className="brand-mark"><img src="https://assets.otya.site/brand/otya/v4/otya-master-icon-512.webp" alt="Otya" width={38} height={38} /></div>
+          <div><div className="brand-name">Opoint</div><div className="brand-sub">BY OTYA · WORKFORCE OPERATIONS</div></div>
         </div>
         <div className="workspace-box">
           <div className="workspace-icon"><Building2 size={17} /></div>
