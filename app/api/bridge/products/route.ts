@@ -12,7 +12,7 @@ export async function GET() {
   return NextResponse.json(
     {
       error: "cloudflare_bridge_identity_contract_unverified",
-      message: "The products bridge is disabled until dashboard sessions use Otya Auth and the verified identity is mapped to an active OtyaPoint staff membership.",
+      message: "The products bridge is disabled until dashboard sessions use Otya Auth and the verified identity is mapped to an active Opoint staff membership.",
     },
     {
       status: 503,
