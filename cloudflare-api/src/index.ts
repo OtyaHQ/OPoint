@@ -255,7 +255,7 @@ export default {
       if (existing) return json({ error: "owner_bootstrap_already_consumed" }, 409);
 
       const ownerId = uuid();
-      const displayName = safeText(body.displayName, 120) || identity.email?.split("@")[0] || "OtyaPoint Owner";
+      const displayName = safeText(body.displayName, 120) || identity.email?.split("@")[0] || "Opoint Owner";
       try {
         await env.DB.batch([
           env.DB.prepare(
@@ -486,7 +486,7 @@ export default {
         if (isBodyResponse(body)) return body;
         const email = safeText(body.email, 254).toLowerCase();
         const role = safeText(body.role, 32) as Role;
-        const displayName = safeText(body.displayName, 120) || email.split("@")[0] || "OtyaPoint Staff";
+        const displayName = safeText(body.displayName, 120) || email.split("@")[0] || "Opoint Staff";
         const branchId = body.branchId == null ? null : safeText(body.branchId, 64);
         const agentId = body.agentId == null ? null : safeText(body.agentId, 40).toUpperCase();
         if (!validEmail(email) || !assignableRoles.includes(role)) {
