@@ -56,7 +56,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
           <Link href="/" style={styles.back}><ArrowLeft size={15} /> Back to dashboard</Link>
           <div style={styles.eyebrow}><Boxes size={15} /> OTYAPOINT · RETAIL OPERATIONS</div>
           <h1 style={styles.title}>Inventory workspace</h1>
-          <p style={styles.muted}>Live product records from OtyaPoint&apos;s database, with auditable stock changes.</p>
+          <p style={styles.muted}>Live product records from Opoint&apos;s database, with auditable stock changes.</p>
         </div>
         <div style={styles.statusPill}><span style={styles.dot} /> INVENTORY RECORDS</div>
       </header>
@@ -124,7 +124,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
         </div>
         <p style={styles.footnote}>Amounts are shown in UGX. This screen manages inventory records only; it does not create a retail sale or post a financial ledger entry.</p>
       </section>
-      <footer style={styles.footer}>OtyaPoint · Retail inventory · Access: {staff.role.replaceAll("_", " ")}</footer>
+      <footer style={styles.footer}>Opoint · Retail inventory · Access: {staff.role.replaceAll("_", " ")}</footer>
     </main>
   );
 }
@@ -151,7 +151,7 @@ const styles: Record<string, React.CSSProperties> = {
   formGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14 },
   formAction: { display: "flex", alignItems: "end" },
   primary: { border: 0, background: "#8c8bff", color: "#0c1422", fontWeight: 800, borderRadius: 8, padding: "12px 17px", cursor: "pointer" },
-  secondary: { border: "1px solid #35465f", background: "#172438", color: "#eaf0fa", borderRadius: 8, padding: "10px 12px", cursor: "pointer", whiteSpace: "nowrap" },
+  secondary: { border: "1px solid #35465f", background: "#0A1020", color: "#eaf0fa", borderRadius: 8, padding: "10px 12px", cursor: "pointer", whiteSpace: "nowrap" },
   searchForm: { display: "flex", gap: 9, marginBottom: 16, alignItems: "center" },
   clear: { color: "#a8b8ff", textDecoration: "none", fontSize: 12 },
   table: { width: "100%", minWidth: 980, borderCollapse: "collapse", textAlign: "left" },
