@@ -1,7 +1,7 @@
-// Synthetic Otya Auth replacement for local OtyaPoint development ONLY.
+// Synthetic OEnd Identity replacement for local Opoint development ONLY.
 // Never deploy this Worker and never use this token outside Wrangler --local.
 const LOCAL_TEST_TOKEN = "otya-local-test-token";
-const LOCAL_IDENTITY = "synthetic-otyapoint-local-owner";
+const LOCAL_IDENTITY = "synthetic-opoint-local-owner";
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {

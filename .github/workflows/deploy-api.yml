@@ -1,13 +1,6 @@
 name: Deploy Opoint production API
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "backend/**"
-      - "wrangler.opoint-production.toml"
-      - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
     inputs:
       confirm_deploy:
@@ -51,12 +44,12 @@ jobs:
           npm --prefix backend run verify:schema
 
       - name: Validate production Worker configuration
-        run: npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.opoint-production.toml
+        run: npx --yes wrangler@4.159.0 deploy --dry-run --config wrangler.toml
 
   deploy:
     name: Deploy private opoint Worker
     needs: validate
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || inputs.confirm_deploy == 'DEPLOY')
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.confirm_deploy == 'DEPLOY'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
@@ -104,4 +97,4 @@ jobs:
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: npx --yes wrangler@4.159.0 deploy --config wrangler.opoint-production.toml
+        run: npx --yes wrangler@4.159.0 deploy --config wrangler.toml

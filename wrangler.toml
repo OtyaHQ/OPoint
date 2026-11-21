@@ -1,15 +1,17 @@
-# OtyaPoint Cloudflare configuration.
-# This config targets isolated OtyaPoint resources. Do not deploy until release gates pass.
-name = "otyapoint-api"
-main = "cloudflare-api/src/index.ts"
-compatibility_date = "2026-11-09"
+# Canonical Opoint production API.
+# Private Worker: exposed only through the authenticated OEnd same-origin service binding.
+name = "opoint"
+main = "backend/src/index.mjs"
+compatibility_date = "2026-11-18"
 workers_dev = false
 keep_vars = false
 
 [vars]
-# Stable tenant ID inherited from the original schema. It is an internal key,
-# not a public product or legal-entity name; do not change without a data migration.
-OTYAPOINT_COMPANY_ID = "omnipoint-default"
+ENVIRONMENT = "production"
+PRODUCT_CODE = "OPOINT"
+PAYMENT_EXECUTION_ENABLED = "false"
+PROVIDER_EXECUTION_ENABLED = "false"
+AI_ENABLED = "false"
 
 [observability]
 enabled = true
@@ -25,43 +27,9 @@ head_sampling_rate = 0.05
 
 [[d1_databases]]
 binding = "DB"
-database_name = "otyapoint-db"
-database_id = "65cc4aee-154a-474f-9ed4-aabea0924c98"
-migrations_dir = "cloudflare-api/migrations"
+database_name = "opoint-prod-db"
+database_id = "06ded416-1ae9-4f28-b50a-d408317ad60c"
 
-# No custom domain, public endpoint, or live payment-provider binding.
 [[services]]
-binding = "AUTH"
-service = "otya-auth"
-
-# Account-level secrets are centrally managed in Cloudflare Secrets Store.
-[[secrets_store_secrets]]
-binding = "OTYAPOINT_INVITE_SERVICE_TOKEN"
-store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
-secret_name = "OTYAPOINT_INVITE_SERVICE_TOKEN"
-
-[[secrets_store_secrets]]
-binding = "OTYAPOINT_BOOTSTRAP_SECRET"
-store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
-secret_name = "OTYAPOINT_BOOTSTRAP_SECRET"
-
-# Account-level Quickteller Business credentials are isolated to this private Worker.
-[[secrets_store_secrets]]
-binding = "QUICKTELLER_CLIENT_ID"
-store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
-secret_name = "QUICKTELLER_CLIENT_ID"
-
-[[secrets_store_secrets]]
-binding = "QUICKTELLER_CLIENT_SECRET"
-store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
-secret_name = "QUICKTELLER_CLIENT_SECRET"
-
-[[secrets_store_secrets]]
-binding = "QUICKTELLER_MERCHANT_CODE"
-store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
-secret_name = "QUICKTELLER_MERCHANT_CODE"
-
-[[secrets_store_secrets]]
-binding = "QUICKTELLER_PAY_ITEM_ID"
-store_id = "a1df6b906c6e4c1da6e7687330ea0f9c"
-secret_name = "QUICKTELLER_PAY_ITEM_ID"
+binding = "OID"
+service = "oid"

@@ -14,7 +14,7 @@ INSERT INTO omni_staff_memberships (
 )
 VALUES (
   'local-staff-owner',
-  'synthetic-otyapoint-local-owner',
+  'synthetic-opoint-local-owner',
   'local-company',
   'local-branch',
   'SOVEREIGN',
