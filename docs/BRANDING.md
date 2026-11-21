@@ -10,6 +10,10 @@ Use the exact source-derived artwork from the owner's approved Otya banner:
 - Otya orbital mark: https://assets.otya.site/brand/otya/v4/otya-orbital-mark.webp
 - Opoint product icon crop: https://assets.otya.site/brand/otya/v4/icons/opoint.webp
 
+## Product tagline
+
+**Shop. Pay. More.**
+
 ## Approved palette
 
 - Navy: #08265C
