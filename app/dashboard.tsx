@@ -35,7 +35,7 @@ export default function Home({ role, displayName, agentId }: DashboardProps) {
       <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
         <div className="brand-lockup">
           <img src="https://assets.otya.site/brand/otya/v4/icons/opoint.webp" alt="Opoint" width={37} height={35} className="brand-mark-image" />
-          <div><div className="brand-name">Opoint<span>.</span></div><div className="brand-subtitle">SHOP. PAY. MORE.</div></div>
+          <div><div className="brand-name">Opoint<span>.</span></div><div className="brand-subtitle">Shop. Pay. More.</div></div>
           <button className="icon-button close-nav" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={19}/></button>
         </div>
         <div className="workspace-select">
@@ -98,7 +98,7 @@ function Metric({icon,label,value,detail,tone}:{icon:React.ReactNode;label:strin
 function SectionView({section}:{section:Section}) {
   const titles:Record<Section,string> = {"Retail POS":"Retail point of sale","Inventory":"Inventory management","Fintech Agency":"Fintech agency desk","Reconciliation":"Daily reconciliation","Reports":"Reports & exports","Team & Access":"Team & access control","Settings":"Workspace settings","Overview":"Overview"};
   const descriptions:Record<Section,string> = {"Retail POS":"Review checkout setup and product availability.","Inventory":"View products and recorded stock levels.","Fintech Agency":"Review mobile-money provider setup and service availability.","Reconciliation":"Review retail cash and agency balances independently.","Reports":"Prepare clear, auditable business reports.","Team & Access":"Manage staff roles and privileged permissions.","Settings":"Configure the Opoint workspace.","Overview":""};
-  return <div className="subpage"><div className="welcome-row"><div><div className="eyebrow">OTYAPOINT WORKSPACE</div><h1>{titles[section]}</h1><p className="page-description">{descriptions[section]}</p></div><span className="status-pending">SETUP REQUIRED</span></div>
+  return <div className="subpage"><div className="welcome-row"><div><div className="eyebrow">Opoint workspace</div><h1>{titles[section]}</h1><p className="page-description">{descriptions[section]}</p></div><span className="status-pending">SETUP REQUIRED</span></div>
     <div className="notice-banner"><span>Some workspace services are still being connected. This screen will only show confirmed business records; it will not simulate sales or provider payments.</span></div>
 
     {section === "Retail POS" && <div className="panel workflow-panel"><div className="panel-header"><div><h3>Retail point of sale</h3><p>Checkout is waiting for the connected product and sales API.</p></div><ShoppingBag size={20} className="panel-title-icon"/></div><div className="empty-chart"><strong>Retail checkout is not connected yet</strong><span>Your actual product catalogue will appear here when the Opoint inventory and sales services are connected. No sale is created from this screen.</span></div></div>}
