@@ -1,6 +1,6 @@
 # LOCAL-ONLY synthetic identity verifier for Opoint development.
 # It has no routes, no workers.dev endpoint, no secrets and no remote bindings.
-name = "oend-identity-local"
+name = "oid-local"
 main = "cloudflare-api/dev-auth/index.mjs"
 compatibility_date = "2026-11-09"
 workers_dev = false
