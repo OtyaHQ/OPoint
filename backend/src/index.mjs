@@ -150,8 +150,47 @@ async function sha256(value) {
 }
 
 async function readJson(request, maxBytes = 16_384) {
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > maxBytes) return { error: "request_too_large", status: 413 };
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength && /^\\d+$/.test(declaredLength) && Number(declaredLength) > maxBytes) {
+    return { error: "request_too_large", status: 413 };
+  }
+
+  const chunks = [];
+  let totalBytes = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          return { error: "request_too_large", status: 413 };
+        }
+        chunks.push(value);
+      }
+    } catch {
+      return { error: "invalid_request_body", status: 400 };
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let text;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return { error: "invalid_json", status: 400 };
+  }
   try {
     const value = JSON.parse(text);
     if (!value || typeof value !== "object" || Array.isArray(value)) return { error: "invalid_json_object", status: 400 };
@@ -484,6 +523,13 @@ async function handle(request, env) {
   if (request.method === "GET" && url.pathname === "/v1/me") {
     const memberships = await companyMemberships(env, identity.userId);
     return json({ data: { userId: identity.userId, email: identity.email, memberships }, requestId }, 200, requestId);
+  }
+
+  if (request.method === "GET" && url.pathname === "/v1/me/pending-memberships") {
+    const rows = await env.DB.prepare(
+      "SELECT sm.id AS membership_id,sm.company_id,c.display_name AS company_name,c.slug AS company_slug,sm.display_name,sm.email,sm.role_key,sm.status,sm.created_at FROM staff_memberships sm JOIN companies c ON c.id=sm.company_id WHERE sm.identity_subject=?1 AND sm.status='PENDING' AND c.status IN ('SETUP','ACTIVE') ORDER BY sm.created_at DESC LIMIT 50"
+    ).bind(identity.userId).all();
+    return json({ data: rows.results || [], requestId }, 200, requestId);
   }
 
   if (request.method === "GET" && url.pathname === "/v1/me/work-assignments") {
