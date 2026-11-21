@@ -6,6 +6,10 @@ Opoint is the business product in the Otya ecosystem. It brings retail operation
 
 Opoint is a product within the Otya ecosystem. Otya Holdings Limited is the intended parent entity; do not present it as incorporated until registration is complete. Otya is the ecosystem brand; Opoint is the business application.
 
+## Brand identity
+
+See [Opoint brand usage](docs/BRANDING.md) for the approved Otya master artwork, Opoint product icon, palette and naming rules.
+
 ## Product principles
 
 - Financial correctness before convenience.
