@@ -33,4 +33,4 @@ Use the exact source-derived artwork from the owner's approved Otya banner:
 
 ## Current implementation status
 
-This repository currently documents the product and backend foundation. Apply these assets when the Opoint app and customer-facing surfaces are implemented. Do not claim the app UI has been branded until those surfaces exist and are verified.
+The exact Opoint product icon and tagline are now applied in the staff login, dashboard, inventory and staff-management source. The approved palette is applied to the workspace CSS and metadata. Production build, tests and deployment still require verification; remaining customer-facing surfaces must be checked before calling the rollout complete.
