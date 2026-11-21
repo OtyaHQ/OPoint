@@ -1,7 +1,5 @@
 "use client";
 
-import Image from "next/image";
-
 import { useState } from "react";
 import Link from "next/link";
 import {
@@ -36,8 +34,8 @@ export default function Home({ role, displayName, agentId }: DashboardProps) {
     <main className={dark ? "app-shell" : "app-shell light"}>
       <aside className={`sidebar ${mobileNav ? "sidebar-open" : ""}`}>
         <div className="brand-lockup">
-          <Image src="/otya-app-icon.webp" alt="Otya" width={37} height={37} className="brand-mark-image" priority />
-          <div><div className="brand-name">Opoint<span>.</span></div><div className="brand-subtitle">BUSINESS OPERATIONS</div></div>
+          <img src="https://assets.otya.site/brand/otya/v4/icons/opoint.webp" alt="Opoint" width={37} height={35} className="brand-mark-image" />
+          <div><div className="brand-name">Opoint<span>.</span></div><div className="brand-subtitle">SHOP. PAY. MORE.</div></div>
           <button className="icon-button close-nav" onClick={() => setMobileNav(false)} aria-label="Close menu"><X size={19}/></button>
         </div>
         <div className="workspace-select">
