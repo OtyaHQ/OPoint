@@ -238,9 +238,41 @@ export async function readJsonLimited(
     return { error: "request_too_large", status: 413 };
   }
 
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > maxBytes) {
-    return { error: "request_too_large", status: 413 };
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          return { error: "request_too_large", status: 413 };
+        }
+        chunks.push(value);
+      }
+    } catch {
+      return { error: "invalid_request_body", status: 400 };
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let raw = "";
+  try {
+    raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return { error: "invalid_json", status: 400 };
   }
   try {
     const value: unknown = JSON.parse(raw);
@@ -272,5 +304,6 @@ export async function callOpoint(path: string, accessToken: string, init: Reques
   return workerEnv.OPOINT_API.fetch(new Request("https://opoint.internal" + path, {
     ...init,
     headers,
+    signal: init.signal ?? AbortSignal.timeout(8000),
   }));
 }
