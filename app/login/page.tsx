@@ -14,9 +14,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const message = params.error ? messages[params.error] : undefined;
 
   return (
-    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#050812", color: "#f8fafc" }}>
+    <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24, background: "#08265C", color: "#f8fafc" }}>
       <section style={{ width: "100%", maxWidth: 420, border: "1px solid #1C2D47", borderRadius: 20, padding: 28, background: "#0A1020" }}>
-        <p style={{ color: "#27E8FF", fontSize: 12, letterSpacing: 2, fontWeight: 700 }}>OTYAPOINT · STAFF ACCESS</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}><img src="https://assets.otya.site/brand/otya/v4/icons/opoint.webp" alt="Opoint" width="72" height="68" style={{ objectFit: "contain", background: "#fff", borderRadius: 14 }} /><div><div style={{ fontSize: 24, fontWeight: 800 }}>Opoint</div><div style={{ color: "#00BDEB", fontSize: 12, fontWeight: 700 }}>Shop. Pay. More.</div></div></div>
+        <p style={{ color: "#00BDEB", fontSize: 12, letterSpacing: 1.4, fontWeight: 700 }}>STAFF ACCESS</p>
         <h1 style={{ fontSize: 30, margin: "12px 0 8px" }}>Sign in</h1>
         <p style={{ color: "#D5E6FF", marginBottom: 24 }}>Use your authorized Opoint staff account.</p>
         {message && <p role="alert" style={{ color: "#fecaca", background: "#7f1d1d55", padding: 12, borderRadius: 8 }}>{message}</p>}
@@ -28,7 +29,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           <label style={{ display: "grid", gap: 6 }}>Password
             <input name="password" type="password" autoComplete="current-password" required maxLength={1024} style={inputStyle} />
           </label>
-          <button type="submit" style={{ border: 0, borderRadius: 10, padding: "12px 16px", fontWeight: 700, background: "#27E8FF", color: "#050812", cursor: "pointer" }}>Sign in securely</button>
+          <button type="submit" style={{ border: 0, borderRadius: 10, padding: "12px 16px", fontWeight: 700, background: "#00BDEB", color: "#08265C", cursor: "pointer" }}>Sign in securely</button>
         </form>
         <p style={{ color: "#9FB7D7", fontSize: 12, marginTop: 20 }}>Access is limited to invited users with an active Opoint staff membership. New staff cannot join through public sign-up.</p>
       </section>
