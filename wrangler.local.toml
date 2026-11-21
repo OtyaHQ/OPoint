@@ -26,4 +26,4 @@ migrations_dir = "cloudflare-api/migrations"
 
 [[services]]
 binding = "AUTH"
-service = "oend-identity-local"
+service = "oid-local"
