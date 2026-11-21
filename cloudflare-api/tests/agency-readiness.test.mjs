@@ -22,7 +22,7 @@ const worker = (await import(pathToFileURL(join(tempDir, "index.mjs")).href)).de
 
 const manager = {
   id: "staff-manager", identity_subject: "identity-manager", company_id: "company-a",
-  branch_id: null, role: "MANAGER", status: "ACTIVE", display_name: "Manager",
+  branch_id: null, role: "SOVEREIGN", status: "ACTIVE", display_name: "Manager",
   email: null, agent_id: null
 };
 const attendant = {
@@ -40,15 +40,17 @@ function makeEnv({ staff = manager, totals = [3, 1, 1], providers = [], authResp
           async first() {
             calls.queries.push({ kind: "first", sql: this.sql, values: this.values });
             if (this.sql.includes("FROM omni_staff_memberships")) return staff;
+            if (this.sql.includes("FROM omni_branches")) return { id: "branch-a" };
             if (this.sql.includes("COUNT(*) AS total")) {
               const index = this.sql.includes("provider_status IN ('DRAFT','PENDING')") ? 1
-                : this.sql.includes("provider_status = 'UNKNOWN'") ? 2 : 0;
+                : this.sql.includes("provider_status='UNKNOWN'") || this.sql.includes("provider_status = 'UNKNOWN'") ? 2 : 0;
               return { total: totals[index] };
             }
             throw new Error("Unexpected first query: " + this.sql);
           },
           async all() {
             calls.queries.push({ kind: "all", sql: this.sql, values: this.values });
+            if (this.sql.includes("FROM omni_staff_work_assignments")) return { results: [] };
             if (this.sql.includes("GROUP BY provider")) return { results: providers };
             throw new Error("Unexpected all query: " + this.sql);
           },
@@ -73,7 +75,7 @@ async function readiness(env) {
   }), env);
 }
 
-test("manager receives company-scoped operational counts and disabled provider states", async () => {
+test("owner receives branch-scoped operational counts and disabled provider states", async () => {
   const { env, calls } = makeEnv({
     totals: [7, 2, 1],
     providers: [{ provider: "airtel_money", transactions: 4 }, { provider: null, transactions: 3 }]
@@ -84,6 +86,7 @@ test("manager receives company-scoped operational counts and disabled provider s
   assert.equal(body.service, "otyapoint-agency");
   assert.equal(body.mode, "LOCAL_RECORDS_ONLY");
   assert.equal(body.currency, "UGX");
+  assert.equal(body.branchId, "branch-a");
   assert.equal(body.liveMoneyEnabled, false);
   assert.equal(body.transactionCreation, "DISABLED_UNTIL_PROVIDER_ADAPTERS_AND_CONTROLS_ARE_VERIFIED");
   assert.deepEqual(body.providers.map(provider => [provider.id, provider.status, provider.adapter]), [
@@ -96,19 +99,19 @@ test("manager receives company-scoped operational counts and disabled provider s
     total: 7, pending: 2, unknownOrNeedsReconciliation: 1,
     byProvider: [{ provider: "airtel_money", transactions: 4 }, { provider: "UNSPECIFIED", transactions: 3 }]
   });
-  const dataQueries = calls.queries.filter(query => !query.sql.includes("omni_staff_memberships"));
+  const dataQueries = calls.queries.filter(query => query.sql.includes("FROM omni_agency_transactions"));
   assert.equal(dataQueries.length, 4);
-  assert.ok(dataQueries.every(query => query.values[0] === "company-a"));
+  assert.ok(dataQueries.every(query => query.values[0] === "company-a" && query.values[1] === "branch-a"));
   assert.equal(calls.writes, 0);
   assert.equal(calls.batches, 0);
 });
 
-test("attendants cannot view company-wide readiness", async () => {
+test("attendants without an active agency assignment cannot view readiness", async () => {
   const { env, calls } = makeEnv({ staff: attendant });
   const response = await readiness(env);
   assert.equal(response.status, 403);
-  assert.deepEqual(await response.json(), { error: "forbidden" });
-  assert.equal(calls.queries.filter(query => !query.sql.includes("omni_staff_memberships")).length, 0);
+  assert.deepEqual(await response.json(), { error: "work_area_assignment_required", requiredWorkAreas: ["MOBILE_MONEY", "BILLS_AIRTIME", "FINANCE"] });
+  assert.equal(calls.queries.filter(query => query.sql.includes("FROM omni_agency_transactions")).length, 0);
   assert.equal(calls.writes, 0);
 });
 
@@ -116,7 +119,7 @@ test("unverified identities cannot read agency readiness", async () => {
   const { env, calls } = makeEnv({ authResponse: { ok: false, user_id: "identity-manager" } });
   const response = await readiness(env);
   assert.equal(response.status, 401);
-  assert.equal(calls.queries.filter(query => !query.sql.includes("omni_staff_memberships")).length, 0);
+  assert.equal(calls.queries.filter(query => query.sql.includes("FROM omni_agency_transactions")).length, 0);
 });
 
 test("Auth outage fails closed before querying company records", async () => {
@@ -152,11 +155,13 @@ test("transaction creation remains disabled after exposing read-only readiness",
   assert.equal(response.status, 501);
   assert.deepEqual(await response.json(), {
     error: "provider_adapter_required",
-    detail: "No provider call was made and no agency transaction was recorded."
+    detail: "No provider call was made and no agency transaction was recorded.",
+    branchId: "branch-a"
   });
   assert.equal(calls.writes, 0);
   assert.equal(calls.batches, 0);
-  assert.equal(calls.queries.filter(query => !query.sql.includes("omni_staff_memberships")).length, 0);
+  assert.equal(calls.queries.filter(query => query.sql.includes("FROM omni_agency_transactions")).length, 0);
+  assert.ok(calls.queries.some(query => query.sql.includes("FROM omni_branches")));
 });
 
 test.after(() => rmSync(tempDir, { recursive: true, force: true }));

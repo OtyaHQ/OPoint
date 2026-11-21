@@ -27,3 +27,14 @@ test("sale fingerprint changes when product or quantity changes", async () => {
   assert.notEqual(baseline, changedProduct);
   assert.notEqual(baseline, changedQuantity);
 });
+test("sale fingerprint changes when the branch changes", async () => {
+  const main = await saleRequestFingerprint("CASH", [{ productId: "p1", quantity: 1 }], "branch-main");
+  const second = await saleRequestFingerprint("CASH", [{ productId: "p1", quantity: 1 }], "branch-second");
+  assert.notEqual(main, second);
+});
+
+test("legacy company-wide sale fingerprints remain stable when no branch is supplied", async () => {
+  const withoutBranch = await saleRequestFingerprint("CASH", [{ productId: "p1", quantity: 1 }]);
+  const explicitNull = await saleRequestFingerprint("CASH", [{ productId: "p1", quantity: 1 }], null);
+  assert.equal(withoutBranch, explicitNull);
+});

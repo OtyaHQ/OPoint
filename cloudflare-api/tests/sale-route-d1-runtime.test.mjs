@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync, copyFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, copyFileSync, rmSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -42,17 +42,18 @@ async function count(table, where = "1=1") {
 }
 async function resetAndMigrate() {
   // This D1 database is created by Miniflare in-memory/local test state, never Wrangler remote mode.
-  for (const name of [
-    "0001_core.sql",
-    "0002_company_scope.sql",
-    "0003_staff_profile.sql",
-    "0004_sale_request_fingerprint.sql",
-    "0005_company_scoped_sale_idempotency.sql"
-  ]) {
+  const migrations = readdirSync(new URL("../migrations/", import.meta.url))
+    .filter(name => /^\d{4}_[a-z0-9_]+\.sql$/.test(name)).sort();
+  assert.equal(migrations.at(-1), "0011_branch_agency_accounts.sql");
+  for (const name of migrations) {
     const sql = readFileSync(new URL(name, migrationsDir), "utf8")
       .replace(/^[ \t]*--[^\n]*(?:\n|$)/gm, "");
     await db.exec(sql.replace(/\s*\n\s*/g, " "));
   }
+  await run(
+    "INSERT INTO omni_branches (id,company_id,branch_code,name,status,is_primary) VALUES (?,?,?,?,?,1)",
+    "branch-d1", "company-d1", "MAIN", "Main Shop", "ACTIVE"
+  );
   await run(
     `INSERT INTO omni_staff_memberships
        (id, identity_subject, company_id, branch_id, role, status, display_name, email)
@@ -70,6 +71,22 @@ async function resetAndMigrate() {
        (id, sku, name, category, cost_price, selling_price, quantity_on_hand, company_id)
        VALUES (?, ?, ?, 'Test', 100, 200, ?, ?)`,
     "product-short", "SKU-D1-SHORT", "Synthetic Limited Stock", 2, "company-d1"
+  );
+  await run(
+    `INSERT INTO omni_branch_stock_movements
+       (id, company_id, branch_id, product_id, movement_type, quantity_delta,
+        quantity_after, idempotency_key, actor_id, reason)
+       VALUES (?, ?, ?, ?, 'OPENING', ?, ?, ?, ?, ?)`,
+    "opening-good", "company-d1", "branch-d1", "product-good", 2, 2,
+    "d1-opening-good", "staff-d1", "Verified branch opening count"
+  );
+  await run(
+    `INSERT INTO omni_branch_stock_movements
+       (id, company_id, branch_id, product_id, movement_type, quantity_delta,
+        quantity_after, idempotency_key, actor_id, reason)
+       VALUES (?, ?, ?, ?, 'OPENING', ?, ?, ?, ?, ?)`,
+    "opening-short", "company-d1", "branch-d1", "product-short", 3, 3,
+    "d1-opening-short", "staff-d1", "Intentional test discrepancy"
   );
 }
 
@@ -113,8 +130,10 @@ test("real sales handler uses Miniflare D1 and atomically rolls back a late stoc
     assert.equal(await count("omni_retail_sales"), 0);
     assert.equal(await count("omni_retail_sale_lines"), 0);
     assert.equal(await count("omni_stock_movements"), 0);
+    assert.equal(await count("omni_branch_stock_movements", "movement_type='SALE'"), 0);
     assert.equal(await count("omni_ledger_entries"), 0);
     assert.equal(await count("omni_audit_events"), 0);
+    assert.equal(await first("SELECT quantity_on_hand FROM omni_branch_stock WHERE product_id='product-good' AND branch_id='branch-d1'").then(r => r.quantity_on_hand), 2);
 
     const successful = await postSale("d1-atomic-key-002", [
       { productId: "product-good", quantity: 1 }
@@ -129,10 +148,12 @@ test("real sales handler uses Miniflare D1 and atomically rolls back a late stoc
 
     assert.equal(await count("omni_retail_sales"), 1);
     assert.equal(await count("omni_retail_sale_lines"), 1);
-    assert.equal(await count("omni_stock_movements"), 1);
-    assert.equal(await count("omni_ledger_entries"), 4); // cash/revenue plus COGS/inventory double-entry postings
+    assert.equal(await count("omni_stock_movements", "movement_type='SALE'"), 1);
+    assert.equal(await count("omni_branch_stock_movements", "movement_type='SALE'"), 1);
+    assert.equal(await count("omni_ledger_entries", "branch_id='branch-d1'"), 4); // cash/revenue plus COGS/inventory postings
     assert.equal(await count("omni_audit_events"), 1);
     assert.equal(await first("SELECT quantity_on_hand FROM omni_products WHERE id='product-good'").then(r => r.quantity_on_hand), 1);
+    assert.equal(await first("SELECT quantity_on_hand FROM omni_branch_stock WHERE product_id='product-good' AND branch_id='branch-d1'").then(r => r.quantity_on_hand), 1);
 
     const fk = await db.prepare("PRAGMA foreign_key_check").all();
     assert.deepEqual(fk.results, []);

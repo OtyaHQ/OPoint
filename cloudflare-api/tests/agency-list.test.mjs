@@ -22,7 +22,7 @@ const worker = (await import(pathToFileURL(join(tempDir, "index.mjs")).href)).de
 
 const manager = {
   id: "staff-manager", identity_subject: "identity-manager", company_id: "company-a",
-  branch_id: null, role: "MANAGER", status: "ACTIVE", display_name: "Manager",
+  branch_id: null, role: "SOVEREIGN", status: "ACTIVE", display_name: "Manager",
   email: null, agent_id: null
 };
 const attendant = {
@@ -40,10 +40,12 @@ function makeEnv({ staff = manager, rows = [], authResponse, authError } = {}) {
           async first() {
             calls.queries.push({ kind: "first", sql: this.sql, values: this.values });
             if (this.sql.includes("FROM omni_staff_memberships")) return staff;
+            if (this.sql.includes("FROM omni_branches")) return { id: "branch-a" };
             throw new Error("Unexpected first query");
           },
           async all() {
             calls.queries.push({ kind: "all", sql: this.sql, values: this.values });
+            if (this.sql.includes("FROM omni_staff_work_assignments")) return { results: [] };
             if (this.sql.includes("FROM omni_agency_transactions")) return { results: rows };
             throw new Error("Unexpected all query");
           },
@@ -69,7 +71,7 @@ async function list(env, query = "") {
   }), env);
 }
 
-test("manager list is company-scoped, bounded, and omits request/response metadata", async () => {
+test("owner transaction list is branch-scoped, bounded, and omits private request metadata", async () => {
   const row = { id: "txn-1", reference: "AG-001", transaction_type: "CASH_IN",
     provider: "manual", provider_reference: null, provider_status: "SUCCEEDED",
     amount: 50000, commission: 1000, currency: "UGX", customer_reference: "customer-ref",
@@ -77,26 +79,32 @@ test("manager list is company-scoped, bounded, and omits request/response metada
   const { env, calls } = makeEnv({ staff: manager, rows: [row] });
   const response = await list(env, "?type=CASH_IN&status=SUCCEEDED");
   assert.equal(response.status, 200);
-  assert.deepEqual((await response.json()).data, [row]);
+  const body = await response.json();
+  assert.deepEqual(body.data, [row]);
+  assert.equal(body.branchId, "branch-a");
   const query = calls.queries.find(call => call.kind === "all");
   assert.ok(query);
-  assert.match(query.sql, /company_id = \?1/);
-  assert.match(query.sql, /transaction_type = \?2/);
-  assert.match(query.sql, /provider_status = \?3/);
+  assert.match(query.sql, /company_id=\?1/);
+  assert.match(query.sql, /branch_id=\?2/);
+  assert.match(query.sql, /transaction_type IN/);
+  assert.match(query.sql, /transaction_type=\?/);
+  assert.match(query.sql, /provider_status=\?/);
   assert.match(query.sql, /LIMIT 100/);
-  assert.deepEqual(query.values, ["company-a", "CASH_IN", "SUCCEEDED"]);
+  assert.deepEqual(query.values.slice(0, 2), ["company-a", "branch-a"]);
+  assert.ok(query.values.includes("CASH_IN"));
+  assert.ok(query.values.includes("SUCCEEDED"));
   assert.doesNotMatch(query.sql, /request_metadata|response_metadata/);
 });
 
-test("non-manager staff list is restricted to their own transactions", async () => {
+test("staff without a Mobile Money work assignment cannot list agency transactions", async () => {
   const { env, calls } = makeEnv({ staff: attendant });
   const response = await list(env);
-  assert.equal(response.status, 200);
-  const query = calls.queries.find(call => call.kind === "all");
-  assert.ok(query);
-  assert.match(query.sql, /company_id = \?1/);
-  assert.match(query.sql, /actor_id = \?2/);
-  assert.deepEqual(query.values, ["company-a", "staff-attendant"]);
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), {
+    error: "work_area_assignment_required",
+    requiredWorkAreas: ["MOBILE_MONEY", "BILLS_AIRTIME"]
+  });
+  assert.equal(calls.queries.filter(call => call.sql.includes("FROM omni_agency_transactions")).length, 0);
 });
 
 test("rejects unknown transaction type or status without listing records", async () => {

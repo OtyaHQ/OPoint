@@ -21,11 +21,27 @@ copyFileSync(new URL("../src/sale-fingerprint.mjs", import.meta.url), join(tempD
 const worker = (await import(pathToFileURL(join(tempDir, "index.mjs")).href)).default;
 
 const requiredTables = [
+  "omni_branches",
+  "omni_staff_work_assignments",
+  "omni_customers",
+  "omni_suppliers",
+  "omni_purchase_orders",
+  "omni_purchase_order_lines",
+  "omni_expenses",
+  "omni_business_compliance_items",
+  "omni_provider_connections",
+  "omni_staff_attendance",
+  "omni_leave_requests",
+  "omni_branch_stock",
+  "omni_branch_stock_movements",
   "omni_products", "omni_retail_sales", "omni_retail_sale_lines",
   "omni_stock_movements", "omni_agency_transactions", "omni_ledger_entries",
   "omni_reconciliation_sessions", "omni_audit_events", "omni_staff_memberships",
   "omni_staff_invitations", "omni_agency_accounts", "omni_agency_operations",
   "omni_agency_account_movements",
+  "omni_branch_agency_accounts",
+  "omni_branch_agency_operations",
+  "omni_branch_agency_account_movements",
 ];
 
 const requiredObjects = [
@@ -52,6 +68,64 @@ const requiredObjects = [
   "omni_agency_operations_no_delete",
   "omni_agency_account_movements_no_update",
   "omni_agency_account_movements_no_delete",
+  "idx_omni_one_primary_branch_per_company",
+  "idx_omni_branches_company_status",
+  "idx_omni_sales_company_branch_created",
+  "idx_omni_ledger_company_branch_type_date",
+  "idx_omni_reconciliation_company_branch_date",
+  "idx_omni_agency_company_branch_created",
+  "omni_agency_transactions_branch_guard",
+  "idx_omni_active_staff_work_assignment",
+  "idx_omni_staff_work_assignment_lookup",
+  "omni_staff_work_assignment_guard",
+  "omni_staff_membership_branch_guard_insert",
+  "omni_staff_membership_branch_guard_update",
+  "omni_staff_work_assignment_update_guard",
+  "omni_staff_work_assignment_reactivate_guard",
+  "idx_omni_customers_company_name",
+  "idx_omni_customers_company_phone",
+  "idx_omni_suppliers_company_name",
+  "idx_omni_purchase_orders_company_branch_status",
+  "idx_omni_purchase_order_lines_order",
+  "omni_purchase_order_line_company_guard",
+  "omni_purchase_order_line_update_guard",
+  "omni_purchase_order_branch_guard",
+  "idx_omni_expenses_company_branch_status",
+  "idx_omni_compliance_company_expiry",
+  "omni_compliance_branch_guard",
+  "idx_omni_provider_connections_company_status",
+  "omni_provider_write_gate_insert",
+  "omni_provider_write_gate_update",
+  "idx_omni_attendance_company_date",
+  "omni_attendance_scope_guard",
+  "idx_omni_leave_company_staff_dates",
+  "omni_leave_scope_guard",
+  "idx_omni_branch_stock_company_branch",
+  "idx_omni_branch_stock_movements_history",
+  "omni_branch_stock_movement_guard",
+  "omni_branch_stock_movement_apply",
+  "omni_branch_stock_movements_no_update",
+  "omni_branch_stock_movements_no_delete",
+  "omni_sales_branch_guard",
+  "omni_stock_movements_branch_guard",
+  "omni_ledger_entries_branch_guard",
+  "omni_reconciliation_branch_guard",
+  "omni_expense_branch_guard",
+  "idx_omni_branch_agency_one_cash",
+  "idx_omni_branch_agency_one_float_provider",
+  "idx_omni_branch_agency_accounts_lookup",
+  "idx_omni_branch_agency_operations_history",
+  "idx_omni_branch_agency_operations_actor",
+  "idx_omni_branch_agency_movements_history",
+  "idx_omni_branch_agency_movements_operation",
+  "omni_branch_agency_account_guard",
+  "omni_branch_agency_movement_guard",
+  "omni_branch_agency_movement_apply",
+  "omni_branch_agency_operation_guard",
+  "omni_branch_agency_operations_no_update",
+  "omni_branch_agency_operations_no_delete",
+  "omni_branch_agency_movements_no_update",
+  "omni_branch_agency_movements_no_delete",
 ];
 
 function makeEnv({ tables = requiredTables, objects = requiredObjects, fail = false } = {}) {
@@ -96,7 +170,7 @@ test("health reports ready only when all current schema tables and integrity obj
 
 test("health fails closed when invitation and cash/float migrations are missing", async () => {
   const tables = requiredTables.filter(name =>
-    !["omni_staff_invitations", "omni_agency_accounts", "omni_agency_operations", "omni_agency_account_movements"].includes(name)
+    !["omni_staff_invitations", "omni_agency_accounts", "omni_agency_operations", "omni_agency_account_movements", "omni_branch_agency_accounts", "omni_branch_agency_operations", "omni_branch_agency_account_movements"].includes(name)
   );
   const response = await health(makeEnv({ tables }));
   assert.equal(response.status, 503);
@@ -107,7 +181,7 @@ test("health fails closed when invitation and cash/float migrations are missing"
 
 test("health fails closed when append-only or cash/float integrity triggers are missing", async () => {
   const objects = requiredObjects.filter(name =>
-    !["omni_ledger_entries_no_update", "omni_agency_account_movement_guard"].includes(name)
+    !["omni_ledger_entries_no_update", "omni_agency_account_movement_guard", "omni_branch_agency_movement_guard"].includes(name)
   );
   const response = await health(makeEnv({ objects }));
   assert.equal(response.status, 503);

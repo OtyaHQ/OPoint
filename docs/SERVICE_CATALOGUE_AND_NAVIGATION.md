@@ -1,8 +1,19 @@
-# OmniPoint service catalogue and navigation
+# OtyaPoint service catalogue and navigation
 
 ## Product direction
 
-OmniPoint should make a broad range of business and customer services easy to discover through a clear service landing page, searchable categories, provider/biller selection, service-specific forms, validation before submission, and a transaction history/status view. The interface, branding, copy and workflows must be original to OmniPoint.
+OtyaPoint should make a broad range of business and customer services easy to discover through a clear service landing page, searchable categories, provider/biller selection, service-specific forms, validation before submission, and a transaction history/status view. The interface, branding, copy and workflows must be original to OtyaPoint.
+
+## Initial operating scope
+
+The first internal release is for OtyaPoint's own shop and authorised Mobile Money agency operations:
+
+- Retail catalogue, POS, inventory, stock receiving and retail cash/receipt controls.
+- Mobile Money agent cash-in/cash-out records, separate agency cash drawer, provider float and commission reconciliation.
+- Separate worker assignments for Retail and Mobile Money, scoped by branch and duty. Access to one work area must not imply access to the other.
+- Bills, airtime, data and other provider-backed services remain unavailable until a specific approved provider contract, sandbox verification, production credentials and compliance sign-off exist.
+
+OtyaPoint is an internal business-operations tool, not a public payment processor or a multi-tenant SaaS offer. A locally recorded transaction is not proof that a provider executed or settled a payment.
 
 ## Proposed service hub
 
@@ -40,11 +51,11 @@ OmniPoint should make a broad range of business and customer services easy to di
 
 ## Uganda-first constraints
 
-- This catalogue is a product plan, not a claim that every service is available in Uganda or through OmniPoint today.
+- This catalogue is a product plan, not a claim that every service is available in Uganda or through OtyaPoint today.
 - Never display a provider, tariff, commission, biller, payment method or transaction limit as live until it is sourced from an approved integration/configuration.
 - Provider adapters must expose supported services and required fields from verified provider contracts rather than hard-coded assumptions.
 - For mobile-money or bill-pay transactions, persist an idempotency key, internal reference, provider reference when returned, request/response status, timestamps and reconciliation metadata. A locally created draft is not provider success.
-- Do not collect customer PINs, OTPs, card security codes or other secrets in OmniPoint forms.
+- Do not collect customer PINs, OTPs, card security codes or other secrets in OtyaPoint forms.
 - Keep retail sales and agency/provider transaction accounting separate, including receipts, commissions, cash movements and reconciliation.
 - Any actual payment initiation or payment-system operation must be reviewed against the provider agreement and Uganda's regulatory requirements before enabling production.
 - Populate the catalogue with Uganda-relevant providers and services only after availability and commercial authorization are confirmed. Never import unsupported providers, foreign currencies or unverified fees.

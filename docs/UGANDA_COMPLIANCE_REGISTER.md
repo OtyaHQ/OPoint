@@ -1,6 +1,6 @@
-# Uganda Compliance Register — OmniPoint
+# Uganda Compliance Register — OtyaPoint
 
-**Status:** Engineering requirements register, not a legal opinion or a declaration that OmniPoint is compliant. Confirm applicability with URA, the Personal Data Protection Office (PDPO), the relevant mobile-money providers, and a Ugandan tax/legal adviser before production use.
+**Status:** Engineering requirements register, not a legal opinion or a declaration that OtyaPoint is compliant. Confirm applicability with URA, the Personal Data Protection Office (PDPO), the relevant mobile-money providers, and a Ugandan tax/legal adviser before production use.
 
 ## 1. Tax invoices and EFRIS
 
@@ -13,7 +13,7 @@
 
 ## 2. Personal data protection and privacy
 
-- Map the personal data OmniPoint collects, why it is necessary, the lawful basis, retention period, who can access it, and when it is disclosed to providers or other processors.
+- Map the personal data OtyaPoint collects, why it is necessary, the lawful basis, retention period, who can access it, and when it is disclosed to providers or other processors.
 - Minimise personal data in customer references, logs, Telegram alerts, exports and provider metadata. Never collect mobile-money PINs or OTPs.
 - Implement role-based access, audit trails, secure session handling, data-subject request procedures, incident/breach handling, retention and deletion rules, and vendor/processor reviews.
 - Confirm the relevant data-controller/data-collector/processor registration obligations with PDPO and maintain any required registration and compliance reports.
@@ -22,12 +22,12 @@
 
 ## 3. Mobile-money agency and payments
 
-- OmniPoint is initially an operational recordkeeping system for an authorised agency; it must not present itself as a licensed payment service provider or electronic-money issuer.
+- OtyaPoint is initially an operational recordkeeping system for an authorised agency; it must not present itself as a licensed payment service provider or electronic-money issuer.
 - Confirm the agency appointment, permitted services, transaction limits, settlement process, recordkeeping and customer-handling requirements directly with each contracted provider.
 - Do not initiate or route real payments until an approved integration route, current API contract, credentials, callback verification, signing/authentication, idempotency and reconciliation procedure are approved.
 - A transaction can be marked provider-successful only from a verified provider response or authoritative status check. Ambiguous outcomes must remain pending/unknown and be reconciled; never retry blindly.
 - Never store or request customer PINs/OTPs. Protect provider credentials in server-only secret storage, not source control or public environment variables.
-- Have counsel/provider compliance confirm whether any proposed OmniPoint functionality changes the licensing analysis under the National Payment Systems Act, 2020.
+- Have counsel/provider compliance confirm whether any proposed OtyaPoint functionality changes the licensing analysis under the National Payment Systems Act, 2020.
 - Reference: https://ulii.org/en/akn/ug/act/2020/15/eng%402023-12-31
 
 ## 4. Accounting, audit and reconciliation controls
@@ -41,11 +41,12 @@
 
 ## 5. Security, availability and hosting
 
-- Keep public-schema RLS enabled. Do not add blanket policies; author and test policies against the actual staff/tenant access model. Keep privileged service keys server-side.
-- Use a staging project separate from production; apply version-controlled, reviewed migrations and verify the live schema before deployment.
-- Configure independent exports/backups, restore tests, monitoring, incident response and least-privilege project access before live financial use.
-- Supabase provides managed PostgreSQL, Auth, Storage, Realtime and Edge Functions and can support this application's initial scale. The selected plan, compute, backup/recovery options, service limits, region, uptime needs and vendor/data-processing terms must be checked before launch.
-- Reference: https://supabase.com/docs/guides/database/overview, https://supabase.com/docs/guides/platform/backups, https://supabase.com/docs/guides/deployment/going-into-prod
+- Keep the production D1 database private to the OtyaPoint Worker service binding. Never expose D1, R2, provider credentials or privileged operations directly to browsers or mobile clients.
+- Use Cloudflare Workers for the API, D1 for operational records, private R2 for evidence/backup objects and scoped queues for asynchronous work. Otya Auth remains the identity authority; OtyaPoint must resolve local staff membership, branch, work area and duty on the server for every protected operation.
+- Keep staging resources separate from production. Apply version-controlled, additive migrations only after backup, owner-approved record mapping and rollback review. Verify the live migration ledger and table integrity after each production change.
+- Configure encrypted D1 exports/backup handling, tested restore procedures, monitoring, incident response and least-privilege Cloudflare access before live financial use. Resend may send notifications but must not be treated as a financial transaction authority.
+- Legacy Supabase migrations and references in this repository are historical artifacts only; they are not part of the approved active OtyaPoint Cloudflare-first architecture. Do not create or reconnect a Supabase production project for OtyaPoint without a separate explicit architecture decision.
+- Reference: https://developers.cloudflare.com/d1/, https://developers.cloudflare.com/workers/, https://developers.cloudflare.com/r2/
 
 ## Production approval checklist
 
