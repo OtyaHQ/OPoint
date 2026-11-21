@@ -19,8 +19,8 @@ class PendingMembershipD1 {
           results: [{
             membership_id: "membership-pending-1",
             company_id: "company-1",
-            company_name: "Otya Retail",
-            company_slug: "otya-retail",
+            company_name: "Opoint Retail",
+            company_slug: "opoint-retail",
             display_name: "New Cashier",
             email: "cashier@example.invalid",
             role_key: "CASHIER",
