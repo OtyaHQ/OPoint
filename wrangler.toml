@@ -31,5 +31,5 @@ database_name = "opoint-prod-db"
 database_id = "06ded416-1ae9-4f28-b50a-d408317ad60c"
 
 [[services]]
-binding = "OTYA_ID"
-service = "oend-identity"
+binding = "OID"
+service = "oid"
