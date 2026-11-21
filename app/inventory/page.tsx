@@ -54,7 +54,7 @@ export default async function InventoryPage({ searchParams }: PageProps) {
       <header style={styles.header}>
         <div>
           <Link href="/" style={styles.back}><ArrowLeft size={15} /> Back to dashboard</Link>
-          <div style={styles.eyebrow}><Boxes size={15} /> OTYAPOINT · RETAIL OPERATIONS</div>
+          <div style={styles.eyebrow}><Boxes size={15} /> Opoint · Retail operations</div>
           <h1 style={styles.title}>Inventory workspace</h1>
           <p style={styles.muted}>Live product records from Opoint&apos;s database, with auditable stock changes.</p>
         </div>
