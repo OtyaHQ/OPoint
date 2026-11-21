@@ -73,6 +73,7 @@ type Invitation = {
 };
 type Assignment = {
   id: string;
+  company_name?: string;
   staff_membership_id: string;
   display_name: string;
   email: string | null;
