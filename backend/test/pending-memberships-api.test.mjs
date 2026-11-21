@@ -50,7 +50,7 @@ function makeEnv() {
     DB,
     OID: {
       async fetch(req) {
-        assert.equal(req.url, "https://auth/auth/verify");
+        assert.equal(req.url, "https://oid/auth/verify");
         assert.equal(req.headers.get("authorization"), "Bearer synthetic-access-token");
         return Response.json({
           ok: true,
