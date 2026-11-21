@@ -36,6 +36,8 @@ test("company creation rejects an oversized streamed JSON body before database a
   assert.equal(request.headers.has("content-length"), false);
   const response = await worker.fetch(request, env);
   assert.equal(response.status, 413);
-  assert.deepEqual(await response.json(), { error: "request_too_large" });
+  const body = await response.json();
+  assert.equal(body.error, "request_too_large");
+  assert.equal(typeof body.requestId, "string");
   assert.equal(databaseTouched, false);
 });
